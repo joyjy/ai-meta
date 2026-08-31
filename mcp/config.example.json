@@ -1,0 +1,38 @@
+{
+  "source": "shared-ai-mcp",
+  "mcp": {
+    "dida365": {
+      "type": "remote",
+      "url": "https://mcp.dida365.com",
+      "headers": {
+        "Authorization": "Bearer <local-token>"
+      },
+      "_oauth": {
+        "client_id": "<local-client-id>",
+        "expires_in": 0,
+        "scope": "tasks:read tasks:write",
+        "token_endpoint": "https://api.dida365.com/oauth/token",
+        "authorization_endpoint": "https://dida365.com/oauth/authorize",
+        "redirect_uri": "http://127.0.0.1:19876/mcp/oauth/callback"
+      }
+    },
+    "google-calendar": {
+      "type": "remote",
+      "url": "https://calendarmcp.googleapis.com/mcp/v1"
+    },
+    "meego": {
+      "type": "remote",
+      "url": "https://project.feishu.cn/mcp_server/v1/",
+      "headers": {
+        "Authorization": "Bearer <local-token>"
+      },
+      "_oauth": {
+        "client_id": "<local-client-id>",
+        "expires_in": 0,
+        "refresh_token": "<local-refresh-token>",
+        "refresh_token_expires": "YYYY-MM-DD",
+        "token_endpoint": "https://project.feishu.cn/mcp_server/oauth/token"
+      }
+    }
+  }
+}

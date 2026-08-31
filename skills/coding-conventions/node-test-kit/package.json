@@ -1,0 +1,26 @@
+{
+  "name": "@example-user/node-test-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Coding-conventions owned Node test runner, fixtures, V8 coverage, and entrypoint diagnostics.",
+  "type": "module",
+  "bin": {
+    "node-test-kit": "bin/node-test-kit.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./fixtures": "./src/fixtures.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.15"
+  }
+}

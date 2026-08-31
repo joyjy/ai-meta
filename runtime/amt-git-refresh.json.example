@@ -1,0 +1,53 @@
+{
+  "id": "amt-git-refresh",
+  "enabled": false,
+  "type": "periodic",
+  "owner": "ai-meta",
+  "desc": "Legacy GTD periodic registration，已迁移到 Rollerskate Scheduled Task；保留禁用定义用于迁移期回查。",
+  "artifacts": [
+    {
+      "label": "AMT Git Refresh Report",
+      "href": "file:///Users/you/.ai/amt/runtime/git-refresh.json"
+    }
+  ],
+  "command": "/Users/you/Documents/me/<maintenance-checkout>/scripts/amt-git-refresh",
+  "args": [
+    "--root",
+    "/Users/you/Documents/projects",
+    "--root",
+    "/Users/you/Documents/reference",
+    "--exclude",
+    "/Users/you/Documents/projects/example-device-api",
+    "--exclude",
+    "/Users/you/Documents/projects/example-workflow-service",
+    "--output",
+    "/Users/you/.ai/amt/runtime/git-refresh.json",
+    "--cleanup-merged-branches",
+    "--remote-branch-cleanup-dry-run",
+    "--branch-cleanup-exclude-project-prefix",
+    "example-org/3rd/",
+    "--once-per-day"
+  ],
+  "cwd": "/Users/you/Documents/me/<maintenance-checkout>",
+  "env": {
+    "HOME": "/Users/you",
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    "AMT_GTD_NODE": "/Users/you/.asdf/shims/node",
+    "GIT_TERMINAL_PROMPT": "0"
+  },
+  "schedule": {
+    "weekdays": [1, 2, 3, 4, 5, 6, 7],
+    "times": ["09:00", "18:00"]
+  },
+  "runAtStart": false,
+  "liveness": [
+    {
+      "id": "git-refresh",
+      "enabled": true,
+      "desc": "最近一次跨仓库 fetch、安全快进与 squash-merged 分支清理检查已完成。",
+      "source": "file",
+      "path": "/Users/you/.ai/amt/runtime/git-refresh.json",
+      "maxAgeSeconds": 129600
+    }
+  ]
+}

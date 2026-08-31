@@ -1,0 +1,19 @@
+# coding-conventions:begin java-gradle
+if command -v asdf >/dev/null 2>&1 && asdf where java >/dev/null 2>&1; then
+  JAVA_HOME=$(asdf where java)
+  export JAVA_HOME
+fi
+
+if [ -x "./gradlew" ]; then
+  gradle_cmd="./gradlew"
+elif command -v gradle >/dev/null 2>&1; then
+  gradle_cmd="gradle"
+elif [ -x "$HOME/.asdf/shims/gradle" ]; then
+  gradle_cmd="$HOME/.asdf/shims/gradle"
+else
+  echo "pre-push: Gradle is required to run SonarLint" >&2
+  exit 1
+fi
+
+"$gradle_cmd" sonarlintMain sonarlintTest
+# coding-conventions:end java-gradle

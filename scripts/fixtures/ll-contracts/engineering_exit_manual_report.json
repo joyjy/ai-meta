@@ -1,0 +1,127 @@
+{
+  "schema_version": "ll.contract.v0",
+  "ll_contract": {
+    "id": "engineering-exit",
+    "mode": "full",
+    "project": {
+      "abbr": "amt",
+      "root": "/Users/example/Documents/me/<maintenance-checkout>",
+      "gitlab_flow": "l3"
+    },
+    "applies_to": {
+      "skill": "engineering-exit",
+      "scope": "project"
+    },
+    "target": {
+      "outcome": "收束当前 diff，并在 gates 通过后按 gitlab.flow 完成 commit / push / open MR",
+      "required_artifacts": ["git diff", "verification evidence", "exit report"],
+      "out_of_scope": ["remote_issue_update", "destructive_delete"]
+    },
+    "verification": {
+      "commands": ["git diff --check"],
+      "state_checks": ["git status --short"],
+      "done_when": ["exit.state is done or blocked or needs_human"],
+      "substitute_evidence": [],
+      "linttest_gate": {
+        "status": "not_checked",
+        "source": "not_checked",
+        "changed": false,
+        "executed": false
+      }
+    },
+    "blocker": {
+      "required_evidence": [
+        "failed_command_or_operation",
+        "key_error_output",
+        "attempted_fallback",
+        "why_self_repair_stops",
+        "minimum_user_decision"
+      ]
+    },
+    "knowledge_gate": {
+      "classify_claims": true,
+      "ask_user_when": [
+        "required_decision_evidence in [GUESS, COMMON]",
+        "INFERRED without visible supporting evidence",
+        "FRAME used as real-system fact",
+        "acceptance depends on user preference or business judgment"
+      ],
+      "proceed_when": [
+        "decision evidence is KNOWN or COMPUTED",
+        "INFERRED has explicit visible support",
+        "uncertainty only affects wording, naming, minor defaults"
+      ]
+    },
+    "authorization": {
+      "allowed_side_effects": ["read", "local_edit", "light_test"],
+      "ask_before": [
+        "scope_change",
+        "remote_write",
+        "destructive_action",
+        "high_cost_unstable_validation",
+        "low_confidence_execution"
+      ]
+    },
+    "checkpoints": [
+      {
+        "id": "discovery-inventory",
+        "phase": "discovery_inventory",
+        "status": "passed",
+        "required_evidence": ["git status and diff scope inspected"],
+        "on_gap": "update_contract"
+      },
+      {
+        "id": "plan",
+        "phase": "plan",
+        "status": "passed",
+        "required_evidence": ["engineering-exit scope is explicit"],
+        "on_gap": "needs_human"
+      },
+      {
+        "id": "implementation",
+        "phase": "implementation",
+        "status": "skipped",
+        "required_evidence": ["engineering-exit does not implement feature code"],
+        "on_gap": "update_contract"
+      },
+      {
+        "id": "verification",
+        "phase": "verification",
+        "status": "passed",
+        "required_evidence": ["git diff --check is listed"],
+        "on_gap": "block"
+      },
+      {
+        "id": "pre-final",
+        "phase": "pre_final",
+        "status": "passed",
+        "required_evidence": ["exit state is done, blocked, or needs_human"],
+        "on_gap": "next_ff"
+      }
+    ],
+    "exit": {
+      "state": "done",
+      "next_action": "open_mr",
+      "remote_write_requires_confirmation": false,
+      "privileged_git_exit": true
+    }
+  },
+  "runtime_binding": {
+    "adapter": "manual_report",
+    "objective": "完成 engineering-exit contract，gates 通过时一口气完成 commit / push / open MR",
+    "stop_when": ["exit.state in [done, partial, needs_human, blocked, commit_ready, remote_write_ready, next_ff_ready]"],
+    "must_run": ["verify_ll_contract", "changed_scope_checks"],
+    "call_user_when": [
+      "scope_change",
+      "destructive_action",
+      "acceptance_gap",
+      "risk_acceptance",
+      "business_judgment"
+    ],
+    "resume_inputs": ["ll_contract", "context", "loop_state"]
+  },
+  "dispatch": {
+    "target": "engineering-exit",
+    "local_execution": true
+  }
+}

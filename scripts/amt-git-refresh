@@ -1,0 +1,974 @@
+#!/usr/bin/env python3
+"""Refresh Git repositories without switching branches or rewriting commits."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import quote, urlparse
+
+
+DEFAULT_ROOTS = [Path.home() / "Documents/projects", Path.home() / "Documents/reference"]
+DEFAULT_OUTPUT = Path.home() / ".ai/amt/runtime/git-refresh.json"
+DEFAULT_GTD_COMMAND = Path.home() / ".ai/scripts/gtd"
+STATUS_ARGS = ["status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none"]
+
+
+@dataclass(frozen=True)
+class GitLabRemote:
+    hostname: str
+    project_path: str
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Fetch repositories and fast-forward only the clean tracked branch currently checked out."
+    )
+    parser.add_argument("--root", action="append", dest="roots", type=Path)
+    parser.add_argument("--exclude", action="append", dest="excludes", type=Path)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--timeout-seconds", type=int, default=120)
+    parser.add_argument("--once-per-day", action="store_true")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--cleanup-merged-branches",
+        action="store_true",
+        help="Delete safely verified local and remote branches for squash-merged GitLab MRs authored by the current user.",
+    )
+    parser.add_argument(
+        "--branch-cleanup-dry-run",
+        action="store_true",
+        help="Report eligible merged-MR branches without deleting them.",
+    )
+    parser.add_argument(
+        "--remote-branch-cleanup-dry-run",
+        action="store_true",
+        help="Delete eligible local branches but only report remote branch deletion candidates.",
+    )
+    parser.add_argument(
+        "--branch-cleanup-exclude-project-prefix",
+        action="append",
+        default=[],
+        help="Exclude matching GitLab project path prefixes from branch cleanup.",
+    )
+    return parser.parse_args()
+
+
+def run_git(repo: Path, args: list[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        env=env,
+        check=False,
+    )
+
+
+def run_glab(
+    args: list[str], timeout_seconds: int
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return subprocess.run(
+        ["glab", *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        env=env,
+        check=False,
+    )
+
+
+def command_error(result: subprocess.CompletedProcess[str]) -> str:
+    return (result.stderr or result.stdout or f"exit {result.returncode}").strip()
+
+
+def parse_gitlab_remote(remote_url: str) -> GitLabRemote | None:
+    value = remote_url.strip()
+    hostname = ""
+    project_path = ""
+
+    scp_match = re.fullmatch(r"[^@]+@(?P<host>[^:]+):(?P<path>.+)", value)
+    if scp_match:
+        hostname = scp_match.group("host")
+        project_path = scp_match.group("path")
+    else:
+        parsed = urlparse(value)
+        if parsed.scheme in {"http", "https", "ssh", "git"} and parsed.hostname:
+            hostname = parsed.hostname
+            project_path = parsed.path.lstrip("/")
+
+    project_path = re.sub(r"\.git$", "", project_path).strip("/")
+    if not hostname or "gitlab" not in hostname.lower() or not project_path:
+        return None
+    return GitLabRemote(hostname=hostname.lower(), project_path=project_path)
+
+
+def gitlab_remote(repo: Path, timeout_seconds: int) -> GitLabRemote | None:
+    result = run_git(repo, ["remote", "get-url", "origin"], timeout_seconds)
+    if result.returncode != 0:
+        return None
+    return parse_gitlab_remote(result.stdout)
+
+
+def run_gtd_broker(
+    request: dict[str, object],
+    timeout_seconds: int,
+) -> subprocess.CompletedProcess[str]:
+    descriptor, request_name = tempfile.mkstemp(
+        prefix="amt-git-broker-",
+        suffix=".json",
+    )
+    request_path = Path(request_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(request, handle)
+            handle.write("\n")
+        command = Path(os.environ.get("AMT_GTD_COMMAND", str(DEFAULT_GTD_COMMAND)))
+        node_command = os.environ.get("AMT_GTD_NODE")
+        command_prefix = [node_command, str(command)] if node_command else [str(command)]
+        return subprocess.run(
+            [
+                *command_prefix,
+                "gitlab",
+                "broker",
+                "request",
+                "--json",
+                str(request_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    finally:
+        request_path.unlink(missing_ok=True)
+
+
+def broker_json(
+    resource: str,
+    hostname: str,
+    timeout_seconds: int,
+    *,
+    project: str = "",
+    iid: str = "",
+    ref: str = "",
+    query: dict[str, str] | None = None,
+) -> object:
+    request: dict[str, object] = {
+        "resource": resource,
+        "host": hostname,
+        "project": project,
+        "iid": iid,
+        "ref": ref,
+        "query": query or {},
+        "caller": {"tool": "amt-git-refresh", "purpose": "branch-cleanup"},
+    }
+    result = run_gtd_broker(request, timeout_seconds)
+    if result.returncode != 0:
+        raise RuntimeError(command_error(result))
+    response = json.loads(result.stdout or "null")
+    if not isinstance(response, dict) or response.get("ok") is not True:
+        raise RuntimeError("unexpected GTD GitLab broker response")
+    return response.get("data")
+
+
+def merge_requests_for_branch(
+    remote: GitLabRemote,
+    branch: str,
+    timeout_seconds: int,
+) -> list[dict[str, object]]:
+    payload = broker_json(
+        "mr-list",
+        remote.hostname,
+        timeout_seconds,
+        project=remote.project_path,
+        query={
+            "scope": "all",
+            "state": "all",
+            "source_branch": branch,
+            "per_page": "100",
+        },
+    )
+    if not isinstance(payload, list):
+        raise RuntimeError("unexpected branch merge request response")
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def mr_project_path(mr: dict[str, object]) -> str:
+    references = mr.get("references")
+    if isinstance(references, dict):
+        full = references.get("full")
+        if isinstance(full, str) and "!" in full:
+            return full.rsplit("!", 1)[0].strip("/")
+    web_url = mr.get("web_url")
+    if isinstance(web_url, str):
+        parsed = urlparse(web_url)
+        marker = "/-/merge_requests/"
+        if marker in parsed.path:
+            return parsed.path.split(marker, 1)[0].strip("/")
+    return ""
+
+
+def local_branches(repo: Path, timeout_seconds: int) -> dict[str, str]:
+    result = run_git(
+        repo,
+        ["for-each-ref", "--format=%(refname:short)%09%(objectname)", "refs/heads"],
+        timeout_seconds,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(command_error(result))
+    branches: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        name, separator, sha = line.partition("\t")
+        if separator and name and sha:
+            branches[name] = sha
+    return branches
+
+
+def remote_branches(repo: Path, timeout_seconds: int) -> dict[str, str]:
+    result = run_git(
+        repo,
+        [
+            "for-each-ref",
+            "--format=%(refname:strip=3)%09%(objectname)",
+            "refs/remotes/origin",
+        ],
+        timeout_seconds,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(command_error(result))
+    branches: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        name, separator, sha = line.partition("\t")
+        if separator and name and name != "HEAD" and sha:
+            branches[name] = sha
+    return branches
+
+
+def default_branch(repo: Path, timeout_seconds: int) -> str:
+    result = run_git(
+        repo,
+        ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+        timeout_seconds,
+    )
+    if result.returncode != 0:
+        return ""
+    value = result.stdout.strip()
+    return value.removeprefix("origin/")
+
+
+def worktree_branches(repo: Path, timeout_seconds: int) -> set[str]:
+    result = run_git(repo, ["worktree", "list", "--porcelain"], timeout_seconds)
+    if result.returncode != 0:
+        raise RuntimeError(command_error(result))
+    prefix = "branch refs/heads/"
+    return {
+        line[len(prefix):]
+        for line in result.stdout.splitlines()
+        if line.startswith(prefix)
+    }
+
+
+def tip_is_covered(
+    repo: Path, tip: str, merged_source_sha: str, timeout_seconds: int
+) -> bool:
+    if not tip or not merged_source_sha:
+        return False
+    if tip == merged_source_sha:
+        return True
+    result = run_git(
+        repo,
+        ["merge-base", "--is-ancestor", tip, merged_source_sha],
+        timeout_seconds,
+    )
+    return result.returncode == 0
+
+
+def branch_details(
+    remote: GitLabRemote,
+    project: str,
+    branch: str,
+    timeout_seconds: int,
+) -> dict[str, object]:
+    payload = broker_json(
+        "branch",
+        remote.hostname,
+        timeout_seconds,
+        project=project,
+        ref=branch,
+    )
+    if not isinstance(payload, dict):
+        raise RuntimeError("unexpected branch response")
+    return payload
+
+
+def delete_remote_branch(
+    remote: GitLabRemote,
+    project_id: str,
+    branch: str,
+    timeout_seconds: int,
+) -> None:
+    endpoint = (
+        f"projects/{quote(project_id, safe='')}/repository/branches/"
+        f"{quote(branch, safe='')}"
+    )
+    result = run_glab(
+        [
+            "api",
+            endpoint,
+            "--hostname",
+            remote.hostname,
+            "--method",
+            "DELETE",
+            "--silent",
+        ],
+        timeout_seconds,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(command_error(result))
+
+
+def cleanup_repository_branches(
+    repo: Path,
+    remote: GitLabRemote,
+    timeout_seconds: int,
+    *,
+    dry_run: bool,
+    remote_dry_run: bool = False,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "path": str(repo),
+        "host": remote.hostname,
+        "project": remote.project_path,
+        "branches": [],
+        "candidates": [],
+        "broker_requests": 0,
+        "deleted_local_branches": [],
+        "deleted_remote_branches": [],
+        "remote_dry_run_branches": [],
+        "skipped": [],
+        "failures": [],
+    }
+    local = local_branches(repo, timeout_seconds)
+    remote_refs = remote_branches(repo, timeout_seconds)
+    checked_out = worktree_branches(repo, timeout_seconds)
+    excluded = {default_branch(repo, timeout_seconds)}
+    branches = sorted((set(local) | set(remote_refs)) - excluded - {""})
+
+    def skip(candidate: dict[str, object], reason: str) -> None:
+        item = candidate | {"eligible": False, "reason": reason}
+        report["branches"].append(item)
+        report["skipped"].append(item)
+
+    for branch in branches:
+        local_sha = local.get(branch, "")
+        remote_sha = remote_refs.get(branch, "")
+        base: dict[str, object] = {
+            "branch": branch,
+            "local_exists": bool(local_sha),
+            "remote_exists": bool(remote_sha),
+        }
+
+        if branch in checked_out:
+            skip(base, "checked_out_in_worktree")
+            continue
+
+        report["broker_requests"] += 1
+        try:
+            merge_requests = merge_requests_for_branch(
+                remote, branch, timeout_seconds
+            )
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            skip(base, "mr_lookup_failed")
+            report["failures"].append(
+                base | {"stage": "inspect_merge_requests", "error": str(error)}
+            )
+            continue
+
+        same_project_mrs = [
+            mr
+            for mr in merge_requests
+            if str(mr.get("source_branch") or "") == branch
+            and str(mr.get("source_project_id") or "")
+            == str(mr.get("target_project_id") or "")
+            and mr_project_path(mr).lower() == remote.project_path.lower()
+        ]
+        if any(str(mr.get("state") or "") == "opened" for mr in same_project_mrs):
+            skip(base, "open_mr_exists")
+            continue
+
+        squash_merged_mrs = sorted(
+            (
+                mr
+                for mr in same_project_mrs
+                if str(mr.get("state") or "") == "merged"
+                and bool(mr.get("squash_commit_sha"))
+            ),
+            key=lambda item: str(
+                item.get("merged_at") or item.get("updated_at") or ""
+            ),
+            reverse=True,
+        )
+        if not squash_merged_mrs:
+            reason = (
+                "no_merge_request"
+                if not same_project_mrs
+                else "no_squash_merged_mr"
+            )
+            skip(base, reason)
+            continue
+
+        mr = squash_merged_mrs[0]
+        mr_iid = mr.get("iid")
+        merged_source_sha = str(mr.get("sha") or "")
+        candidate = base | {
+            "mr_iid": mr_iid,
+            "mr_url": mr.get("web_url"),
+            "merged_at": mr.get("merged_at"),
+            "squash_commit_sha": mr.get("squash_commit_sha"),
+        }
+
+        reason = ""
+        if not merged_source_sha:
+            reason = "missing_merged_source_sha"
+        elif local_sha and not tip_is_covered(
+            repo, local_sha, merged_source_sha, timeout_seconds
+        ):
+            reason = "local_branch_has_post_merge_commits"
+        elif remote_sha and not tip_is_covered(
+            repo, remote_sha, merged_source_sha, timeout_seconds
+        ):
+            reason = "remote_branch_has_post_merge_commits"
+
+        if reason:
+            skip(candidate, reason)
+            continue
+
+        if remote_sha:
+            try:
+                details = branch_details(
+                    remote, remote.project_path, branch, timeout_seconds
+                )
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                skip(candidate, "remote_branch_lookup_failed")
+                report["failures"].append(
+                    candidate | {"stage": "inspect_remote", "error": str(error)}
+                )
+                continue
+            if details.get("default") is True:
+                skip(candidate, "default_branch")
+                continue
+            if details.get("protected") is True:
+                skip(candidate, "protected_branch")
+                continue
+
+        eligible = candidate | {"eligible": True}
+        report["candidates"].append(eligible)
+        if dry_run:
+            report["branches"].append(eligible | {"action": "dry_run"})
+            report["skipped"].append(eligible | {"reason": "dry_run"})
+            continue
+
+        action = "no_deletion_needed"
+        if remote_sha:
+            if remote_dry_run:
+                report["remote_dry_run_branches"].append(
+                    {"branch": branch, "mr_iid": mr_iid}
+                )
+                action = "remote_dry_run"
+            else:
+                try:
+                    delete_remote_branch(
+                        remote, remote.project_path, branch, timeout_seconds
+                    )
+                    delete_tracking_ref = run_git(
+                        repo,
+                        ["update-ref", "-d", f"refs/remotes/origin/{branch}"],
+                        timeout_seconds,
+                    )
+                    if delete_tracking_ref.returncode != 0:
+                        raise RuntimeError(command_error(delete_tracking_ref))
+                    report["deleted_remote_branches"].append(
+                        {"branch": branch, "mr_iid": mr_iid}
+                    )
+                    action = "deleted_remote"
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                    skip(candidate, "remote_delete_failed")
+                    report["failures"].append(
+                        candidate | {"stage": "delete_remote", "error": str(error)}
+                    )
+                    continue
+
+        if local_sha:
+            delete_local = run_git(
+                repo, ["branch", "-D", "--", branch], timeout_seconds
+            )
+            if delete_local.returncode != 0:
+                report["failures"].append(
+                    candidate
+                    | {"stage": "delete_local", "error": command_error(delete_local)}
+                )
+                skip(candidate, "local_delete_failed")
+                continue
+            report["deleted_local_branches"].append(
+                {"branch": branch, "mr_iid": mr_iid}
+            )
+            action = (
+                "deleted_local_remote_dry_run"
+                if remote_sha and remote_dry_run
+                else "deleted_local"
+            )
+        report["branches"].append(eligible | {"action": action})
+
+    return report
+
+
+def cleanup_merged_branches(
+    repositories: list[Path],
+    refresh_results: list[dict[str, object]],
+    timeout_seconds: int,
+    *,
+    dry_run: bool,
+    remote_dry_run: bool = False,
+    excluded_project_prefixes: tuple[str, ...] = (),
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "enabled": True,
+        "gitlab_read_source": "gtd-gitlab-broker",
+        "dry_run": dry_run,
+        "remote_dry_run": remote_dry_run,
+        "excluded_project_prefixes": list(excluded_project_prefixes),
+        "excluded_repositories": [],
+        "repositories": [],
+    }
+    failed_paths = {
+        str(item["path"])
+        for item in refresh_results
+        if item.get("status")
+        in {"status_failed", "fetch_failed", "timeout", "runtime_failed"}
+    }
+    for repo in repositories:
+        if str(repo) in failed_paths:
+            continue
+        remote = gitlab_remote(repo, timeout_seconds)
+        if remote is None:
+            continue
+        matched_prefix = next(
+            (
+                prefix
+                for prefix in excluded_project_prefixes
+                if remote.project_path.startswith(prefix)
+            ),
+            None,
+        )
+        if matched_prefix is not None:
+            report["excluded_repositories"].append(
+                {
+                    "path": str(repo),
+                    "project": remote.project_path,
+                    "reason": "project_prefix",
+                    "prefix": matched_prefix,
+                }
+            )
+            continue
+        try:
+            repo_report = cleanup_repository_branches(
+                repo,
+                remote,
+                timeout_seconds,
+                dry_run=dry_run,
+                remote_dry_run=remote_dry_run,
+            )
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            repo_report = {
+                "path": str(repo),
+                "host": remote.hostname,
+                "project": remote.project_path,
+                "branches": [],
+                "candidates": [],
+                "broker_requests": 0,
+                "deleted_local_branches": [],
+                "deleted_remote_branches": [],
+                "remote_dry_run_branches": [],
+                "skipped": [],
+                "failures": [{"stage": "inspect_repository", "error": str(error)}],
+            }
+        report["repositories"].append(repo_report)
+
+    repository_reports = report["repositories"]
+    report["counts"] = {
+        "repositories": len(repository_reports),
+        "branches": sum(len(item["branches"]) for item in repository_reports),
+        "broker_requests": sum(
+            int(item["broker_requests"]) for item in repository_reports
+        ),
+        "candidates": sum(len(item["candidates"]) for item in repository_reports),
+        "deleted_local": sum(
+            len(item["deleted_local_branches"]) for item in repository_reports
+        ),
+        "deleted_remote": sum(
+            len(item["deleted_remote_branches"]) for item in repository_reports
+        ),
+        "remote_dry_run": sum(
+            len(item["remote_dry_run_branches"]) for item in repository_reports
+        ),
+        "skipped": sum(len(item["skipped"]) for item in repository_reports),
+        "failures": sum(len(item["failures"]) for item in repository_reports),
+        "excluded_repositories": len(report["excluded_repositories"]),
+    }
+    return report
+
+
+def discover_repositories(root: Path) -> tuple[list[Path], list[str]]:
+    root = root.expanduser().resolve()
+    if not root.is_dir():
+        return [], [f"root is not a directory: {root}"]
+
+    repositories: set[Path] = set()
+    errors: list[str] = []
+    stack = [root]
+    visited: set[tuple[int, int]] = set()
+
+    while stack:
+        directory = stack.pop()
+        try:
+            stat = directory.stat()
+            identity = (stat.st_dev, stat.st_ino)
+            if identity in visited:
+                continue
+            visited.add(identity)
+            entries = list(directory.iterdir())
+        except OSError as error:
+            errors.append(f"cannot scan {directory}: {error}")
+            continue
+
+        if any(entry.name == ".git" and (entry.is_dir() or entry.is_file()) for entry in entries):
+            repositories.add(directory)
+
+        for entry in entries:
+            if entry.name == ".git":
+                continue
+            try:
+                if entry.is_dir():
+                    stack.append(entry)
+            except OSError as error:
+                errors.append(f"cannot inspect {entry}: {error}")
+
+    return sorted(repositories), errors
+
+
+def refresh_repository(repo: Path, timeout_seconds: int) -> dict[str, object]:
+    relative_result: dict[str, object] = {"path": str(repo)}
+
+    dirty_result = run_git(repo, STATUS_ARGS, timeout_seconds)
+    if dirty_result.returncode != 0:
+        return relative_result | {
+            "status": "status_failed",
+            "error": command_error(dirty_result),
+        }
+
+    dirty = bool(dirty_result.stdout.strip())
+    relative_result["dirty"] = dirty
+
+    fetch_result = run_git(repo, ["fetch", "--all", "--prune"], timeout_seconds)
+    if fetch_result.returncode != 0:
+        return relative_result | {
+            "status": "fetch_failed",
+            "error": command_error(fetch_result),
+        }
+
+    branch_result = run_git(repo, ["symbolic-ref", "--quiet", "--short", "HEAD"], timeout_seconds)
+    if branch_result.returncode != 0:
+        return relative_result | {"status": "skipped_detached"}
+
+    branch = branch_result.stdout.strip()
+    relative_result["branch"] = branch
+    if dirty:
+        return relative_result | {"status": "skipped_dirty"}
+
+    upstream_result = run_git(
+        repo,
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+        timeout_seconds,
+    )
+    if upstream_result.returncode != 0:
+        return relative_result | {"status": "skipped_no_upstream"}
+
+    upstream = upstream_result.stdout.strip()
+    relative_result["upstream"] = upstream
+
+    head_result = run_git(repo, ["rev-parse", "HEAD"], timeout_seconds)
+    upstream_head_result = run_git(repo, ["rev-parse", upstream], timeout_seconds)
+    if head_result.returncode != 0 or upstream_head_result.returncode != 0:
+        failed = head_result if head_result.returncode != 0 else upstream_head_result
+        return relative_result | {
+            "status": "revision_failed",
+            "error": command_error(failed),
+        }
+
+    head = head_result.stdout.strip()
+    upstream_head = upstream_head_result.stdout.strip()
+    if head == upstream_head:
+        return relative_result | {"status": "up_to_date", "head": head}
+
+    ancestor_result = run_git(repo, ["merge-base", "--is-ancestor", "HEAD", upstream], timeout_seconds)
+    if ancestor_result.returncode == 1:
+        return relative_result | {
+            "status": "skipped_diverged",
+            "head": head,
+            "upstream_head": upstream_head,
+        }
+    if ancestor_result.returncode != 0:
+        return relative_result | {
+            "status": "ancestry_failed",
+            "error": command_error(ancestor_result),
+        }
+
+    current_branch_result = run_git(
+        repo, ["symbolic-ref", "--quiet", "--short", "HEAD"], timeout_seconds
+    )
+    if current_branch_result.returncode != 0 or current_branch_result.stdout.strip() != branch:
+        return relative_result | {"status": "skipped_checkout_changed"}
+
+    current_status_result = run_git(repo, STATUS_ARGS, timeout_seconds)
+    if current_status_result.returncode != 0:
+        return relative_result | {
+            "status": "status_failed",
+            "error": command_error(current_status_result),
+        }
+    if current_status_result.stdout.strip():
+        return relative_result | {"status": "skipped_became_dirty"}
+
+    merge_result = run_git(
+        repo,
+        ["-c", "core.hooksPath=/dev/null", "merge", "--ff-only", upstream],
+        timeout_seconds,
+    )
+    if merge_result.returncode != 0:
+        return relative_result | {
+            "status": "fast_forward_failed",
+            "error": command_error(merge_result),
+        }
+
+    return relative_result | {
+        "status": "fast_forwarded",
+        "before": head,
+        "head": upstream_head,
+    }
+
+
+def superproject(repo: Path, timeout_seconds: int) -> str | None:
+    result = run_git(repo, ["rev-parse", "--show-superproject-working-tree"], timeout_seconds)
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
+
+
+def read_existing(path: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads(path.read_text())
+        return payload if isinstance(payload, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def already_refreshed_today(path: Path, roots: list[Path], excludes: set[Path]) -> bool:
+    payload = read_existing(path)
+    if not payload:
+        return False
+    expected_roots = [str(root.expanduser().resolve()) for root in roots]
+    expected_excludes = [str(exclude) for exclude in sorted(excludes)]
+    return (
+        payload.get("state") == "healthy"
+        and payload.get("refresh_date") == datetime.now().astimezone().date().isoformat()
+        and payload.get("roots") == expected_roots
+        and payload.get("excluded_paths") == expected_excludes
+    )
+
+
+def atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(file_descriptor, "w") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def main() -> int:
+    args = parse_args()
+    if args.branch_cleanup_dry_run and not args.cleanup_merged_branches:
+        print(
+            "--branch-cleanup-dry-run requires --cleanup-merged-branches",
+            file=sys.stderr,
+        )
+        return 2
+    if args.remote_branch_cleanup_dry_run and not args.cleanup_merged_branches:
+        print(
+            "--remote-branch-cleanup-dry-run requires --cleanup-merged-branches",
+            file=sys.stderr,
+        )
+        return 2
+
+    roots = [root.expanduser().resolve() for root in (args.roots or DEFAULT_ROOTS)]
+    excludes = {path.expanduser().resolve() for path in (args.excludes or [])}
+    output = args.output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = output.with_suffix(output.suffix + ".lock")
+
+    with lock_path.open("a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"amt git refresh already running: {lock_path}")
+            return 0
+
+        if args.once_per_day and not args.force and already_refreshed_today(
+            output, roots, excludes
+        ):
+            print(f"amt git refresh already completed today: {output}")
+            return 0
+
+        started_at = datetime.now(timezone.utc)
+        discovered_repositories: set[Path] = set()
+        discovery_errors: list[str] = []
+        for root in roots:
+            found, errors = discover_repositories(root)
+            discovered_repositories.update(found)
+            discovery_errors.extend(errors)
+
+        ignored_submodules: list[dict[str, str]] = []
+        excluded_repositories: list[dict[str, str]] = []
+        repositories: list[Path] = []
+        for repo in sorted(discovered_repositories):
+            if repo in excludes:
+                excluded_repositories.append({"path": str(repo)})
+                continue
+            parent = superproject(repo, args.timeout_seconds)
+            if parent:
+                ignored_submodules.append({"path": str(repo), "superproject": parent})
+            else:
+                repositories.append(repo)
+
+        results: list[dict[str, object]] = []
+        for repo in repositories:
+            try:
+                results.append(refresh_repository(repo, args.timeout_seconds))
+            except subprocess.TimeoutExpired as error:
+                results.append(
+                    {
+                        "path": str(repo),
+                        "status": "timeout",
+                        "error": f"command timed out after {error.timeout} seconds",
+                    }
+                )
+            except OSError as error:
+                results.append({"path": str(repo), "status": "runtime_failed", "error": str(error)})
+
+        branch_cleanup: dict[str, object] = {"enabled": False}
+        if args.cleanup_merged_branches:
+            branch_cleanup = cleanup_merged_branches(
+                repositories,
+                results,
+                args.timeout_seconds,
+                dry_run=args.branch_cleanup_dry_run,
+                remote_dry_run=args.remote_branch_cleanup_dry_run,
+                excluded_project_prefixes=tuple(
+                    args.branch_cleanup_exclude_project_prefix
+                ),
+            )
+
+        counts = Counter(str(result["status"]) for result in results)
+        failure_statuses = {
+            "status_failed",
+            "fetch_failed",
+            "revision_failed",
+            "ancestry_failed",
+            "fast_forward_failed",
+            "timeout",
+            "runtime_failed",
+        }
+        cleanup_failure_count = int(
+            branch_cleanup.get("counts", {}).get("failures", 0)
+            if isinstance(branch_cleanup.get("counts"), dict)
+            else 0
+        )
+        failure_count = (
+            sum(counts[status] for status in failure_statuses)
+            + len(discovery_errors)
+            + cleanup_failure_count
+        )
+        if not repositories:
+            state = "unhealthy"
+        elif failure_count:
+            state = "degraded"
+        else:
+            state = "healthy"
+
+        completed_at = datetime.now(timezone.utc)
+        summary = (
+            f"discovered={len(discovered_repositories)} processed={len(repositories)} "
+            f"excluded={len(excluded_repositories)} ignored_submodules={len(ignored_submodules)} "
+            f"fast_forwarded={counts['fast_forwarded']} "
+            f"up_to_date={counts['up_to_date']} skipped={sum(value for key, value in counts.items() if key.startswith('skipped_'))} "
+            f"failures={failure_count}"
+        )
+        cleanup_counts = branch_cleanup.get("counts")
+        if isinstance(cleanup_counts, dict):
+            summary += (
+                f" branches_evaluated={cleanup_counts.get('branches', 0)}"
+                f" broker_requests={cleanup_counts.get('broker_requests', 0)}"
+                f" branch_candidates={cleanup_counts.get('candidates', 0)}"
+                f" deleted_local={cleanup_counts.get('deleted_local', 0)}"
+                f" deleted_remote={cleanup_counts.get('deleted_remote', 0)}"
+                f" remote_dry_run={cleanup_counts.get('remote_dry_run', 0)}"
+                f" branch_skipped={cleanup_counts.get('skipped', 0)}"
+                f" branch_cleanup_excluded={cleanup_counts.get('excluded_repositories', 0)}"
+            )
+        payload: dict[str, object] = {
+            "schema_version": "amt.git-refresh.v2",
+            "state": state,
+            "checked_at": completed_at.isoformat().replace("+00:00", "Z"),
+            "refresh_date": datetime.now().astimezone().date().isoformat(),
+            "summary": summary,
+            "roots": [str(root) for root in roots],
+            "excluded_paths": [str(exclude) for exclude in sorted(excludes)],
+            "started_at": started_at.isoformat().replace("+00:00", "Z"),
+            "completed_at": completed_at.isoformat().replace("+00:00", "Z"),
+            "counts": dict(sorted(counts.items())),
+            "discovery_errors": discovery_errors,
+            "excluded_repositories": excluded_repositories,
+            "ignored_submodules": ignored_submodules,
+            "repositories": results,
+            "branch_cleanup": branch_cleanup,
+        }
+        atomic_write_json(output, payload)
+        print(f"amt git refresh {state}: {summary}")
+        print(f"report: {output}")
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

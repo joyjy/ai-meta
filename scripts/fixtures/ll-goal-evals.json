@@ -1,0 +1,88 @@
+[
+  {
+    "name": "local_bug_fix",
+    "ff": {
+      "goal": "修复 ll-ledger 追加事件后未正确派生 checkpoint 状态的问题。",
+      "scope": {
+        "include": ["scripts/ll-ledger", "scripts/ll_contract_file.py"],
+        "exclude": ["commit", "push", "MR"]
+      },
+      "acceptance": [
+        "checkpoint 事件按追加顺序更新有效状态",
+        "无效 checkpoint id 被拒绝且原文件不变",
+        "相关回归测试通过"
+      ],
+      "constraints": ["只允许本地编辑和轻量测试"]
+    },
+    "expected_binding": {
+      "allowed_side_effects": ["read", "local_edit", "light_test"],
+      "ask_before": ["scope_change", "remote_write", "destructive_action", "high_cost_unstable_validation", "low_confidence_execution"],
+      "call_user_when": ["scope_change", "remote_write", "destructive_action", "acceptance_gap"]
+    }
+  },
+  {
+    "name": "read_only_diagnosis",
+    "ff": {
+      "goal": "定位支付回调重复消费的首个失效层并给出可执行证据。",
+      "scope": {
+        "include": ["应用日志", "消费位点", "幂等记录"],
+        "exclude": ["源码修改", "运行态写入"]
+      },
+      "acceptance": [
+        "指出最早出现重复的系统层",
+        "列出支持结论的日志或记录标识",
+        "证据不足时明确最小缺口而不猜测"
+      ],
+      "constraints": ["只读诊断"]
+    },
+    "expected_binding": {
+      "allowed_side_effects": ["read"],
+      "ask_before": ["scope_change", "remote_write", "destructive_action", "high_cost_unstable_validation", "low_confidence_execution"],
+      "call_user_when": ["scope_change", "remote_write", "destructive_action", "acceptance_gap", "business_judgment"]
+    }
+  },
+  {
+    "name": "documentation_rule_update",
+    "ff": {
+      "goal": "把新的 API 兼容策略收敛到唯一 durable source of truth。",
+      "scope": {
+        "include": ["docs/architecture/api-compatibility.md", "AGENTS.md 的薄入口"],
+        "exclude": ["代码实现", "历史计划文档"]
+      },
+      "acceptance": [
+        "兼容策略只在架构文档保留一份完整定义",
+        "AGENTS.md 只保留执行入口和高优先级约束",
+        "不存在相互矛盾的旧规则",
+        "Markdown 与文档 lint 通过"
+      ],
+      "constraints": ["不新增 ADR", "不修改代码"]
+    },
+    "expected_binding": {
+      "allowed_side_effects": ["read", "local_edit", "light_test"],
+      "ask_before": ["scope_change", "remote_write", "destructive_action", "high_cost_unstable_validation", "low_confidence_execution"],
+      "call_user_when": ["scope_change", "remote_write", "destructive_action", "acceptance_gap"]
+    }
+  },
+  {
+    "name": "migration_with_remote_boundary",
+    "ff": {
+      "goal": "把旧配置读取路径迁移到新的 provider registry，同时保持现有调用行为。",
+      "scope": {
+        "include": ["provider registry", "配置加载器", "迁移回归测试"],
+        "exclude": ["发布", "远端配置写入", "旧入口的猜测性兼容"]
+      },
+      "acceptance": [
+        "所有已知调用方从 provider registry 读取配置",
+        "现有代表性配置 fixture 的输出保持不变",
+        "旧入口没有真实调用方时被明确移除出新路径",
+        "迁移测试与目标包 smoke 通过"
+      ],
+      "constraints": ["远端写入必须再次确认", "兼容只基于真实调用方证据"]
+    },
+    "expected_binding": {
+      "allowed_side_effects": ["read", "local_edit", "light_test"],
+      "ask_before": ["scope_change", "remote_write", "destructive_action", "high_cost_unstable_validation", "low_confidence_execution"],
+      "call_user_when": ["scope_change", "remote_write", "destructive_action", "acceptance_gap", "risk_acceptance"]
+    }
+  }
+]

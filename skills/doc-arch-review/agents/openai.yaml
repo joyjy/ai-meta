@@ -1,0 +1,4 @@
+interface:
+  display_name: "doc-arch-review"
+  short_description: "Review architecture docs and documentation boundaries"
+  default_prompt: "Use $doc-arch-review to review this repository's documentation architecture."

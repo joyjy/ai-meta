@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 2,
+  "agent": "codex",
+  "kind": "cron",
+  "expression": "0 9,18 * * *",
+  "timezone": "Asia/Shanghai",
+  "misfirePolicy": "skip",
+  "overlapPolicy": "skip",
+  "misfireGraceMilliseconds": 900000,
+  "session": {
+    "policy": "new_each_run"
+  },
+  "prompt": "AMT Git refresh compatibility metadata; execution is owned by the exact command.exec callback.",
+  "callbacks": [
+    {
+      "callbackId": "amt-git-refresh",
+      "kind": "command.exec",
+      "definition": {
+        "schemaVersion": "ProactiveCallbackDefinition@1",
+        "callbackId": "amt-git-refresh",
+        "kind": "command.exec",
+        "runtime": "host",
+        "executable": "/Users/you/Documents/me/<maintenance-checkout>/scripts/amt-git-refresh",
+        "argv": [
+          "--root",
+          "/Users/you/Documents/projects",
+          "--root",
+          "/Users/you/Documents/reference",
+          "--exclude",
+          "/Users/you/Documents/projects/example-device-api",
+          "--exclude",
+          "/Users/you/Documents/projects/example-workflow-service",
+          "--output",
+          "/Users/you/.ai/amt/runtime/git-refresh.json",
+          "--cleanup-merged-branches",
+          "--remote-branch-cleanup-dry-run",
+          "--branch-cleanup-exclude-project-prefix",
+          "example-org/3rd/",
+          "--once-per-day"
+        ],
+        "cwd": "/Users/you/Documents/me/<maintenance-checkout>",
+        "environment": {
+          "HOME": "/Users/you",
+          "PATH": "/Users/you/.asdf/shims:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "AMT_GTD_COMMAND": "/Users/you/.ai/scripts/gtd",
+          "AMT_GTD_NODE": "/Users/you/.asdf/shims/node",
+          "GIT_TERMINAL_PROMPT": "0"
+        },
+        "timeoutMilliseconds": 1800000,
+        "maxOutputBytes": 131072
+      },
+      "grant": {
+        "schemaVersion": "ProactiveCallbackGrant@1",
+        "kind": "command.exec",
+        "runtime": "host",
+        "executable": "/Users/you/Documents/me/<maintenance-checkout>/scripts/amt-git-refresh",
+        "argv": [
+          "--root",
+          "/Users/you/Documents/projects",
+          "--root",
+          "/Users/you/Documents/reference",
+          "--exclude",
+          "/Users/you/Documents/projects/example-device-api",
+          "--exclude",
+          "/Users/you/Documents/projects/example-workflow-service",
+          "--output",
+          "/Users/you/.ai/amt/runtime/git-refresh.json",
+          "--cleanup-merged-branches",
+          "--remote-branch-cleanup-dry-run",
+          "--branch-cleanup-exclude-project-prefix",
+          "example-org/3rd/",
+          "--once-per-day"
+        ],
+        "cwd": "/Users/you/Documents/me/<maintenance-checkout>",
+        "environment": {
+          "HOME": "/Users/you",
+          "PATH": "/Users/you/.asdf/shims:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "AMT_GTD_COMMAND": "/Users/you/.ai/scripts/gtd",
+          "AMT_GTD_NODE": "/Users/you/.asdf/shims/node",
+          "GIT_TERMINAL_PROMPT": "0"
+        },
+        "filesystemRoots": [
+          "/Users/you/Documents/me/<maintenance-checkout>",
+          "/Users/you/Documents/projects",
+          "/Users/you/Documents/reference",
+          "/Users/you/.ai"
+        ],
+        "networkAccess": true,
+        "timeoutMilliseconds": 1800000,
+        "maxOutputBytes": 131072,
+        "secretReferences": []
+      }
+    }
+  ]
+}

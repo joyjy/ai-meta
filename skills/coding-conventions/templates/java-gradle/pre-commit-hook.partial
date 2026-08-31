@@ -1,0 +1,30 @@
+# coding-conventions:begin java-gradle
+java_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.java')
+if [ -n "$java_files" ]; then
+  if command -v asdf >/dev/null 2>&1 && asdf where java >/dev/null 2>&1; then
+    JAVA_HOME=$(asdf where java)
+    export JAVA_HOME
+  fi
+
+  if [ -x "./gradlew" ]; then
+    gradle_cmd="./gradlew"
+  elif command -v gradle >/dev/null 2>&1; then
+    gradle_cmd="gradle"
+  elif [ -x "$HOME/.asdf/shims/gradle" ]; then
+    gradle_cmd="$HOME/.asdf/shims/gradle"
+  else
+    echo "pre-commit: Gradle is required to run spotlessApply" >&2
+    exit 1
+  fi
+
+  "$gradle_cmd" spotlessApply
+
+  printf '%s\n' "$java_files" | while IFS= read -r java_file; do
+    [ -n "$java_file" ] || continue
+    [ -f "$java_file" ] || continue
+    git add -- "$java_file"
+  done
+
+  "$gradle_cmd" compileJava compileTestJava
+fi
+# coding-conventions:end java-gradle

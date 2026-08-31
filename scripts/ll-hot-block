@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Render the effective eight-line hot block from an LL contract and ledger."""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+from ll_contract_file import load_path, render_hot_block
+
+
+def fail(message: str) -> int:
+    print(f"ERROR {message}", file=sys.stderr)
+    return 1
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("ll_file", help="exact legacy JSON or segmented .ll path")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    path = Path(args.ll_file).expanduser().resolve()
+    verifier = Path(__file__).with_name("verify-ll-contract")
+    verified = subprocess.run(
+        [str(verifier), str(path)], check=False, capture_output=True, text=True)
+    if verified.returncode != 0:
+        detail = verified.stdout.strip() or verified.stderr.strip()
+        return fail(f"contract verification failed: {detail}")
+    try:
+        document = load_path(path)
+        print("\n".join(render_hot_block(document, path)))
+    except (OSError, ValueError) as exc:
+        return fail(str(exc))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

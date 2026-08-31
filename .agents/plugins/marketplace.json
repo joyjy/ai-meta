@@ -1,0 +1,20 @@
+{
+  "name": "ai-meta",
+  "interface": {
+    "displayName": "AI Meta"
+  },
+  "plugins": [
+    {
+      "name": "ai-meta-route-context",
+      "source": {
+        "source": "local",
+        "path": "./plugins/route-context"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

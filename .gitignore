@@ -1,0 +1,15 @@
+# .ai 是 ~/.ai/ 的软链，内容不纳入版本管理
+.ai
+__pycache__/
+.playwright-cli/
+tmp/
+
+# Local experiments no longer published as repo features
+/index.md
+docs/plan/
+agent-frictions.md
+
+# Codex local plugin marketplace manifest for this repo.
+!.agents/
+!.agents/plugins/
+!.agents/plugins/marketplace.json
