@@ -6,6 +6,13 @@
 
 ## Watch
 
+### save-context.route.default-before-context-read
+
+- 首次证据：2026-08-31，在 `amt` checkpoint 中先按项目默认值选择 `amt:mainline`，读取既有 `context.v2` 后才发现 `next_route: insight` 并改为 `amt:insight`。
+- 最近证据：2026-08-31。
+- 独立 occurrence：1 session / 1 project。
+- 下次命中：若来自独立 session 或 project，更新 occurrence 并评估 temporary pitfall；未显式给出 workstream 时，先读取既有 context 的 route index 与 `next_route`，再决定 mainline 或 workstream。
+
 ### text.patch.legacy-eof-whitespace-collateral
 
 - 首次证据：2026-08-05，在 `iam-idaas-mgmt-api` 修改 legacy RST scope 文本时，通用 patch 顺带为多个文件补 EOF newline，并改变一个文件的末尾空行；用户在 MR 中指出 whitespace diff 后，才按 merge base 恢复 8 个纯 whitespace hunk。
