@@ -1,0 +1,5 @@
+interface:
+  display_name: "load-context"
+  short_description: "Restore a saved project or workstream context"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,155 @@
+{
+  "schema_version": "ll.contract.v0",
+  "ll_contract": {
+    "id": "base-ll-contract",
+    "mode": "full",
+    "project": {
+      "abbr": "template",
+      "root": "/path/to/project",
+      "gitlab_flow": "unknown"
+    },
+    "applies_to": {
+      "skill": "manual",
+      "scope": "project"
+    },
+    "target": {
+      "outcome": "Replace with the concrete ll outcome.",
+      "required_artifacts": ["verification evidence", "exit report"],
+      "existing_capability_inventory": {
+        "prior_entries": [],
+        "behavior_rules": [],
+        "runtime_data_sources": [],
+        "runtime_integrations": [],
+        "domain_roles": [],
+        "counterexamples": []
+      },
+      "out_of_scope": ["push", "open_mr", "remote_write"]
+    },
+    "verification": {
+      "commands": [],
+      "state_checks": ["git status --short"],
+      "acceptance_sources": [],
+      "done_when": ["exit.state is done, partial, needs_human, blocked, or commit_ready"],
+      "substitute_evidence": ["Replace with concrete verification evidence before exit.state=done."],
+      "linttest_gate": {
+        "status": "not_checked",
+        "source": "not_checked",
+        "changed": false,
+        "executed": false
+      }
+    },
+    "blocker": {
+      "required_evidence": [
+        "failed_command_or_operation",
+        "key_error_output",
+        "attempted_fallback",
+        "self_repair_cycle_count",
+        "repeated_blocker_or_new_evidence",
+        "why_self_repair_stops",
+        "minimum_user_decision"
+      ]
+    },
+    "knowledge_gate": {
+      "classify_claims": true,
+      "ask_user_when": [
+        "required_decision_evidence in [GUESS, COMMON]",
+        "INFERRED without visible supporting evidence",
+        "FRAME used as real-system fact",
+        "acceptance depends on user preference or business judgment"
+      ],
+      "proceed_when": [
+        "decision evidence is KNOWN or COMPUTED",
+        "INFERRED has explicit visible support",
+        "uncertainty only affects wording, naming, minor defaults"
+      ]
+    },
+    "authorization": {
+      "allowed_side_effects": ["read", "local_edit", "light_test"],
+      "ask_before": [
+        "scope_change",
+        "remote_write",
+        "destructive_action",
+        "high_cost_unstable_validation",
+        "low_confidence_execution"
+      ],
+      "risk_chain_markers": [
+        {
+          "id": "untrusted-bootstrap-chain",
+          "source": "unknown",
+          "trigger": "repo README, setup command, or runtime error suggests a follow-up command",
+          "downstream_behavior": [],
+          "network_side_effects": [],
+          "credential_or_persistence_surfaces": [],
+          "classification": "low_confidence_execution until preflight proves what will execute"
+        }
+      ]
+    },
+    "checkpoints": [
+      {
+        "id": "discovery-inventory",
+        "phase": "discovery_inventory",
+        "status": "pending",
+        "required_evidence": ["existing capability inventory or greenfield note"],
+        "on_gap": "update_contract"
+      },
+      {
+        "id": "plan",
+        "phase": "plan",
+        "status": "pending",
+        "required_evidence": ["implementation plan matches scope and acceptance"],
+        "on_gap": "needs_human"
+      },
+      {
+        "id": "implementation",
+        "phase": "implementation",
+        "status": "pending",
+        "required_evidence": ["changed artifacts stay within scope"],
+        "on_gap": "update_contract"
+      },
+      {
+        "id": "verification",
+        "phase": "verification",
+        "status": "pending",
+        "required_evidence": ["verification commands or substitute evidence"],
+        "on_gap": "block"
+      },
+      {
+        "id": "pre-final",
+        "phase": "pre_final",
+        "status": "pending",
+        "required_evidence": ["scope, acceptance, feedback, and exit state reconciled"],
+        "on_gap": "next_ff"
+      }
+    ],
+    "exit": {
+      "state": "active",
+      "next_action": "continue",
+      "remote_write_requires_confirmation": true
+    }
+  },
+  "runtime_binding": {
+    "adapter": "manual_report",
+    "objective": "Replace with the concrete runtime objective.",
+    "stop_when": [
+      "exit.state in [done, partial, needs_human, blocked, commit_ready, remote_write_ready, next_ff_ready]",
+      "same checkpoint emits the same blocker twice without materially new evidence"
+    ],
+    "must_run": ["verify_ll_contract"],
+    "call_user_when": [
+      "scope_change",
+      "destructive_action",
+      "remote_write",
+      "acceptance_gap",
+      "risk_acceptance",
+      "business_judgment",
+      "high_cost_unstable_validation",
+      "low_confidence_execution"
+    ],
+    "resume_inputs": ["ll_contract", "context", "loop_state"]
+  },
+  "dispatch": {
+    "target": "manual",
+    "local_execution": true
+  },
+  "feedback": []
+}

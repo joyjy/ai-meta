@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""Initialize, append to, and inspect a single-file segmented LL ledger."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ll_contract_file import (
+    LEDGER_MARKER,
+    load_path,
+    render_hot_block,
+    render_segmented,
+)
+
+
+MIGRATED_AUDIT_FEEDBACK_TYPES = {
+    "loop_process_gap", "tool_route_friction", "doc_rule_gap"
+}
+
+
+def fail(message: str) -> int:
+    print(f"ERROR {message}", file=sys.stderr)
+    return 1
+
+
+def verifier() -> Path:
+    return Path(__file__).with_name("verify-ll-contract")
+
+
+def verify(path: Path) -> tuple[bool, str]:
+    result = subprocess.run(
+        [str(verifier()), str(path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    detail = result.stdout.strip() or result.stderr.strip()
+    return result.returncode == 0, detail
+
+
+def init_ledger(source: Path, output: Path) -> int:
+    ok, detail = verify(source)
+    if not ok:
+        return fail(f"source contract verification failed: {detail}")
+    try:
+        document = load_path(source)
+    except (OSError, ValueError) as exc:
+        return fail(str(exc))
+    if document.segmented:
+        return fail("source is already a segmented LL file")
+    if output.exists() and output != source:
+        return fail(f"output already exists; refusing to overwrite: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        content = render_segmented(document.contract, output)
+    except ValueError as exc:
+        return fail(str(exc))
+    with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=output.parent, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+    try:
+        ok, detail = verify(tmp_path)
+        if not ok:
+            return fail(f"segmented contract verification failed: {detail}")
+        tmp_path.replace(output)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+    print(output.resolve())
+    return 0
+
+
+def read_event(path: Path) -> dict:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("event root must be an object")
+    value.setdefault("schema", "ll.event.v1")
+    value.setdefault("at", datetime.now(timezone.utc).isoformat())
+    item = value.get("item") if value.get("type") == "feedback" else None
+    if (isinstance(item, dict) and
+            item.get("type") in MIGRATED_AUDIT_FEEDBACK_TYPES):
+        raise ValueError(
+            f"{item.get('type')} moved to independent agent.audit.v1; "
+            "LL feedback accepts current-task corrections only")
+    return value
+
+
+def changes_goal_contract(patch: object) -> bool:
+    if not isinstance(patch, dict):
+        return False
+    ll = patch.get("ll_contract")
+    if isinstance(ll, dict) and any(
+            key in ll for key in {"target", "verification", "authorization"}):
+        return True
+    runtime = patch.get("runtime_binding")
+    return isinstance(runtime, dict) and any(
+        key in runtime for key in {"objective", "call_user_when", "continuation"})
+
+
+def append_event(ledger: Path, event_path: Path) -> int:
+    try:
+        document = load_path(ledger)
+        event = read_event(event_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return fail(str(exc))
+    if not document.segmented:
+        return fail("append requires a segmented LL file")
+    if (event.get("type") == "root_amendment"
+            and document.contract.get("runtime_binding", {}).get(
+                "adapter") == "codex_goal"):
+        return fail(
+            "a bound Codex goal cannot be amended in place; compile a new FF, "
+            "initialize a new LL, and bind a new Codex goal")
+    if (event.get("type") == "contract_patch"
+            and document.contract.get("runtime_binding", {}).get(
+                "adapter") == "codex_goal"
+            and changes_goal_contract(event.get("patch"))):
+        return fail(
+            "structural contract changes cannot rebind an active Codex goal; "
+            "compile a new FF, initialize a new LL, and bind a new Codex goal")
+    event_line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+    original = ledger.read_text(encoding="utf-8")
+    candidate = original + ("" if original.endswith("\n") else "\n") + event_line + "\n"
+    with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=ledger.parent, delete=False) as tmp:
+        tmp.write(candidate)
+        tmp_path = Path(tmp.name)
+    try:
+        try:
+            candidate_document = load_path(tmp_path)
+            render_hot_block(candidate_document, ledger)
+        except (OSError, ValueError) as exc:
+            return fail(f"E_HOT_BLOCK event would invalidate hot block: {exc}")
+        ok, detail = verify(tmp_path)
+        if not ok:
+            return fail(f"event would invalidate contract: {detail}")
+        with ledger.open("a", encoding="utf-8") as handle:
+            if original and not original.endswith("\n"):
+                handle.write("\n")
+            handle.write(event_line + "\n")
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+    print(f"appended {event.get('type', 'unknown')} event")
+    return 0
+
+
+def tail_events(ledger: Path, count: int) -> int:
+    try:
+        text = ledger.read_text(encoding="utf-8")
+    except OSError as exc:
+        return fail(str(exc))
+    marker = f"{LEDGER_MARKER}\n"
+    if marker not in text:
+        return fail("not a segmented LL file")
+    event_lines = [line for line in text.split(marker, 1)[1].splitlines()
+                   if line.strip()]
+    for line in event_lines[-count:]:
+        print(line)
+    return 0
+
+
+def archive_ledger(ledger: Path, destination: str) -> int:
+    if not ledger.is_file():
+        return fail(f"ledger does not exist: {ledger}")
+    if ledger.suffix not in {".ll", ".json"}:
+        return fail("archive accepts only an exact .ll or legacy .json ledger")
+    ok, detail = verify(ledger)
+    if not ok:
+        return fail(f"ledger verification failed: {detail}")
+    target_dir = ledger.parent / destination
+    target = target_dir / ledger.name
+    if target.exists():
+        return fail(f"archive target already exists; refusing to overwrite: {target}")
+    sidecar = (ledger.with_suffix(".feedback.jsonl")
+               if ledger.suffix == ".json" else None)
+    sidecar_target = target_dir / sidecar.name if sidecar and sidecar.is_file() else None
+    if sidecar_target and sidecar_target.exists():
+        return fail(
+            f"archive sidecar target already exists; refusing to overwrite: {sidecar_target}")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(ledger), str(target))
+    if sidecar_target:
+        shutil.move(str(sidecar), str(sidecar_target))
+    print(json.dumps({
+        "ledger": str(target.resolve()),
+        "destination": destination,
+        "sidecar": str(sidecar_target.resolve()) if sidecar_target else None,
+    }, ensure_ascii=False))
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    init_parser = subparsers.add_parser("init")
+    init_parser.add_argument("source")
+    init_parser.add_argument("output", nargs="?")
+    append_parser = subparsers.add_parser("append")
+    append_parser.add_argument("ledger")
+    append_parser.add_argument("--event-file", required=True)
+    tail_parser = subparsers.add_parser("tail")
+    tail_parser.add_argument("ledger")
+    tail_parser.add_argument("--count", type=int, default=5)
+    archive_parser = subparsers.add_parser("archive")
+    archive_parser.add_argument("ledger")
+    archive_parser.add_argument(
+        "--destination", choices=["completed", "review"], required=True)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.command == "init":
+        source = Path(args.source).expanduser().resolve()
+        output = Path(args.output or args.source).expanduser().resolve()
+        return init_ledger(source, output)
+    if args.command == "append":
+        return append_event(
+            Path(args.ledger).expanduser().resolve(),
+            Path(args.event_file).expanduser().resolve(),
+        )
+    if args.command == "archive":
+        return archive_ledger(
+            Path(args.ledger).expanduser().resolve(), args.destination)
+    return tail_events(Path(args.ledger).expanduser().resolve(), args.count)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

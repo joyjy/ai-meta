@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Render the effective hot block or a compatibility brief for legacy JSON."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+from ll_contract_file import load_path, render_hot_block
+
+MAX_VALUE_CHARS = 220
+
+
+def fail(message: str) -> int:
+    print(f"ERROR {message}", file=sys.stderr)
+    return 1
+
+
+def get(data: dict[str, Any], path: str) -> Any:
+    current: Any = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def compact(value: Any, fallback: str = "无") -> str:
+    if isinstance(value, list):
+        text = "、".join(str(item).strip() for item in value if str(item).strip())
+    else:
+        text = " ".join(str(value or "").split())
+    if not text:
+        return fallback
+    if len(text) <= MAX_VALUE_CHARS:
+        return text
+    return text[:MAX_VALUE_CHARS - 1].rstrip() + "…"
+
+
+def current_checkpoint(data: dict[str, Any]) -> tuple[str, str]:
+    checkpoints = get(data, "ll_contract.checkpoints")
+    if isinstance(checkpoints, list):
+        for item in checkpoints:
+            if not isinstance(item, dict):
+                continue
+            if item.get("status") not in {"passed", "skipped"}:
+                phase = compact(item.get("phase"), "unknown")
+                evidence = item.get("required_evidence")
+                next_step = compact(evidence, "更新当前 checkpoint")
+                return phase, next_step
+    state = compact(get(data, "ll_contract.exit.state"), "unknown")
+    action = compact(get(data, "ll_contract.exit.next_action"), "report")
+    return f"terminal:{state}", action
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 1:
+        return fail("usage: ll-brief <ll-file>")
+
+    contract_path = Path(args[0]).expanduser().resolve()
+    if not contract_path.is_file():
+        return fail(f"contract does not exist: {contract_path}")
+
+    verifier = Path(__file__).with_name("verify-ll-contract")
+    verification = subprocess.run(
+        [str(verifier), str(contract_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if verification.returncode != 0:
+        detail = verification.stdout.strip() or verification.stderr.strip()
+        return fail(f"contract verification failed: {detail}")
+
+    try:
+        document = load_path(contract_path)
+        data = document.contract
+    except (OSError, ValueError) as exc:
+        return fail(f"cannot read contract: {exc}")
+
+    if document.segmented:
+        print("\n".join(render_hot_block(document, contract_path)))
+        return 0
+
+    checkpoints = get(data, "ll_contract.checkpoints")
+    checkpoint_items = checkpoints if isinstance(checkpoints, list) else []
+    completed = sum(
+        1 for item in checkpoint_items
+        if isinstance(item, dict) and item.get("status") in {"passed", "skipped"}
+    )
+    done_when = get(data, "ll_contract.verification.done_when")
+    done_count = len(done_when) if isinstance(done_when, list) else 0
+    phase, next_step = current_checkpoint(data)
+
+    ask_before = get(data, "ll_contract.authorization.ask_before")
+    call_user = get(data, "runtime_binding.call_user_when")
+    out_of_scope = get(data, "ll_contract.target.out_of_scope")
+    boundaries: list[str] = []
+    for value in [ask_before, call_user]:
+        if isinstance(value, list):
+            for item in value:
+                text = str(item).strip()
+                if text and text not in boundaries:
+                    boundaries.append(text)
+    boundary = f"ask={compact(boundaries)}；out={compact(out_of_scope)}"
+
+    lines = [
+        f"LL：{compact(get(data, 'll_contract.id'), 'unknown')} | {compact(get(data, 'll_contract.exit.state'), 'unknown')}",
+        f"目标：{compact(get(data, 'll_contract.target.outcome'))}",
+        f"当前：{phase}",
+        f"下一步：{next_step}",
+        f"范围：{compact(get(data, 'll_contract.target.required_artifacts'))}",
+        f"完成：{completed}/{len(checkpoint_items)} checkpoints；{done_count} 条 done_when",
+        f"边界：{compact(boundary)}",
+        f"状态：{contract_path}",
+    ]
+    print("\n".join(lines))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

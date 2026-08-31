@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+status=0
+
+frontmatter_has() {
+  local file="$1" expected="$2"
+  awk '
+    NR == 1 && $0 == "---" { in_frontmatter = 1; next }
+    in_frontmatter && $0 == "---" { exit }
+    in_frontmatter { print }
+  ' "$file" | grep -Fqx "$expected"
+}
+
+check_claude_entry() {
+  local relative="$1"
+  local file="$repo/$relative"
+  if frontmatter_has "$file" "disable-model-invocation: true"; then
+    echo "ok: Claude explicit-only -> $relative"
+  else
+    status=1
+    echo "missing Claude explicit-only policy: $relative" >&2
+  fi
+}
+
+check_codex_skill() {
+  local skill="$1"
+  local file="$repo/skills/$skill/agents/openai.yaml"
+  if grep -Eq '^policy:[[:space:]]*$' "$file" && grep -Eq '^[[:space:]]+allow_implicit_invocation:[[:space:]]*false[[:space:]]*$' "$file"; then
+    echo "ok: Codex explicit-only -> skills/$skill/agents/openai.yaml"
+  else
+    status=1
+    echo "missing Codex explicit-only policy: skills/$skill/agents/openai.yaml" >&2
+  fi
+}
+
+check_codex_interface() {
+  local skill="$1"
+  local file="$repo/skills/$skill/agents/openai.yaml"
+  if [ -f "$file" ] && grep -Eq '^interface:[[:space:]]*$' "$file" && grep -Eq '^[[:space:]]+display_name:[[:space:]]*.+$' "$file" && grep -Eq '^[[:space:]]+short_description:[[:space:]]*.+$' "$file"; then
+    echo "ok: Codex interface -> skills/$skill/agents/openai.yaml"
+  else
+    status=1
+    echo "missing Codex interface metadata: skills/$skill/agents/openai.yaml" >&2
+  fi
+}
+
+check_skill_identity() {
+  local skill="$1"
+  local skill_file="$repo/skills/$skill/SKILL.md"
+  local interface_file="$repo/skills/$skill/agents/openai.yaml"
+  local first_h1
+  local valid=1
+
+  if [[ ! "$skill" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+    status=1
+    valid=0
+    echo "invalid canonical skill id: $skill" >&2
+    return
+  fi
+  case "$skill" in
+    cc|dd|ee|ff|ll|rr)
+      status=1
+      valid=0
+      echo "user invocation alias cannot be a canonical skill id: $skill" >&2
+      ;;
+  esac
+  if ! frontmatter_has "$skill_file" "name: $skill"; then
+    status=1
+    valid=0
+    echo "skill name must match directory: skills/$skill/SKILL.md" >&2
+  fi
+  first_h1="$(grep -m1 '^# ' "$skill_file" || true)"
+  if [ "$first_h1" != "# $skill" ]; then
+    status=1
+    valid=0
+    echo "skill H1 must equal canonical id: skills/$skill/SKILL.md" >&2
+  fi
+  if ! grep -Fqx "  display_name: \"$skill\"" "$interface_file"; then
+    status=1
+    valid=0
+    echo "skill display_name must equal canonical id: skills/$skill/agents/openai.yaml" >&2
+  fi
+  if grep -Eq '^[[:space:]]+default_prompt:' "$interface_file" && ! grep -Fq "\$$skill" "$interface_file"; then
+    status=1
+    valid=0
+    echo "skill default_prompt must invoke canonical id: skills/$skill/agents/openai.yaml" >&2
+  fi
+  if [ "$valid" -eq 1 ]; then
+    echo "ok: canonical skill identity -> $skill"
+  fi
+}
+
+check_implicit_skill() {
+  local skill="$1"
+  local purpose="$2"
+  local skill_file="$repo/skills/$skill/SKILL.md"
+  local interface_file="$repo/skills/$skill/agents/openai.yaml"
+  local valid=1
+
+  if frontmatter_has "$skill_file" "disable-model-invocation: true"; then
+    status=1
+    valid=0
+    echo "$skill must remain available for $purpose" >&2
+  fi
+  if [ -f "$interface_file" ] && grep -Eq '^[[:space:]]+allow_implicit_invocation:[[:space:]]*false[[:space:]]*$' "$interface_file"; then
+    status=1
+    valid=0
+    echo "$skill must remain available for Codex implicit invocation" >&2
+  fi
+  if [ "$valid" -eq 1 ]; then
+    echo "ok: $skill remains implicitly invocable"
+  fi
+}
+
+all_skills=()
+for skill_file in "$repo"/skills/*/SKILL.md; do
+  all_skills+=("$(basename "$(dirname "$skill_file")")")
+done
+for skill in "${all_skills[@]}"; do
+  check_codex_interface "$skill"
+  check_skill_identity "$skill"
+done
+
+explicit_skills=(engineering-exit load-context loop-ledger save-context)
+for skill in "${explicit_skills[@]}"; do
+  check_claude_entry "skills/$skill/SKILL.md"
+  check_codex_skill "$skill"
+done
+
+for command in ee ll load-context save-context; do
+  check_claude_entry "commands/$command.md"
+done
+
+check_implicit_skill "agent-doc-hygiene" "semantic and engineering-exit invocation"
+check_implicit_skill "grill" "semantic and proactive invocation"
+check_implicit_skill "review-router" "semantic and proactive invocation"
+check_implicit_skill "steelman" "semantic and proactive invocation"
+
+exit "$status"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "final-form"
+  short_description: "Turn intent into an executable specification"
+  default_prompt: "Use $final-form to turn this request into an executable final-form."

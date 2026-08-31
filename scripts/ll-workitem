@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Compile a dispatch-ready WorkItem FF payload into a segmented LL file."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from ll_compiler import compile_contract as compile_ff_contract
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+LEDGER = SCRIPT_DIR / "ll-ledger"
+VERIFIER = SCRIPT_DIR / "verify-ll-contract"
+
+
+def fail(message: str) -> int:
+    print(f"ERROR {message}", file=sys.stderr)
+    return 1
+
+
+def read_object(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("input root must be an object")
+    return value
+
+
+def compile_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    return compile_ff_contract(payload, workitem=True)
+
+
+def run_checked(command: list[str]) -> None:
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip() or result.stdout.strip())
+
+
+def init_workitem(input_path: Path, output: Path) -> int:
+    try:
+        contract = compile_contract(read_object(input_path))
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json",
+                                         delete=False) as handle:
+            json.dump(contract, handle, ensure_ascii=False, indent=2)
+            source = Path(handle.name)
+        try:
+            run_checked([str(VERIFIER), str(source)])
+            run_checked([str(LEDGER), "init", str(source), str(output)])
+        finally:
+            source.unlink(missing_ok=True)
+        print(json.dumps({"path": str(output.resolve())}, ensure_ascii=False))
+        return 0
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return fail(str(exc))
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "Input JSON requires id plus ff.goal, non-empty ff.acceptance, "
+            "ff.ready_for_dispatch=true, and empty ff.blocking_questions. "
+            "Use ll-turn after initialization to compile runtime results."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    init_parser = subparsers.add_parser(
+        "init", help="compile one WorkItem FF payload into a new LL ledger")
+    init_parser.add_argument("ledger", help="new segmented .ll output path")
+    init_parser.add_argument("--input", required=True, help="WorkItem JSON path")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    ledger = Path(args.ledger).expanduser().resolve()
+    input_path = Path(args.input).expanduser().resolve()
+    return init_workitem(input_path, ledger)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

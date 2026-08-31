@@ -1,0 +1,920 @@
+#!/usr/bin/env python3
+"""Lint GitLab project settings for local repo workflows."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
+
+FLOWS = {"l1", "l2", "l3"}
+SQUASH_POLICIES = {"required", "default-on", "default-off", "disabled"}
+BASELINE_SQUASH_POLICIES = {"required", "default-on"}
+DEFAULT_BASELINE_SQUASH_POLICY = "default-on"
+SQUASH_VALUES = {
+    "required": "always",
+    "default-on": "default_on",
+    "default-off": "default_off",
+    "disabled": "never",
+}
+SQUASH_ALLOWED_VALUES = {
+    "required": {"always", "default_on"},
+    "default-on": {"always", "default_on"},
+    "default-off": {"default_off"},
+    "disabled": {"never"},
+}
+COMMON_PROJECT_SETTINGS = {
+    "merge_method": "ff",
+    "only_allow_merge_if_pipeline_succeeds": True,
+    "allow_merge_on_skipped_pipeline": False,
+    "remove_source_branch_after_merge": True,
+    "only_allow_merge_if_all_discussions_are_resolved": True,
+}
+APPROVAL_SETTINGS = {
+    "approvals_before_merge": 0,
+    "reset_approvals_on_push": True,
+    "disable_overriding_approvers_per_merge_request": True,
+    "merge_requests_author_approval": False,
+    "merge_requests_disable_committers_approval": False,
+    "require_password_to_approve": False,
+    "require_reauthentication_to_approve": False,
+}
+ALL_MEMBERS_RULE_SETTINGS = {
+    "rule_type": "any_approver",
+    "approvals_required": 1,
+    "applies_to_all_protected_branches": False,
+}
+PROTECTED_BRANCH_SETTINGS = {
+    "merge_access_level": 30,
+    "push_access_level": 0,
+}
+PUSH_RULE_SETTINGS = {
+    "branch_name_regex": r"^(epic|feat|fix|test|doc|proposal)-",
+}
+GLOBAL_PUSH_USER_EXCEPTIONS = {
+    "Arch-CICD-Worker",
+    "Pro-CI-Bot",
+}
+WARN_FINDINGS = {
+    ("project", "only_allow_merge_if_pipeline_succeeds"),
+    ("approval_rules", "All Members"),
+    ("approval_rules", "All Members.approvals_required"),
+}
+
+
+@dataclass(frozen=True)
+class Finding:
+    area: str
+    field: str
+    actual: Any
+    expected: Any
+
+    @property
+    def level(self) -> str:
+        return "WARN" if (self.area, self.field) in WARN_FINDINGS else "ERROR"
+
+
+def run(cmd: list[str]) -> str:
+    proc = subprocess.run(cmd, text=True, capture_output=True, check=False)
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip()
+        raise RuntimeError(f"{' '.join(cmd)} failed: {detail}")
+    return proc.stdout
+
+
+def repo_from_remote(remote: str) -> str:
+    value = remote.strip()
+    if not value:
+        return ""
+    value = re.sub(r"^git@[^:]+:", "", value)
+    value = re.sub(r"^https?://[^/]+/", "", value)
+    value = re.sub(r"\.git$", "", value)
+    return value
+
+
+def find_upwards(start: Path, name: str) -> Path | None:
+    current = start.resolve()
+    if current.is_file():
+        current = current.parent
+    while True:
+        candidate = current / name
+        if candidate.is_file():
+            return candidate
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def frontmatter(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        return {}
+    end = text.find("\n---", 4)
+    if end < 0:
+        return {}
+    lines = text[4:end].splitlines()
+    result: dict[str, Any] = {}
+    section: str | None = None
+    for raw in lines:
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if not raw.startswith((" ", "\t")) and ":" in raw:
+            key, value = raw.split(":", 1)
+            key = key.strip()
+            value = value.strip().strip('"\'')
+            if value:
+                result[key] = parse_yaml_value(value)
+                section = None
+            else:
+                result[key] = {}
+                section = key
+        elif section and ":" in raw:
+            key, value = raw.split(":", 1)
+            nested = result.setdefault(section, {})
+            if isinstance(nested, dict):
+                nested[key.strip()] = parse_yaml_value(value.strip())
+    return result
+
+
+def split_frontmatter(text: str) -> tuple[str, str]:
+    if not text.startswith("---\n"):
+        return "", text
+    end = text.find("\n---", 4)
+    if end < 0:
+        return "", text
+    return text[4:end], text[end + len("\n---"):]
+
+
+def frontmatter_lines(path: Path) -> list[str]:
+    raw, _body = split_frontmatter(path.read_text(encoding="utf-8"))
+    return raw.splitlines() if raw else []
+
+
+def normalize_repo_path(value: str) -> str:
+    if not value:
+        return ""
+    return str(Path(value).expanduser().resolve())
+
+
+def git_value(cwd: Path, *args: str) -> str:
+    try:
+        return run(["git", "-C", str(cwd), *args]).strip()
+    except (OSError, RuntimeError):
+        return ""
+
+
+def git_common_dir(cwd: Path) -> str:
+    value = git_value(cwd, "rev-parse", "--path-format=absolute",
+                      "--git-common-dir")
+    if not value:
+        return ""
+    path = Path(value).expanduser()
+    return normalize_repo_path(value) if path.is_dir() else ""
+
+
+def repo_identity(entry: dict[str, Any]) -> tuple[str, str, str]:
+    entry_path = str(entry.get("path") or "").strip()
+    normalized_path = normalize_repo_path(entry_path) if entry_path else ""
+    common_dir = git_common_dir(Path(normalized_path)) if normalized_path else ""
+    explicit_remote = str(
+        entry.get("repo") or entry.get("remote") or entry.get("url") or
+        "").strip()
+    remote = repo_from_remote(explicit_remote)
+    if not remote and normalized_path:
+        remote = repo_from_remote(
+            git_value(Path(normalized_path), "config", "--get",
+                      "remote.origin.url"))
+    return normalized_path, common_dir, remote
+
+
+def parse_yaml_scalar(value: str) -> Any:
+    text = value.strip().rstrip(",")
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        if text[0] == '"':
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return text[1:-1]
+        return text[1:-1]
+    if text == "true":
+        return True
+    if text == "false":
+        return False
+    if re.fullmatch(r"-?\d+", text):
+        return int(text)
+    return text
+
+
+def split_inline_mapping_items(value: str) -> list[str]:
+    items: list[str] = []
+    current: list[str] = []
+    quote_char = ""
+    escape_next = False
+    for char in value:
+        if escape_next:
+            current.append(char)
+            escape_next = False
+            continue
+        if quote_char:
+            current.append(char)
+            if quote_char == '"' and char == "\\":
+                escape_next = True
+            elif char == quote_char:
+                quote_char = ""
+            continue
+        if char in {"'", '"'}:
+            quote_char = char
+            current.append(char)
+            continue
+        if char == ",":
+            items.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    if current:
+        items.append("".join(current).strip())
+    return [item for item in items if item]
+
+
+def parse_inline_mapping(value: str) -> dict[str, Any]:
+    text = value.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return {}
+    result: dict[str, Any] = {}
+    for item in split_inline_mapping_items(text[1:-1]):
+        if ":" not in item:
+            continue
+        key, item_value = item.split(":", 1)
+        result[key.strip()] = parse_yaml_scalar(item_value)
+    return result
+
+
+def parse_yaml_value(value: str) -> Any:
+    text = value.strip()
+    inline_mapping = parse_inline_mapping(text)
+    if inline_mapping:
+        return inline_mapping
+    return parse_yaml_scalar(text)
+
+
+def parse_repo_entries(path: Path | None) -> list[dict[str, Any]]:
+    if not path:
+        return []
+    lines = frontmatter_lines(path)
+    entries: list[dict[str, Any]] = []
+    in_repos = False
+    current: dict[str, Any] | None = None
+    nested: str | None = None
+    for line in lines:
+        if not in_repos:
+            if line.strip() == "repos:":
+                in_repos = True
+            continue
+        if line and not line.startswith((" ", "\t")):
+            break
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("- "):
+            current = {}
+            entries.append(current)
+            nested = None
+            remainder = stripped[2:]
+            if ":" in remainder:
+                key, value = remainder.split(":", 1)
+                current[key.strip()] = parse_yaml_value(value.strip())
+            continue
+        if current is None or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        indent = len(line) - len(line.lstrip(" "))
+        if indent <= 4:
+            if value:
+                current[key] = parse_yaml_value(value)
+                nested = None
+            else:
+                current[key] = {}
+                nested = key
+        elif nested:
+            section = current.setdefault(nested, {})
+            if isinstance(section, dict):
+                section[key] = parse_yaml_value(value)
+    return entries
+
+
+def repo_entry_match_rank(entry: dict[str, Any], cwd: Path, repo: str) -> int:
+    entry_path, entry_common_dir, entry_repo = repo_identity(entry)
+    cwd_path = normalize_repo_path(str(cwd))
+    if entry_path and entry_path == cwd_path:
+        return 3
+    cwd_common_dir = git_common_dir(cwd)
+    if (entry_common_dir and cwd_common_dir
+            and entry_common_dir == cwd_common_dir):
+        return 2
+    if entry_repo and repo and entry_repo == repo:
+        return 1
+    return 0
+
+
+def repo_entry_matches(entry: dict[str, Any], cwd: Path, repo: str) -> bool:
+    return repo_entry_match_rank(entry, cwd, repo) > 0
+
+
+def selected_repo_entry(path: Path | None, cwd: Path,
+                        repo: str) -> dict[str, Any] | None:
+    entries = parse_repo_entries(path)
+    if not entries:
+        return None
+    ranked = [(repo_entry_match_rank(entry, cwd, repo), entry)
+              for entry in entries]
+    best_rank = max((rank for rank, _entry in ranked), default=0)
+    matches = [entry for rank, entry in ranked if rank == best_rank]
+    if best_rank and len(matches) == 1:
+        return matches[0]
+    return entries[0] if len(entries) == 1 else None
+
+
+def repo_resolution(path: Path | None, cwd: Path,
+                    repo: str) -> dict[str, Any]:
+    entry = selected_repo_entry(path, cwd, repo)
+    nested = entry.get("gitlab") if entry else None
+    gitlab = nested if isinstance(nested, dict) else {}
+    return {
+        "repo": repo,
+        "source_root": str(cwd),
+        "index": str(path) if path else "",
+        "matched": entry is not None,
+        "matched_path": str(entry.get("path") or "") if entry else "",
+        "gitlab": {
+            "flow": str(gitlab.get("flow") or ""),
+            "squash": str(gitlab.get("squash") or ""),
+            "lint": str(gitlab.get("lint") or ""),
+        },
+    }
+
+
+def yaml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    text = str(value)
+    if not text or re.search(r"[:#\[\]{},&*?!|>'\"%@`]", text):
+        return json.dumps(text, ensure_ascii=False)
+    return text
+
+
+def gitlab_lint_value(status: str) -> str:
+    return f"{status}@{datetime.now(timezone.utc).date().isoformat()}"
+
+
+def gitlab_inline_mapping(values: dict[str, Any]) -> str:
+    return "{" + ", ".join(
+        f"{key}: {yaml_scalar(value)}" for key, value in values.items()) + "}"
+
+
+def upsert_frontmatter_section(path: Path, section: str,
+                               values: dict[str, Any]) -> None:
+    text = path.read_text(encoding="utf-8")
+    raw_frontmatter, body = split_frontmatter(text)
+    lines = raw_frontmatter.splitlines() if raw_frontmatter else []
+    if not lines:
+        lines = []
+    section_start: int | None = None
+    section_end = len(lines)
+    for index, line in enumerate(lines):
+        if not line.startswith((" ", "\t")) and line.split(
+                ":", 1)[0].strip() == section and ":" in line:
+            section_start = index
+            for cursor in range(index + 1, len(lines)):
+                if lines[cursor] and not lines[cursor].startswith((" ", "\t")):
+                    section_end = cursor
+                    break
+            break
+    existing: dict[str, str] = {}
+    if section_start is not None:
+        header = lines[section_start].split(":", 1)[1].strip()
+        existing.update(parse_inline_mapping(header))
+        for line in lines[section_start + 1:section_end]:
+            if line.startswith((" ", "\t")) and ":" in line:
+                key, value = line.split(":", 1)
+                existing[key.strip()] = parse_yaml_value(value.strip())
+    for key, value in values.items():
+        existing[key] = value
+    if section == "gitlab":
+        section_lines = [f"{section}: {gitlab_inline_mapping(existing)}"]
+    else:
+        section_lines = [f"{section}:"] + [
+            f"  {key}: {yaml_scalar(value)}" for key, value in existing.items()
+        ]
+    if section_start is None:
+        lines.extend(section_lines)
+    else:
+        lines = [*lines[:section_start], *section_lines, *lines[section_end:]]
+    path.write_text("---\n" + "\n".join(lines).rstrip() + "\n---" + body,
+                    encoding="utf-8")
+
+
+def gitlab_config_from_index(path: Path | None) -> tuple[str, str]:
+    if not path:
+        return "", ""
+    data = frontmatter(path)
+    nested = data.get("gitlab")
+    if isinstance(nested, dict):
+        return (
+            str(nested.get("flow") or "").strip(),
+            str(nested.get("squash") or "").strip(),
+        )
+    return "", ""
+
+
+def gitlab_config_for_repo(path: Path | None, cwd: Path,
+                           repo: str) -> tuple[str, str]:
+    entry = selected_repo_entry(path, cwd, repo)
+    nested = entry.get("gitlab") if entry else None
+    if isinstance(nested, dict):
+        return (
+            str(nested.get("flow") or "").strip(),
+            str(nested.get("squash") or "").strip(),
+        )
+    return gitlab_config_from_index(path)
+
+
+def lint_status(flow: str, findings: list[Finding]) -> str:
+    if flow == "l3":
+        return "SKIP"
+    if not findings:
+        return "PASS"
+    has_error = any(finding.level == "ERROR" for finding in findings)
+    if flow == "l1":
+        return "CHANGE"
+    return "CHANGE" if has_error else "WARN"
+
+
+def glab_json(endpoint: str, hostname: str = "") -> Any:
+    cmd = ["glab", "api", endpoint]
+    if hostname:
+        cmd.extend(["--hostname", hostname])
+    return json.loads(run(cmd))
+
+
+def project_endpoint(repo: str) -> str:
+    return f"projects/{quote(repo, safe='')}"
+
+
+def check_project(project: dict[str, Any], squash: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for field, expected in COMMON_PROJECT_SETTINGS.items():
+        actual = project.get(field)
+        if actual != expected:
+            findings.append(Finding("project", field, actual, expected))
+    squash_actual = project.get("squash_option")
+    expected_values = SQUASH_ALLOWED_VALUES[squash]
+    if squash_actual not in expected_values:
+        expected_value = SQUASH_VALUES[squash]
+        findings.append(
+            Finding("project", "squash_option", squash_actual, expected_value))
+    return findings
+
+
+def check_approvals(approvals: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
+    for field, expected in APPROVAL_SETTINGS.items():
+        actual = approvals.get(field)
+        if actual != expected:
+            findings.append(Finding("approvals", field, actual, expected))
+    return findings
+
+
+def check_approval_rules(rules: list[dict[str, Any]]) -> list[Finding]:
+    rule = next((item for item in rules if item.get("name") == "All Members"),
+                None)
+    if not rule:
+        return [
+            Finding("approval_rules", "All Members", None,
+                    "approvals_required=1")
+        ]
+    findings: list[Finding] = []
+    for field, expected in ALL_MEMBERS_RULE_SETTINGS.items():
+        actual = rule.get(field)
+        if actual != expected:
+            findings.append(
+                Finding("approval_rules", f"All Members.{field}", actual,
+                        expected))
+    return findings
+
+
+def check_push_rule(push_rule: dict[str, Any] | None) -> list[Finding]:
+    actual_rule = push_rule or {}
+    findings: list[Finding] = []
+    for field, expected in PUSH_RULE_SETTINGS.items():
+        actual = actual_rule.get(field)
+        if actual != expected:
+            findings.append(Finding("push_rule", field, actual, expected))
+    return findings
+
+
+def access_level_value(levels: Any) -> str | None:
+    if not isinstance(levels, list) or not levels:
+        return None
+    values = [
+        level.get("access_level")
+        for level in levels
+        if isinstance(level, dict)
+    ]
+    values = [value for value in values if value is not None]
+    if not values:
+        return None
+    return ",".join(str(value) for value in sorted(values))
+
+
+def push_access_entry_label(level: dict[str, Any]) -> str:
+    for key in ("user_name", "username", "name"):
+        value = str(level.get(key) or "").strip()
+        if value:
+            return value
+    description = str(level.get("access_level_description") or "").strip()
+    if description:
+        return description
+    user_id = level.get("user_id")
+    if user_id is not None:
+        return f"user:{user_id}"
+    group_id = level.get("group_id")
+    if group_id is not None:
+        return f"group:{group_id}"
+    deploy_key_id = level.get("deploy_key_id")
+    if deploy_key_id is not None:
+        return f"deploy_key:{deploy_key_id}"
+    access_level = level.get("access_level")
+    return str(access_level) if access_level is not None else "unknown"
+
+
+def push_access_value(levels: Any) -> str | None:
+    if not isinstance(levels, list) or not levels:
+        return None
+    unexpected: list[str] = []
+    saw_access_entry = False
+    for level in levels:
+        if not isinstance(level, dict):
+            continue
+        saw_access_entry = True
+        if level.get("access_level") == 0:
+            continue
+        label = push_access_entry_label(level)
+        if (level.get("user_id") is not None
+                and label in GLOBAL_PUSH_USER_EXCEPTIONS):
+            continue
+        unexpected.append(label)
+    if unexpected:
+        return ",".join(sorted(unexpected))
+    return "0" if saw_access_entry else None
+
+
+def check_protected_branches(
+        project: dict[str, Any],
+        protected_branches: list[dict[str, Any]]) -> list[Finding]:
+    default_branch = project.get("default_branch")
+    if not default_branch:
+        return [
+            Finding("protected_branches", "default_branch", None,
+                    "$default_branch")
+        ]
+
+    branch = next((item for item in protected_branches
+                   if item.get("name") == default_branch), None)
+    if not branch:
+        return [
+            Finding("protected_branches", f"{default_branch}.name", None,
+                    default_branch),
+            Finding("protected_branches",
+                    f"{default_branch}.merge_access_level", None,
+                    PROTECTED_BRANCH_SETTINGS["merge_access_level"]),
+            Finding("protected_branches", f"{default_branch}.push_access_level",
+                    None, PROTECTED_BRANCH_SETTINGS["push_access_level"]),
+        ]
+
+    findings: list[Finding] = []
+    actual_merge = access_level_value(branch.get("merge_access_levels"))
+    expected_merge = str(PROTECTED_BRANCH_SETTINGS["merge_access_level"])
+    if actual_merge != expected_merge:
+        findings.append(
+            Finding("protected_branches",
+                    f"{default_branch}.merge_access_level", actual_merge,
+                    PROTECTED_BRANCH_SETTINGS["merge_access_level"]))
+
+    actual_push = push_access_value(branch.get("push_access_levels"))
+    expected_push = str(PROTECTED_BRANCH_SETTINGS["push_access_level"])
+    if actual_push != expected_push:
+        findings.append(
+            Finding("protected_branches", f"{default_branch}.push_access_level",
+                    actual_push,
+                    PROTECTED_BRANCH_SETTINGS["push_access_level"]))
+    return findings
+
+
+def render_markdown(repo: str, flow: str, squash: str, index_path: Path | None,
+                    status: str, findings: list[Finding]) -> str:
+    lines = [
+        "# GitLab Project Lint",
+        "",
+        f"- repo: `{repo}`",
+        f"- flow: `{flow}`",
+    ]
+    if squash:
+        lines.append(f"- squash: `{squash}`")
+    if index_path:
+        lines.append(f"- index: `{index_path}`")
+    lines.append("")
+    lines.append(f"status: {status}")
+    if not findings:
+        return "\n".join(lines)
+    lines.append("")
+    for finding in findings:
+        lines.append(
+            f"- [{finding.level}] `{finding.area}.{finding.field}`: `{finding.actual}` -> `{finding.expected}`"
+        )
+    return "\n".join(lines)
+
+
+def write_lint_result(index_path: Path | None, repo: str, status: str,
+                      findings: list[Finding]) -> None:
+    if not index_path:
+        raise RuntimeError("--write-index requires an index.md path")
+    flow, squash = gitlab_config_from_index(index_path)
+    values = {}
+    if flow:
+        values["flow"] = flow
+    if squash:
+        values["squash"] = squash
+    values["lint"] = gitlab_lint_value(status)
+    upsert_frontmatter_section(index_path, "gitlab", values)
+
+
+def write_lint_values(
+    index_path: Path | None,
+    cwd: Path,
+    repo: str,
+    status: str,
+    findings: list[Finding],
+    extra_values: dict[str, Any] | None = None,
+) -> None:
+    values = {
+        "lint": gitlab_lint_value(status),
+    }
+    if extra_values:
+        values.update(extra_values)
+    if upsert_repo_gitlab_result(index_path, cwd, repo, values):
+        return
+    if parse_repo_entries(index_path):
+        raise RuntimeError(
+            "No matching repos[] entry for current repo; refusing to write project-level gitlab lint result."
+        )
+    write_lint_result(index_path, repo, status, findings)
+
+
+def upsert_repo_gitlab_result(index_path: Path | None, cwd: Path, repo: str,
+                              values: dict[str, Any]) -> bool:
+    if not index_path:
+        raise RuntimeError("--write-index requires an index.md path")
+    text = index_path.read_text(encoding="utf-8")
+    raw_frontmatter, body = split_frontmatter(text)
+    lines = raw_frontmatter.splitlines() if raw_frontmatter else []
+    in_repos = False
+    item_start: int | None = None
+    item_end: int | None = None
+    item: dict[str, Any] = {}
+    nested: str | None = None
+
+    def current_matches() -> bool:
+        return bool(item) and repo_entry_matches(item, cwd, repo)
+
+    for index, line in enumerate(lines):
+        if not in_repos:
+            if line.strip() == "repos:":
+                in_repos = True
+            continue
+        if line and not line.startswith((" ", "\t")):
+            if item_start is not None and item_end is None and current_matches(
+            ):
+                item_end = index
+            break
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            if item_start is not None and item_end is None and current_matches(
+            ):
+                item_end = index
+                break
+            item_start = index
+            item = {}
+            nested = None
+            remainder = stripped[2:]
+            if ":" in remainder:
+                key, value = remainder.split(":", 1)
+                item[key.strip()] = value.strip().strip('"\'')
+            continue
+        if item_start is None or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        value = value.strip().strip('"\'')
+        indent = len(line) - len(line.lstrip(" "))
+        if indent <= 4:
+            if value:
+                item[key] = value
+                nested = None
+            else:
+                item[key] = {}
+                nested = key
+        elif nested:
+            section = item.setdefault(nested, {})
+            if isinstance(section, dict):
+                section[key] = value
+    if item_start is not None and item_end is None and current_matches():
+        item_end = len(lines)
+    if item_start is None or item_end is None:
+        return False
+
+    gitlab_start: int | None = None
+    gitlab_end = item_end
+    for index in range(item_start + 1, item_end):
+        if lines[index].startswith("    gitlab:"):
+            gitlab_start = index
+            for cursor in range(index + 1, item_end):
+                if lines[cursor].startswith(
+                        "    ") and not lines[cursor].startswith("      "):
+                    gitlab_end = cursor
+                    break
+            break
+    existing: dict[str, Any] = {}
+    if gitlab_start is not None:
+        header = lines[gitlab_start].split(":", 1)[1].strip()
+        existing.update(parse_inline_mapping(header))
+        for line in lines[gitlab_start + 1:gitlab_end]:
+            if line.startswith("      ") and ":" in line:
+                key, value = line.split(":", 1)
+                existing[key.strip()] = parse_yaml_value(value.strip())
+    for key, value in values.items():
+        existing[key] = value
+    gitlab_lines = [f"    gitlab: {gitlab_inline_mapping(existing)}"]
+    if gitlab_start is None:
+        lines = [*lines[:item_end], *gitlab_lines, *lines[item_end:]]
+    else:
+        lines = [*lines[:gitlab_start], *gitlab_lines, *lines[gitlab_end:]]
+    index_path.write_text("---\n" + "\n".join(lines).rstrip() + "\n---" + body,
+                          encoding="utf-8")
+    return True
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Lint GitLab project settings.")
+    parser.add_argument("--repo",
+                        help="GitLab repo path, e.g. example-org/group/project.")
+    parser.add_argument(
+        "--cwd",
+        default=".",
+        help="Repo working directory used to infer remote and index.md.")
+    parser.add_argument("--index",
+                        help="Project index.md with frontmatter metadata.")
+    parser.add_argument("--flow",
+                        choices=sorted(FLOWS),
+                        help="Override index.md repos[].gitlab.flow.")
+    parser.add_argument("--squash",
+                        choices=sorted(SQUASH_POLICIES),
+                        help="Override index.md repos[].gitlab.squash.")
+    parser.add_argument("--hostname", help="GitLab hostname for glab.")
+    parser.add_argument("--json",
+                        action="store_true",
+                        help="Output JSON instead of Markdown.")
+    parser.add_argument("--write-index",
+                        action="store_true",
+                        help="Write lint result to index.md frontmatter.")
+    parser.add_argument(
+        "--resolve-only",
+        action="store_true",
+        help="Resolve the canonical repos[] entry without calling GitLab.")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    cwd = Path(args.cwd).expanduser().resolve()
+    index_path = Path(
+        args.index).expanduser().resolve() if args.index else find_upwards(
+            cwd, "index.md")
+    repo = args.repo or repo_from_remote(
+        run(["git", "-C",
+             str(cwd), "config", "--get", "remote.origin.url"]).strip())
+    if not repo:
+        raise RuntimeError(
+            "Missing repo. Pass --repo or configure remote.origin.url.")
+    if args.resolve_only:
+        print(json.dumps(repo_resolution(index_path, cwd, repo),
+                         ensure_ascii=False,
+                         indent=2))
+        return 0
+    index_flow, index_squash = gitlab_config_for_repo(index_path, cwd, repo)
+    flow = args.flow or index_flow
+    squash = args.squash or index_squash
+    if not flow:
+        raise RuntimeError(
+            "Missing GitLab flow. Set index.md frontmatter `repos[].gitlab.flow` for the current repo or pass --flow."
+        )
+    if flow not in FLOWS:
+        raise RuntimeError(
+            f"Unsupported GitLab flow: {flow}. Expected one of: {', '.join(sorted(FLOWS))}"
+        )
+    if flow == "l3":
+        status = "SKIP"
+        findings: list[Finding] = []
+        if args.write_index:
+            write_lint_values(index_path, cwd, repo, status, findings)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "repo": repo,
+                        "flow": flow,
+                        "squash": squash,
+                        "index": str(index_path) if index_path else "",
+                        "status": status,
+                        "findings": [],
+                    },
+                    ensure_ascii=False,
+                    indent=2))
+        else:
+            print(
+                render_markdown(repo, flow, squash, index_path, status,
+                                findings))
+        return 0
+    defaulted_squash = False
+    if not squash:
+        squash = DEFAULT_BASELINE_SQUASH_POLICY
+        defaulted_squash = True
+    if squash not in SQUASH_POLICIES:
+        raise RuntimeError(
+            f"Unsupported GitLab squash policy: {squash}. Expected one of: {', '.join(sorted(SQUASH_POLICIES))}"
+        )
+    if flow in {"l1", "l2"} and squash not in BASELINE_SQUASH_POLICIES:
+        raise RuntimeError(
+            f"Unsupported GitLab squash policy for {flow}: {squash}. Expected one of: {', '.join(sorted(BASELINE_SQUASH_POLICIES))}"
+        )
+    project = glab_json(project_endpoint(repo), args.hostname or "")
+    approvals = glab_json(f"{project_endpoint(repo)}/approvals",
+                          args.hostname or "")
+    rules = glab_json(f"{project_endpoint(repo)}/approval_rules",
+                      args.hostname or "")
+    push_rule = glab_json(f"{project_endpoint(repo)}/push_rule",
+                          args.hostname or "")
+    protected_branches = glab_json(
+        f"{project_endpoint(repo)}/protected_branches", args.hostname or "")
+    findings = [
+        *check_project(project, squash), *check_approvals(approvals),
+        *check_approval_rules(rules),
+        *check_push_rule(push_rule),
+        *check_protected_branches(project, protected_branches)
+    ]
+    status = lint_status(flow, findings)
+    if args.write_index:
+        extra_values = {"squash": squash} if defaulted_squash else None
+        write_lint_values(index_path, cwd, repo, status, findings, extra_values)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "repo":
+                        repo,
+                    "flow":
+                        flow,
+                    "squash":
+                        squash,
+                    "index":
+                        str(index_path) if index_path else "",
+                    "status":
+                        status,
+                    "findings": [{
+                        **finding.__dict__, "level": finding.level
+                    } for finding in findings],
+                },
+                ensure_ascii=False,
+                indent=2))
+    else:
+        print(render_markdown(repo, flow, squash, index_path, status, findings))
+    return 0 if status in {"PASS", "WARN", "SKIP"} else 1
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f"gitlab-project-lint: {exc}", file=sys.stderr)
+        raise SystemExit(2)

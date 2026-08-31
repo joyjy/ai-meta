@@ -1,0 +1,8 @@
+{
+  "schema": "ai-meta.repo-role.v1",
+  "role": "distribution",
+  "sourceIdentity": "github:joyjy/ai-meta",
+  "maintenanceSource": "explicit-route-only",
+  "sourceRevision": "28bca012a602cc03ca58a9e773c2d400dd07d7e4",
+  "sourceWorktreeDirty": true
+}

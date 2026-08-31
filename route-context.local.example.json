@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "description": "Copy selected rules to ~/.ai/route-context.local.json and replace the example paths. Rules with the same id override the portable base.",
+  "path_routes": [
+    {
+      "id": "writing",
+      "match": {"filenames": ["writing.md"]},
+      "resolved_paths": {"writing": "~/Documents/notes/writing.md"}
+    }
+  ],
+  "special_routes": []
+}

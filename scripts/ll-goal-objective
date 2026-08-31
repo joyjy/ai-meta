@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Render a Codex goal objective from a verified legacy or segmented LL file."""
+
+from __future__ import annotations
+
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+from ll_contract_file import load_path
+
+TRIVIAL_CONFIRMATIONS = {
+    "ok",
+    "okay",
+    "continue",
+    "yes",
+    "好",
+    "好的",
+    "继续",
+    "可以",
+}
+
+
+def get(data: dict[str, Any], path: str) -> Any:
+    current: Any = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def fail(message: str) -> int:
+    print(f"ERROR {message}", file=sys.stderr)
+    return 1
+
+
+def normalized_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.split())
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 1:
+        return fail("usage: ll-goal-objective <contract.json>")
+
+    contract_path = Path(args[0]).expanduser().resolve()
+    if not contract_path.is_file():
+        return fail(f"contract does not exist: {contract_path}")
+
+    verifier = Path(__file__).with_name("verify-ll-contract")
+    verification = subprocess.run(
+        [str(verifier), str(contract_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if verification.returncode != 0:
+        detail = verification.stdout.strip() or verification.stderr.strip()
+        return fail(f"contract verification failed: {detail}")
+
+    try:
+        document = load_path(contract_path)
+        data = document.contract
+    except (OSError, ValueError) as exc:
+        return fail(f"cannot read contract: {exc}")
+
+    if get(data, "runtime_binding.adapter") != "codex_goal":
+        return fail("runtime_binding.adapter must be codex_goal")
+    if get(data, "ll_contract.exit.state") != "active":
+        return fail("Codex goal dispatch requires exit.state=active")
+    if get(data, "ll_contract.exit.next_action") != "continue":
+        return fail("Codex goal dispatch requires exit.next_action=continue")
+
+    objective = normalized_text(get(data, "runtime_binding.objective"))
+    if not objective:
+        return fail("runtime_binding.objective is required")
+    if objective.casefold() in TRIVIAL_CONFIRMATIONS:
+        return fail("runtime_binding.objective cannot be a confirmation reply")
+
+    if document.segmented:
+        brief_renderer = Path(__file__).with_name("ll-hot-block").resolve()
+        brief_command = (
+            f"{shlex.quote(str(brief_renderer))} "
+            f"{shlex.quote(str(contract_path))}"
+        )
+    else:
+        brief_renderer = Path(__file__).with_name("ll-brief").resolve()
+        brief_command = (
+            f"{shlex.quote(str(brief_renderer))} "
+            f"{shlex.quote(str(contract_path))}"
+        )
+    print(f"执行并完成：{objective}")
+    print()
+    print("普通轮次只读取 LL 动态 hot block：")
+    print(brief_command)
+    print()
+    if document.segmented:
+        turn_compiler = Path(__file__).with_name("ll-turn").resolve()
+        print(
+            "每个 Focus 边界把结构化结果写入短 JSON，并编译下一轮状态："
+        )
+        print(
+            f"{shlex.quote(str(turn_compiler))} compile-reply "
+            f"{shlex.quote(str(contract_path))} --input <result.json>"
+        )
+        print("子 Focus 完成后仍须回到 Root 对照验收；不要用聊天 prose 代替状态事件。")
+        print()
+    print(
+        f"同一文件后部是 append-only ledger：{contract_path}。仅在恢复、人工 gate、"
+        "状态迁移或最终审计时读取尾部；更新通过 ll-ledger append 追加。遇到 "
+        "needs_human 条件时停止等待用户；只有全部 done_when 有外部证据时才能完成 goal。")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

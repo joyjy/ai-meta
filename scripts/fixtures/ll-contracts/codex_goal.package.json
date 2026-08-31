@@ -1,0 +1,13 @@
+{
+  "objective": "Drive the engineering-exit contract through commit, push, and MR when gates pass.",
+  "stop_when": ["exit.state in [done, needs_human, blocked, commit_ready, remote_write_ready, next_ff_ready]"],
+  "must_run": ["verify_ll_contract", "changed_scope_checks"],
+  "call_user_when": [
+    "scope_change",
+    "destructive_action",
+    "acceptance_gap",
+    "risk_acceptance",
+    "business_judgment"
+  ],
+  "resume_inputs": ["ll_contract", "context", "loop_state"]
+}

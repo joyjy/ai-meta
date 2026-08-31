@@ -1,0 +1,4 @@
+interface:
+  display_name: "coding-conventions"
+  short_description: "Select, audit, and maintain engineering conventions and patterns"
+  default_prompt: "Use $coding-conventions to apply the relevant engineering conventions or patterns for this repository."

@@ -1,0 +1,797 @@
+#!/usr/bin/env python3
+"""Stable GitLab MR helper for agent workflows."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote, urlparse
+
+
+MR_URL_RE = re.compile(r"^/(?P<repo>.+?)/-/merge_requests/(?P<iid>\d+)(?:/.*)?$")
+USER_DESCRIPTION_HEADING = "## User Description"
+LICLOUD_TAIL_HEADING = "## PR Type"
+LICLOUD_FOOTER_MARKER = "Managed PR Agent PR Agent AI 自动生成"
+DESCRIPTION_BYPASS_FLAGS = {
+    "-d", "--description", "-f", "--fill", "--fill-commit-body",
+    "--template", "--signoff", "--recover", "-w", "--web",
+}
+
+
+@dataclass(frozen=True)
+class MrRef:
+    iid: str
+    repo: str = ""
+    hostname: str = ""
+
+
+class ReviewerOperationError(RuntimeError):
+    def __init__(self, message: str, outcome: str, **details: Any):
+        super().__init__(message)
+        self.outcome = outcome
+        self.details = details
+
+
+def run(cmd: list[str]) -> str:
+    proc = subprocess.run(cmd, text=True, capture_output=True, check=False)
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip()
+        raise RuntimeError(f"{' '.join(cmd)} failed: {detail}")
+    return proc.stdout
+
+
+def glab_api(endpoint: str, *, hostname: str = "") -> Any:
+    cmd = ["glab", "api", endpoint]
+    if hostname:
+        cmd.extend(["--hostname", hostname])
+    return json.loads(run(cmd))
+
+
+def glab_api_paginated(endpoint: str, *, hostname: str = "") -> list[dict[str, Any]]:
+    cmd = ["glab", "api", endpoint, "--paginate", "--output", "ndjson"]
+    if hostname:
+        cmd.extend(["--hostname", hostname])
+    items: list[dict[str, Any]] = []
+    for line in run(cmd).splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if isinstance(value, list):
+            items.extend(item for item in value if isinstance(item, dict))
+        elif isinstance(value, dict):
+            items.append(value)
+    return items
+
+
+def parse_mr_url(value: str) -> MrRef | None:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    match = MR_URL_RE.match(parsed.path)
+    if not match:
+        return None
+    return MrRef(iid=match.group("iid"), repo=match.group("repo"), hostname=parsed.netloc)
+
+
+def repo_selector(repo: str, hostname: str) -> str:
+    if not repo or not hostname or "://" in repo or repo.startswith("git@"):
+        return repo
+    return f"https://{hostname}/{repo}"
+
+
+def add_repo(cmd: list[str], repo: str, hostname: str) -> None:
+    selector = repo_selector(repo, hostname)
+    if selector:
+        cmd.extend(["--repo", selector])
+
+
+def current_branch_mr(repo: str, hostname: str) -> MrRef:
+    cmd = ["glab", "mr", "view", "--output", "json"]
+    add_repo(cmd, repo, hostname)
+    mr = json.loads(run(cmd))
+    iid = str(mr.get("iid") or mr.get("Iid") or mr.get("id") or "")
+    if not iid:
+        raise RuntimeError("glab mr view did not return an MR iid")
+    return MrRef(iid=iid, repo=repo, hostname=hostname)
+
+
+def resolve_mr(target: str, repo: str, hostname: str) -> MrRef:
+    if target:
+        parsed = parse_mr_url(target)
+        if parsed:
+            return MrRef(
+                iid=parsed.iid,
+                repo=repo or parsed.repo,
+                hostname=hostname or parsed.hostname,
+            )
+        if target.isdigit():
+            return MrRef(iid=target, repo=repo, hostname=hostname)
+        cmd = ["glab", "mr", "view", target, "--output", "json"]
+        add_repo(cmd, repo, hostname)
+        mr = json.loads(run(cmd))
+        iid = str(mr.get("iid") or mr.get("Iid") or mr.get("id") or "")
+        if not iid:
+            raise RuntimeError(f"glab mr view {target} did not return an MR iid")
+        return MrRef(iid=iid, repo=repo, hostname=hostname)
+    return current_branch_mr(repo, hostname)
+
+
+def project_endpoint(repo: str) -> str:
+    if repo:
+        return f"projects/{quote(repo, safe='')}"
+    return "projects/:fullpath"
+
+
+def latest_version(project: str, iid: str, hostname: str) -> dict[str, Any]:
+    versions = glab_api(f"{project}/merge_requests/{iid}/versions", hostname=hostname)
+    if not versions:
+        raise RuntimeError("MR has no diff versions")
+    return max(versions, key=lambda item: int(item.get("id") or 0))
+
+
+def diff_paths(project: str, iid: str, hostname: str) -> list[dict[str, Any]]:
+    try:
+        return glab_api(f"{project}/merge_requests/{iid}/diffs?per_page=100", hostname=hostname)
+    except RuntimeError:
+        changes = glab_api(f"{project}/merge_requests/{iid}/changes", hostname=hostname)
+        return list(changes.get("changes") or [])
+
+
+def find_diff_file(paths: list[dict[str, Any]], target: str) -> dict[str, Any]:
+    normalized = target.strip("/")
+    for item in paths:
+        if normalized in {item.get("new_path"), item.get("old_path")}:
+            return item
+    known = sorted({p for item in paths for p in (item.get("new_path"), item.get("old_path")) if p})
+    preview = "\n".join(f"  - {path}" for path in known[:40])
+    raise RuntimeError(f"{target!r} is not in the MR diff. Known paths:\n{preview}")
+
+
+def read_text_arg(value: str, label: str) -> str:
+    text = Path(value).read_text(encoding="utf-8").strip()
+    if not text:
+        raise RuntimeError(f"{label} file is empty: {value}")
+    return text
+
+
+def normalize_description(value: str) -> str:
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def protect_user_description(value: str) -> str:
+    lines = normalize_description(value).splitlines()
+    if any(line.strip() == LICLOUD_TAIL_HEADING for line in lines) or any(
+            LICLOUD_FOOTER_MARKER in line for line in lines):
+        raise RuntimeError(
+            "description-file must contain human content only, not the Managed PR Agent-managed tail")
+    while lines:
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        if lines and lines[0].strip() == USER_DESCRIPTION_HEADING:
+            lines.pop(0)
+            continue
+        break
+    if any(line.strip() == USER_DESCRIPTION_HEADING for line in lines):
+        raise RuntimeError(
+            "description-file contains an embedded User Description heading")
+    body = "\n".join(lines).strip()
+    if not body:
+        raise RuntimeError("User Description body is empty")
+    return f"{USER_DESCRIPTION_HEADING}\n\n{body}"
+
+
+def validate_create_extra_args(values: list[str]) -> None:
+    for value in values:
+        flag = value.split("=", 1)[0]
+        if flag in DESCRIPTION_BYPASS_FLAGS or (
+                value.startswith("-d") and value != "--draft"):
+            raise RuntimeError(
+                f"{flag} can bypass the protected description-file; "
+                "use the helper's dedicated options")
+
+
+def split_licloud_tail(value: str) -> tuple[str, str]:
+    description = normalize_description(value)
+    lines = description.splitlines()
+    tail_positions = [
+        index for index, line in enumerate(lines)
+        if line.strip() == LICLOUD_TAIL_HEADING
+    ]
+    footer_positions = [
+        index for index, line in enumerate(lines)
+        if LICLOUD_FOOTER_MARKER in line
+    ]
+    if not tail_positions and not footer_positions:
+        return description, ""
+    if len(tail_positions) != 1 or len(footer_positions) != 1:
+        raise RuntimeError("cannot determine a unique Managed PR Agent-managed description tail")
+    tail_index = tail_positions[0]
+    if footer_positions[0] <= tail_index:
+        raise RuntimeError("Managed PR Agent footer appears before its managed tail")
+    prefix = "\n".join(lines[:tail_index]).strip()
+    tail = "\n".join(lines[tail_index:]).strip()
+    return prefix, tail
+
+
+def compose_updated_description(current: str, human: str) -> tuple[str, str]:
+    protected = protect_user_description(human)
+    prefix, managed_tail = split_licloud_tail(current)
+    if managed_tail and prefix:
+        first_line = prefix.splitlines()[0].strip()
+        if first_line != USER_DESCRIPTION_HEADING:
+            raise RuntimeError(
+                "existing MR has unprotected content before the Managed PR Agent-managed tail; "
+                "refusing to guess which content is human")
+    final = protected
+    if managed_tail:
+        final = f"{protected}\n\n{managed_tail}"
+    return final, managed_tail
+
+
+def verify_description_readback(
+        actual: str, protected: str, expected_tail: str | None = None) -> None:
+    prefix, managed_tail = split_licloud_tail(actual)
+    if prefix != protected:
+        raise RuntimeError("MR description readback does not match User Description input")
+    if expected_tail is not None and managed_tail != expected_tail:
+        raise RuntimeError("MR description readback changed the Managed PR Agent-managed tail")
+
+
+def created_mr(output: str, args: argparse.Namespace) -> MrRef:
+    for candidate in re.findall(r"https?://[^\s]+", output):
+        parsed = parse_mr_url(candidate.rstrip(".,;)]"))
+        if parsed:
+            return parsed
+    if args.source_branch:
+        return resolve_mr(
+            args.source_branch, args.repo or "", args.hostname or "")
+    return current_branch_mr(args.repo or "", args.hostname or "")
+
+
+def put_mr_json(
+        project: str, iid: str, payload: dict[str, Any], hostname: str) -> Any:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as tmp:
+        json.dump(payload, tmp, ensure_ascii=False)
+        tmp.flush()
+        cmd = [
+            "glab",
+            "api",
+            "--method",
+            "PUT",
+            f"{project}/merge_requests/{iid}",
+            "--header",
+            "Content-Type: application/json",
+            "--input",
+            tmp.name,
+        ]
+        if hostname:
+            cmd.extend(["--hostname", hostname])
+        output = run(cmd)
+    return json.loads(output) if output.strip() else {}
+
+
+def put_mr_description(
+        project: str, iid: str, description: str, hostname: str) -> None:
+    put_mr_json(project, iid, {"description": description}, hostname)
+
+
+def put_mr_reviewers(
+        project: str, iid: str, reviewer_ids: list[int], hostname: str) -> None:
+    put_mr_json(project, iid, {"reviewer_ids": reviewer_ids}, hostname)
+
+
+def mr_head_sha(value: dict[str, Any]) -> str:
+    sha = value.get("sha")
+    if not isinstance(sha, str) or not sha:
+        diff_refs = value.get("diff_refs")
+        sha = diff_refs.get("head_sha") if isinstance(diff_refs, dict) else None
+    if not isinstance(sha, str) or not sha:
+        raise ReviewerOperationError("MR response has no head SHA", "not_applied")
+    return sha
+
+
+def mr_reviewers(value: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = value.get("reviewers")
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ReviewerOperationError("MR reviewers response is malformed", "not_applied")
+    reviewers: list[dict[str, Any]] = []
+    for reviewer in raw:
+        if not isinstance(reviewer, dict) or not isinstance(reviewer.get("id"), int) or (
+                not isinstance(reviewer.get("username"), str) or not reviewer["username"]):
+            raise ReviewerOperationError("MR reviewer entry is malformed", "not_applied")
+        reviewers.append(reviewer)
+    return reviewers
+
+
+def unique_usernames(values: list[str]) -> list[str]:
+    usernames: list[str] = []
+    for value in values:
+        username = value.strip()
+        if not username:
+            raise ReviewerOperationError(
+                "reviewer username must be non-empty", "not_applied")
+        if username not in usernames:
+            usernames.append(username)
+    return usernames
+
+
+def resolve_reviewer_ids(
+        usernames: list[str], existing: list[dict[str, Any]], hostname: str
+) -> dict[str, int]:
+    by_username = {str(item["username"]): int(item["id"]) for item in existing}
+    resolved: dict[str, int] = {}
+    for username in usernames:
+        if username in by_username:
+            resolved[username] = by_username[username]
+            continue
+        candidates = glab_api(
+            f"users?username={quote(username, safe='')}", hostname=hostname)
+        matches = [
+            item for item in candidates
+            if isinstance(item, dict) and item.get("username") == username and
+            item.get("state") == "active" and isinstance(item.get("id"), int)
+        ] if isinstance(candidates, list) else []
+        if len(matches) != 1:
+            raise ReviewerOperationError(
+                f"reviewer username did not resolve to one active GitLab user: {username}",
+                "not_applied",
+                username=username,
+                exact_active_matches=len(matches),
+            )
+        resolved[username] = int(matches[0]["id"])
+    return resolved
+
+
+def emit_reviewer_result(
+        outcome: str,
+        mr: MrRef,
+        head_sha: str,
+        requested: list[str],
+        before: list[str],
+        after: list[str],
+        verified: bool,
+) -> int:
+    print(json.dumps({
+        "schemaVersion": "GitLabMrReviewerResult@1",
+        "outcome": outcome,
+        "mr": mr.__dict__,
+        "headSha": head_sha,
+        "requested": requested,
+        "before": before,
+        "added": [username for username in requested if username not in before],
+        "after": after,
+        "verified": verified,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def comment_body(args: argparse.Namespace) -> str:
+    if args.message and args.message_file:
+        raise RuntimeError("Use either --message or --message-file, not both")
+    if args.message_file:
+        return read_text_arg(args.message_file, "message")
+    if args.message:
+        return args.message.strip()
+    if not sys.stdin.isatty():
+        return sys.stdin.read().strip()
+    raise RuntimeError("Provide --message, --message-file, or pipe the message on stdin")
+
+
+def build_inline_payload(
+    args: argparse.Namespace, diff_file: dict[str, Any], version: dict[str, Any]
+) -> dict[str, Any]:
+    new_path = diff_file.get("new_path") or args.file
+    old_path = diff_file.get("old_path") or new_path
+    position: dict[str, Any] = {
+        "position_type": "text",
+        "base_sha": version["base_commit_sha"],
+        "start_sha": version["start_commit_sha"],
+        "head_sha": version["head_commit_sha"],
+        "new_path": new_path,
+        "old_path": old_path,
+    }
+    if args.line is not None:
+        position["new_line"] = args.line
+    if args.old_line is not None:
+        position["old_line"] = args.old_line
+    return {"body": comment_body(args), "position": position}
+
+
+def post_discussion(project: str, iid: str, payload: dict[str, Any], hostname: str) -> Any:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as tmp:
+        json.dump(payload, tmp, ensure_ascii=False)
+        tmp.flush()
+        cmd = [
+            "glab",
+            "api",
+            "--method",
+            "POST",
+            f"{project}/merge_requests/{iid}/discussions",
+            "--header",
+            "Content-Type: application/json",
+            "--input",
+            tmp.name,
+        ]
+        if hostname:
+            cmd.extend(["--hostname", hostname])
+        return json.loads(run(cmd))
+
+
+def cmd_create(args: argparse.Namespace) -> int:
+    cmd = ["glab", "mr", "create"]
+    add_repo(cmd, args.repo or "", args.hostname or "")
+    if args.title:
+        cmd.extend(["--title", args.title])
+    protected = ""
+    if args.description_file:
+        protected = protect_user_description(
+            read_text_arg(args.description_file, "description"))
+        cmd.extend(["--description", protected])
+    if args.source_branch:
+        cmd.extend(["--source-branch", args.source_branch])
+    if args.target_branch:
+        cmd.extend(["--target-branch", args.target_branch])
+    for label in args.label or []:
+        cmd.extend(["--label", label])
+    for assignee in args.assignee or []:
+        cmd.extend(["--assignee", assignee])
+    for reviewer in args.reviewer or []:
+        cmd.extend(["--reviewer", reviewer])
+    if args.draft:
+        cmd.append("--draft")
+    if args.yes:
+        cmd.append("--yes")
+    if args.extra_args:
+        validate_create_extra_args(args.extra_args)
+        cmd.extend(args.extra_args)
+    if args.dry_run:
+        print(json.dumps({"command": cmd}, ensure_ascii=False, indent=2))
+        return 0
+    output = run(cmd)
+    sys.stdout.write(output)
+    if protected:
+        mr = created_mr(output, args)
+        project = project_endpoint(mr.repo)
+        readback = glab_api(
+            f"{project}/merge_requests/{mr.iid}", hostname=mr.hostname)
+        verify_description_readback(str(readback.get("description") or ""), protected)
+        print(json.dumps({
+            "mr": mr.iid,
+            "user_description_verified": True,
+        }, ensure_ascii=False))
+    return 0
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    mr = resolve_mr(args.target or "", args.repo or "", args.hostname or "")
+    project = project_endpoint(mr.repo)
+    endpoint = f"{project}/merge_requests/{mr.iid}"
+    current = glab_api(endpoint, hostname=mr.hostname)
+    current_description = str(current.get("description") or "")
+    human = read_text_arg(args.description_file, "description")
+    description, managed_tail = compose_updated_description(
+        current_description, human)
+    if args.dry_run:
+        print(json.dumps({
+            "mr": mr.__dict__,
+            "description": description,
+            "preserves_licloud_tail": bool(managed_tail),
+        }, ensure_ascii=False, indent=2))
+        return 0
+    latest = glab_api(endpoint, hostname=mr.hostname)
+    if normalize_description(str(latest.get("description") or "")) != normalize_description(
+            current_description):
+        raise RuntimeError(
+            "MR description changed while preparing the update; rerun to avoid "
+            "overwriting concurrent Managed PR Agent content")
+    put_mr_description(project, mr.iid, description, mr.hostname)
+    readback = glab_api(endpoint, hostname=mr.hostname)
+    protected = protect_user_description(human)
+    verify_description_readback(
+        str(readback.get("description") or ""), protected, managed_tail)
+    print(json.dumps({
+        "mr": mr.iid,
+        "user_description_verified": True,
+        "licloud_tail_preserved": bool(managed_tail),
+    }, ensure_ascii=False))
+    return 0
+
+
+def cmd_reviewers_add(args: argparse.Namespace) -> int:
+    try:
+        mr = resolve_mr(args.target or "", args.repo or "", args.hostname or "")
+        project = project_endpoint(mr.repo)
+        endpoint = f"{project}/merge_requests/{mr.iid}"
+        usernames = unique_usernames(args.user or [])
+        initial = glab_api(endpoint, hostname=mr.hostname)
+        initial_head = mr_head_sha(initial)
+        initial_reviewers = mr_reviewers(initial)
+        if args.expected_head_sha and initial_head != args.expected_head_sha:
+            raise ReviewerOperationError(
+                "MR head SHA does not match --expected-head-sha",
+                "not_applied",
+                expected_head_sha=args.expected_head_sha,
+                actual_head_sha=initial_head,
+            )
+        resolved = resolve_reviewer_ids(usernames, initial_reviewers, mr.hostname)
+    except ReviewerOperationError:
+        raise
+    except Exception as exc:
+        raise ReviewerOperationError(
+            f"reviewer preflight failed: {exc}", "not_applied") from exc
+
+    initial_names = [str(item["username"]) for item in initial_reviewers]
+    if all(username in initial_names for username in usernames):
+        return emit_reviewer_result(
+            "already_present", mr, initial_head, usernames,
+            initial_names, initial_names, True)
+
+    if args.dry_run:
+        proposed = initial_names + [
+            username for username in usernames if username not in initial_names
+        ]
+        return emit_reviewer_result(
+            "dry_run", mr, initial_head, usernames, initial_names, proposed, False)
+
+    try:
+        latest = glab_api(endpoint, hostname=mr.hostname)
+        latest_head = mr_head_sha(latest)
+        if latest_head != initial_head:
+            raise ReviewerOperationError(
+                "MR head SHA changed during reviewer preflight",
+                "not_applied",
+                initial_head_sha=initial_head,
+                actual_head_sha=latest_head,
+            )
+        latest_reviewers = mr_reviewers(latest)
+        latest_ids = [int(item["id"]) for item in latest_reviewers]
+        desired_ids = latest_ids + [
+            reviewer_id for reviewer_id in resolved.values()
+            if reviewer_id not in latest_ids
+        ]
+        latest_names = [str(item["username"]) for item in latest_reviewers]
+        if all(username in latest_names for username in usernames):
+            return emit_reviewer_result(
+                "already_present", mr, latest_head, usernames,
+                latest_names, latest_names, True)
+    except ReviewerOperationError:
+        raise
+    except Exception as exc:
+        raise ReviewerOperationError(
+            f"reviewer pre-write read failed: {exc}", "not_applied") from exc
+
+    try:
+        put_mr_reviewers(project, mr.iid, desired_ids, mr.hostname)
+    except Exception as exc:
+        raise ReviewerOperationError(
+            f"reviewer update request has an ambiguous outcome: {exc}",
+            "ambiguous",
+            head_sha=initial_head,
+            requested=usernames,
+        ) from exc
+    try:
+        readback = glab_api(endpoint, hostname=mr.hostname)
+        readback_head = mr_head_sha(readback)
+        after_reviewers = mr_reviewers(readback)
+        after_ids = [int(item["id"]) for item in after_reviewers]
+        if readback_head != initial_head or any(
+                reviewer_id not in after_ids for reviewer_id in desired_ids):
+            raise ReviewerOperationError(
+                "reviewer readback could not verify the exact update",
+                "ambiguous",
+                expected_head_sha=initial_head,
+                actual_head_sha=readback_head,
+            )
+    except ReviewerOperationError:
+        raise
+    except Exception as exc:
+        raise ReviewerOperationError(
+            f"reviewer readback failed after update: {exc}", "ambiguous") from exc
+
+    after_names = [str(item["username"]) for item in after_reviewers]
+    return emit_reviewer_result(
+        "updated", mr, readback_head, usernames, latest_names, after_names, True)
+
+
+def compact_notes(discussions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    for discussion in discussions:
+        for note in discussion.get("notes") or []:
+            if not isinstance(note, dict):
+                continue
+            author = note.get("author") or {}
+            position = note.get("position") or {}
+            item: dict[str, Any] = {
+                "discussion_id": discussion.get("id"),
+                "note_id": note.get("id"),
+                "type": "system" if note.get("system") else "diff" if position else "general",
+                "resolvable": bool(note.get("resolvable")),
+                "resolved": bool(note.get("resolved")),
+                "author": {
+                    "username": author.get("username"),
+                    "name": author.get("name"),
+                },
+                "body": note.get("body"),
+                "created_at": note.get("created_at"),
+            }
+            compact_position = {
+                key: position.get(key)
+                for key in ("old_path", "new_path", "old_line", "new_line")
+                if position.get(key) is not None
+            }
+            if compact_position:
+                item["position"] = compact_position
+            compact.append(item)
+    return compact
+
+
+def filter_notes(notes: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
+    filtered: list[dict[str, Any]] = []
+    for note in notes:
+        if not args.include_system and note["type"] == "system":
+            continue
+        if args.type != "all" and note["type"] != args.type:
+            continue
+        if args.state == "resolved" and not note["resolved"]:
+            continue
+        if args.state == "unresolved" and (not note["resolvable"] or note["resolved"]):
+            continue
+        if args.author and note["author"].get("username") != args.author:
+            continue
+        if args.file:
+            position = note.get("position") or {}
+            if args.file not in {position.get("old_path"), position.get("new_path")}:
+                continue
+        filtered.append(note)
+    return filtered
+
+
+def write_notes(notes: list[dict[str, Any]], output: str) -> None:
+    if output == "ndjson":
+        for note in notes:
+            print(json.dumps(note, ensure_ascii=False, separators=(",", ":")))
+        return
+    print(json.dumps(notes, ensure_ascii=False, indent=2))
+
+
+def cmd_comments_list(args: argparse.Namespace) -> int:
+    mr = resolve_mr(args.target or "", args.repo or "", args.hostname or "")
+    project = project_endpoint(mr.repo)
+    endpoint = f"{project}/merge_requests/{mr.iid}/discussions?per_page=100"
+    discussions = glab_api_paginated(endpoint, hostname=mr.hostname)
+    notes = filter_notes(compact_notes(discussions), args)
+    write_notes(notes, args.output)
+    return 0
+
+
+def cmd_comments_add(args: argparse.Namespace) -> int:
+    if not args.inline:
+        raise RuntimeError("Only inline comments are supported for now; pass --inline")
+    mr = resolve_mr(args.target or "", args.repo or "", args.hostname or "")
+    project = project_endpoint(mr.repo)
+    version = latest_version(project, mr.iid, mr.hostname)
+    diff_file = find_diff_file(diff_paths(project, mr.iid, mr.hostname), args.file)
+    payload = build_inline_payload(args, diff_file, version)
+    if args.dry_run:
+        print(json.dumps({"mr": mr.__dict__, "endpoint": project, "payload": payload}, ensure_ascii=False, indent=2))
+        return 0
+    discussion = post_discussion(project, mr.iid, payload, mr.hostname)
+    print(json.dumps(discussion, ensure_ascii=False, indent=2))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Stable GitLab MR helper.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    create = subparsers.add_parser("create", help="Create an MR with safe file-backed text options.")
+    create.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
+    create.add_argument("--hostname", help="GitLab hostname for glab.")
+    create.add_argument("-t", "--title", help="Merge request title.")
+    create.add_argument(
+        "--description-file", required=True,
+        help="Read human-authored MR description from this Markdown file.")
+    create.add_argument("-s", "--source-branch", help="Source branch.")
+    create.add_argument("-b", "--target-branch", help="Target branch.")
+    create.add_argument("-l", "--label", action="append", help="Add a label. May be repeated.")
+    create.add_argument("-a", "--assignee", action="append", help="Assign a user. May be repeated.")
+    create.add_argument("--reviewer", action="append", help="Request a reviewer. May be repeated.")
+    create.add_argument("--draft", action="store_true", help="Mark as draft.")
+    create.add_argument("-y", "--yes", action="store_true", help="Skip glab confirmation prompt.")
+    create.add_argument("--dry-run", action="store_true", help="Print the glab command without running it.")
+    create.add_argument("extra_args", nargs=argparse.REMAINDER, help="Extra args passed to glab mr create.")
+    create.set_defaults(func=cmd_create)
+
+    update = subparsers.add_parser(
+        "update", help="Replace the protected User Description and preserve Managed PR Agent content.")
+    update.add_argument("target", nargs="?", help="MR IID, branch, or MR URL.")
+    update.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
+    update.add_argument("--hostname", help="GitLab hostname for glab api.")
+    update.add_argument(
+        "--description-file", required=True,
+        help="Read human-authored MR description from this Markdown file.")
+    update.add_argument(
+        "--dry-run", action="store_true",
+        help="Print the composed description without updating GitLab.")
+    update.set_defaults(func=cmd_update)
+
+    reviewers = subparsers.add_parser("reviewers", help="Manage MR reviewers safely.")
+    reviewer_subparsers = reviewers.add_subparsers(
+        dest="reviewers_command", required=True)
+    add_reviewers = reviewer_subparsers.add_parser(
+        "add", help="Add reviewers without replacing existing reviewers.")
+    add_reviewers.add_argument("target", nargs="?", help="MR IID, branch, or MR URL.")
+    add_reviewers.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
+    add_reviewers.add_argument("--hostname", help="GitLab hostname for glab api.")
+    add_reviewers.add_argument(
+        "--user", action="append", required=True,
+        help="Exact active GitLab username to add. May be repeated.")
+    add_reviewers.add_argument(
+        "--expected-head-sha",
+        help="Fail before writing unless the MR is still at this HEAD SHA.")
+    add_reviewers.add_argument(
+        "--dry-run", action="store_true",
+        help="Resolve users and print the proposed reviewer set without writing.")
+    add_reviewers.set_defaults(func=cmd_reviewers_add)
+
+    comments = subparsers.add_parser("comments", help="List or add MR comments.")
+    comment_subparsers = comments.add_subparsers(dest="comments_command", required=True)
+
+    list_comments = comment_subparsers.add_parser("list", help="List MR comments as JSON.")
+    list_comments.add_argument("target", nargs="?", help="MR IID, branch, or MR URL.")
+    list_comments.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
+    list_comments.add_argument("--hostname", help="GitLab hostname for glab.")
+    list_comments.add_argument("--state", choices=("all", "resolved", "unresolved"), default="all")
+    list_comments.add_argument("--type", choices=("all", "general", "diff"), default="all")
+    list_comments.add_argument("--file", help="Keep only diff notes for this path.")
+    list_comments.add_argument("--author", help="Keep only notes from this GitLab username.")
+    list_comments.add_argument("--include-system", action="store_true")
+    list_comments.add_argument("--output", choices=("json", "ndjson"), default="json")
+    list_comments.set_defaults(func=cmd_comments_list)
+
+    add = comment_subparsers.add_parser("add", help="Add an MR comment.")
+    add.add_argument("target", nargs="?", help="MR IID, branch, or MR URL.")
+    add.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
+    add.add_argument("--hostname", help="GitLab hostname for glab api.")
+    add.add_argument("--inline", action="store_true", help="Create a positioned diff discussion.")
+    add.add_argument("--file", required=True, help="Path in the MR diff.")
+    side = add.add_mutually_exclusive_group(required=True)
+    side.add_argument("--line", type=int, help="Line number on the new side.")
+    side.add_argument("--old-line", type=int, help="Line number on the old side.")
+    add.add_argument("-m", "--message", help="Comment body.")
+    add.add_argument("--message-file", help="Read comment body from this file.")
+    add.add_argument("--dry-run", action="store_true", help="Print request JSON without posting.")
+    add.set_defaults(func=cmd_comments_add)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return int(args.func(args) or 0)
+    except ReviewerOperationError as exc:
+        print(json.dumps({
+            "schemaVersion": "GitLabMrReviewerResult@1",
+            "outcome": exc.outcome,
+            "error": str(exc),
+            **exc.details,
+        }, ensure_ascii=False), file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"gitlab-mr: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

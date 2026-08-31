@@ -1,0 +1,4 @@
+interface:
+  display_name: "agent-doc-hygiene"
+  short_description: "Audit and slim agent-facing documentation"
+  default_prompt: "Use $agent-doc-hygiene to audit and slim the relevant agent-facing documentation."

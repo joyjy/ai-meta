@@ -1,0 +1,4 @@
+interface:
+  display_name: "steelman"
+  short_description: "Steelman plausible views, challenge them, and decide"
+  default_prompt: "Use $steelman to reconstruct the strongest viable case, challenge it, and give a clear verdict."

@@ -1,0 +1,120 @@
+{
+  "schema_version": "ll.contract.v0",
+  "ll_contract": {
+    "id": "engineering-exit",
+    "mode": "full",
+    "project": {
+      "abbr": "amt",
+      "root": "/Users/example/Documents/me/<maintenance-checkout>",
+      "gitlab_flow": "unknown"
+    },
+    "applies_to": {
+      "skill": "engineering-exit",
+      "scope": "project"
+    },
+    "target": {
+      "outcome": "报告 engineering-exit blocker evidence",
+      "required_artifacts": ["blocked report", "failed command evidence"],
+      "out_of_scope": ["commit", "push"]
+    },
+    "verification": {
+      "commands": [],
+      "state_checks": ["git status --short"],
+      "done_when": ["exit.state is blocked"],
+      "substitute_evidence": ["failed command output is attached to blocker report"],
+      "linttest_gate": {
+        "status": "not_checked",
+        "source": "not_checked",
+        "changed": false,
+        "executed": false
+      }
+    },
+    "blocker": {
+      "required_evidence": [
+        "failed_command_or_operation",
+        "key_error_output",
+        "attempted_fallback",
+        "why_self_repair_stops",
+        "minimum_user_decision"
+      ]
+    },
+    "knowledge_gate": {
+      "classify_claims": true,
+      "ask_user_when": [
+        "required_decision_evidence in [GUESS, COMMON]",
+        "INFERRED without visible supporting evidence",
+        "FRAME used as real-system fact",
+        "acceptance depends on user preference or business judgment"
+      ],
+      "proceed_when": [
+        "decision evidence is KNOWN or COMPUTED",
+        "INFERRED has explicit visible support",
+        "uncertainty only affects wording, naming, minor defaults"
+      ]
+    },
+    "authorization": {
+      "allowed_side_effects": ["read", "local_edit", "light_test"],
+      "ask_before": [
+        "scope_change",
+        "remote_write",
+        "destructive_action",
+        "high_cost_unstable_validation",
+        "low_confidence_execution"
+      ]
+    },
+    "checkpoints": [
+      {
+        "id": "discovery-inventory",
+        "phase": "discovery_inventory",
+        "status": "passed",
+        "required_evidence": ["blocker scope inspected"],
+        "on_gap": "update_contract"
+      },
+      {
+        "id": "plan",
+        "phase": "plan",
+        "status": "passed",
+        "required_evidence": ["blocker report target is explicit"],
+        "on_gap": "needs_human"
+      },
+      {
+        "id": "implementation",
+        "phase": "implementation",
+        "status": "skipped",
+        "required_evidence": ["blocked contract does not implement feature code"],
+        "on_gap": "update_contract"
+      },
+      {
+        "id": "verification",
+        "phase": "verification",
+        "status": "blocked",
+        "required_evidence": ["failed command output is attached"],
+        "on_gap": "block"
+      },
+      {
+        "id": "pre-final",
+        "phase": "pre_final",
+        "status": "passed",
+        "required_evidence": ["exit state is blocked"],
+        "on_gap": "next_ff"
+      }
+    ],
+    "exit": {
+      "state": "blocked",
+      "next_action": "report",
+      "remote_write_requires_confirmation": true
+    }
+  },
+  "runtime_binding": {
+    "adapter": "manual_report",
+    "objective": "Report blocker evidence and stop for user decision.",
+    "stop_when": ["exit.state in [done, partial, needs_human, blocked, commit_ready, remote_write_ready, next_ff_ready]"],
+    "must_run": ["verify_ll_contract"],
+    "call_user_when": ["acceptance_gap"],
+    "resume_inputs": ["ll_contract", "context"]
+  },
+  "dispatch": {
+    "target": "engineering-exit",
+    "local_execution": true
+  }
+}

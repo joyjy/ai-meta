@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Compile one authorized Final Form payload into a new segmented LL file."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from ll_compiler import compile_contract
+from ll_contract_file import build_front, validate_hot_packet_budget
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+LEDGER = SCRIPT_DIR / "ll-ledger"
+VERIFIER = SCRIPT_DIR / "verify-ll-contract"
+
+
+def fail(message: str) -> int:
+    print(f"ERROR {message}", file=sys.stderr)
+    return 1
+
+
+def read_object(path: Path) -> dict:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("input root must be an object")
+    return value
+
+
+def run_checked(command: list[str]) -> None:
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip() or result.stdout.strip())
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("ledger", help="new segmented .ll output path")
+    parser.add_argument(
+        "--input", required=True,
+        help="JSON containing ff plus optional id/project/authorization metadata")
+    parser.add_argument(
+        "--preflight", action="store_true",
+        help="report projected hot-packet length without writing the ledger")
+    args = parser.parse_args()
+    output = Path(args.ledger).expanduser().resolve()
+    input_path = Path(args.input).expanduser().resolve()
+    try:
+        contract = compile_contract(read_object(input_path))
+        preflight = validate_hot_packet_budget(build_front(contract, output))
+        if args.preflight:
+            print(json.dumps({
+                "path": str(output),
+                "would_write": False,
+                "preflight": preflight,
+            }, ensure_ascii=False))
+            return 0
+        with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", suffix=".json", delete=False) as handle:
+            json.dump(contract, handle, ensure_ascii=False, indent=2)
+            source = Path(handle.name)
+        try:
+            run_checked([str(VERIFIER), str(source)])
+            run_checked([str(LEDGER), "init", str(source), str(output)])
+        finally:
+            source.unlink(missing_ok=True)
+        print(json.dumps({
+            "path": str(output),
+            "preflight": preflight,
+        }, ensure_ascii=False))
+        return 0
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return fail(str(exc))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""Build and verify a sanitized ai-meta distribution checkout."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+from typing import Iterable
+
+
+ROOT = Path(__file__).resolve().parent.parent
+ROLE_FILE = ".ai-meta-repo-role.json"
+OVERLAY = ROOT / "release" / "private"
+OMIT_PATHS = {
+    ".ai",
+    ".git",
+    ".playwright-cli",
+    "__pycache__",
+    "tmp",
+    "docs/plan",
+    "index.md",
+    "agent-frictions.md",
+    "agent-frictions-archive.md",
+    "manual/ai-external-memory-sharing.md",
+}
+REPLACEMENTS = (
+    ("/Users/" + "yang" + "jia" + "yi", "/Users/example"),
+    ("<maintenance-checkout>", "<maintenance-checkout>"),
+    ("<maintenance-checkout>", "<maintenance-checkout>"),
+    ("gitlab." + "che" + "hejia.com", "gitlab.example.com"),
+    ("GitLab", "GitLab"),
+    ("gitlab", "gitlab"),
+    ("Yang " + "Jiayi", "joyjy"),
+    ("yang" + "jia" + "yi", "example-user"),
+    ("杨" + "家一", "示例用户"),
+    ("小" + "强", "示例主体"),
+    ("li" + "-id", "example-org"),
+    ("aisp" + "-", "example-"),
+    ("Li" + "Cloud", "Managed PR Agent"),
+    ("must-not-be-" + "published", "<test-redacted-token>"),
+)
+FORBIDDEN = (
+    "/Users/" + "yang" + "jia" + "yi",
+    "Projects/" + "ai-meta",
+    "gitlab." + "che" + "hejia.com",
+    "che" + "hejia",
+    "yang" + "jia" + "yi",
+    "杨" + "家一",
+    "li" + "-id",
+    "aisp" + "-",
+    "dida365.com/" + "webapp/#p/",
+)
+SECRET_PATTERNS = (
+    re.compile(r"BEGIN (?:RSA |OPENSSH )?PRIVATE KEY"),
+    re.compile(r"Bearer\s+(?!<)[A-Za-z0-9._=-]{20,}"),
+    re.compile(
+        r'"(?:api_key|access_token|refresh_token|client_secret|password)"'
+        r'\s*:\s*"(?!<)[^"]{8,}"',
+        re.IGNORECASE,
+    ),
+)
+LOCAL_HOME_PATTERNS = (
+    re.compile(
+        r"/Users/(?!(?:example(?:-user)?|you)(?:/|\b))[A-Za-z0-9._-]+(?:/|\b)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"/home/(?!(?:example(?:-user)?|user|you)(?:/|\b))[A-Za-z0-9._-]+(?:/|\b)",
+        re.IGNORECASE,
+    ),
+)
+
+
+def read_role(root: Path) -> dict[str, object]:
+    path = root / ROLE_FILE
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot read repository role: {path}: {exc}") from exc
+    if not isinstance(value, dict) or value.get("schema") != "ai-meta.repo-role.v1":
+        raise RuntimeError(f"invalid repository role: {path}")
+    return value
+
+
+def git_output(*args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(ROOT), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or "git command failed")
+    return completed.stdout.strip()
+
+
+def should_omit(relative: Path) -> bool:
+    value = relative.as_posix()
+    return any(value == item or value.startswith(f"{item}/") for item in OMIT_PATHS)
+
+
+def release_paths() -> Iterable[Path]:
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            completed.stderr.decode(errors="replace").strip()
+            or "cannot enumerate release files"
+        )
+    for raw_path in completed.stdout.split(b"\0"):
+        if raw_path:
+            yield Path(os.fsdecode(raw_path))
+
+
+def copy_source(destination: Path) -> None:
+    for relative in release_paths():
+        if should_omit(relative):
+            continue
+        source = ROOT / relative
+        if not source.exists() and not source.is_symlink():
+            continue
+        target = destination / relative
+        if source.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(os.readlink(source))
+        elif source.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+
+def text_files(root: Path) -> Iterable[Path]:
+    for path in root.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        yield path
+
+
+def sanitize_text(root: Path) -> None:
+    for path in text_files(root):
+        content = path.read_text(encoding="utf-8")
+        updated = content
+        for old, new in REPLACEMENTS:
+            updated = updated.replace(old, new)
+        if updated != content:
+            path.write_text(updated, encoding="utf-8")
+
+
+def apply_overlay(root: Path) -> None:
+    shutil.copy2(OVERLAY / "route-context.json", root / "route-context.json")
+    shutil.copy2(
+        OVERLAY / "route-context.local.example.json",
+        root / "route-context.local.example.json",
+    )
+    shutil.copy2(OVERLAY / "tool-routes.md", root / "tool-routes.md")
+    shutil.copy2(
+        OVERLAY / "tool-routes.local.example.md",
+        root / "tool-routes.local.example.md",
+    )
+    shutil.copy2(
+        OVERLAY / "test_route_context_resolve.py",
+        root / "plugins/route-context/scripts/test_route_context_resolve.py",
+    )
+    shutil.copy2(
+        OVERLAY / "test_route_context_hook.py",
+        root / "plugins/route-context/scripts/test_route_context_hook.py",
+    )
+
+    plugin_path = root / "plugins/route-context/.codex-plugin/plugin.json"
+    plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+    plugin["author"] = {"name": "joyjy"}
+    plugin["homepage"] = "https://github.com/joyjy/ai-meta"
+    plugin["license"] = "UNLICENSED"
+    interface = plugin.setdefault("interface", {})
+    interface["developerName"] = "joyjy"
+    plugin_path.write_text(
+        json.dumps(plugin, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_distribution_role(root: Path, revision: str, dirty: bool) -> None:
+    value = {
+        "schema": "ai-meta.repo-role.v1",
+        "role": "distribution",
+        "sourceIdentity": "github:joyjy/ai-meta",
+        "maintenanceSource": "explicit-route-only",
+        "sourceRevision": revision,
+        "sourceWorktreeDirty": dirty,
+    }
+    (root / ROLE_FILE).write_text(
+        json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def check_release(root: Path) -> dict[str, object]:
+    if read_role(root).get("role") != "distribution":
+        raise RuntimeError(f"not a distribution checkout: {root}")
+
+    findings: list[str] = []
+    files = 0
+    total_bytes = 0
+    for path in root.rglob("*"):
+        relative = path.relative_to(root)
+        if ".git" in relative.parts:
+            continue
+        if path.is_symlink():
+            target = os.readlink(path)
+            if target.startswith("/"):
+                findings.append(f"absolute symlink: {relative} -> {target}")
+            continue
+        if not path.is_file():
+            continue
+        files += 1
+        total_bytes += path.stat().st_size
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for marker in FORBIDDEN:
+            if marker.casefold() in content.casefold():
+                findings.append(f"forbidden marker {marker!r}: {relative}")
+        for pattern in SECRET_PATTERNS:
+            if pattern.search(content):
+                findings.append(f"secret-shaped value {pattern.pattern!r}: {relative}")
+        for pattern in LOCAL_HOME_PATTERNS:
+            if pattern.search(content):
+                findings.append(f"local home path {pattern.pattern!r}: {relative}")
+
+    if findings:
+        raise RuntimeError("private release check failed:\n- " + "\n- ".join(findings))
+    return {"status": "passed", "root": str(root), "files": files, "bytes": total_bytes}
+
+
+def build_release(target: Path, *, allow_dirty: bool) -> dict[str, object]:
+    if read_role(ROOT).get("role") != "maintenance":
+        raise RuntimeError("private release builds require a maintenance checkout")
+    target = target.expanduser().resolve()
+    if target.exists():
+        raise RuntimeError(f"target already exists: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    status = git_output("status", "--porcelain")
+    dirty = bool(status)
+    if dirty and not allow_dirty:
+        raise RuntimeError("maintenance worktree is dirty; inspect it and pass --allow-dirty explicitly")
+    revision = git_output("rev-parse", "HEAD")
+
+    stage = Path(tempfile.mkdtemp(prefix=".ai-meta-release-", dir=target.parent))
+    try:
+        copy_source(stage)
+        sanitize_text(stage)
+        apply_overlay(stage)
+        write_distribution_role(stage, revision, dirty)
+        receipt = check_release(stage)
+        os.replace(stage, target)
+    except Exception:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+    receipt.update({
+        "root": str(target),
+        "sourceRevision": revision,
+        "sourceWorktreeDirty": dirty,
+    })
+    return receipt
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    build = subparsers.add_parser("build")
+    build.add_argument("target", type=Path)
+    build.add_argument("--allow-dirty", action="store_true")
+    check = subparsers.add_parser("check")
+    check.add_argument("target", type=Path)
+    args = parser.parse_args()
+
+    try:
+        if args.command == "build":
+            receipt = build_release(args.target, allow_dirty=args.allow_dirty)
+        else:
+            receipt = check_release(args.target.expanduser().resolve())
+    except RuntimeError as exc:
+        print(str(exc), file=os.sys.stderr)
+        return 1
+    print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

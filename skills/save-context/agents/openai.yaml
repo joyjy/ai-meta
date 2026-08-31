@@ -1,0 +1,5 @@
+interface:
+  display_name: "save-context"
+  short_description: "Save an explicit recovery checkpoint"
+policy:
+  allow_implicit_invocation: false

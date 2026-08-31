@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Stable, non-interactive GitLab CI facade for agent workflows."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from typing import Sequence
+
+
+def add_repo(cmd: list[str], repo: str | None) -> None:
+    if repo:
+        cmd.extend(["--repo", repo])
+
+
+def build_command(args: argparse.Namespace) -> list[str]:
+    if args.command == "list":
+        cmd = ["glab", "ci", "list", "--output", args.output]
+        if args.ref:
+            cmd.extend(["--ref", args.ref])
+        if args.status:
+            cmd.extend(["--status", args.status])
+        if args.per_page:
+            cmd.extend(["--per-page", str(args.per_page)])
+    elif args.command == "get":
+        cmd = [
+            "glab", "ci", "get", "--pipeline-id", str(args.pipeline_id),
+            "--output", args.output,
+        ]
+        if args.with_job_details:
+            cmd.append("--with-job-details")
+    elif args.command == "trace":
+        cmd = ["glab", "ci", "trace", args.job]
+        if args.pipeline_id is not None:
+            cmd.extend(["--pipeline-id", str(args.pipeline_id)])
+        if args.branch:
+            cmd.extend(["--branch", args.branch])
+    elif args.command == "lint":
+        cmd = ["glab", "ci", "lint"]
+        if args.path:
+            cmd.append(args.path)
+        if args.merged:
+            cmd.append("--dry-run")
+        if args.ref:
+            cmd.extend(["--ref", args.ref])
+        if args.include_jobs:
+            cmd.append("--include-jobs")
+    else:
+        raise ValueError(f"unsupported command: {args.command}")
+
+    add_repo(cmd, args.repo)
+    return cmd
+
+
+def run(cmd: Sequence[str]) -> int:
+    proc = subprocess.run(cmd, check=False)
+    return proc.returncode
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Stable non-interactive wrapper around installed glab CI commands."
+    )
+    parser.add_argument(
+        "--print-command",
+        action="store_true",
+        help="Print the resolved glab argv as JSON without executing it.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    list_parser = subparsers.add_parser("list", help="List pipelines without an interactive view.")
+    list_parser.add_argument("--ref", help="Branch or tag ref.")
+    list_parser.add_argument("--status", help="Pipeline status filter.")
+    list_parser.add_argument("--per-page", type=int, default=30)
+    list_parser.add_argument("--output", choices=("json", "text"), default="json")
+    list_parser.add_argument("-R", "--repo", help="Repository path or URL.")
+
+    get_parser = subparsers.add_parser("get", help="Get a pipeline by ID.")
+    get_parser.add_argument("pipeline_id", type=int)
+    get_parser.add_argument("--with-job-details", action="store_true")
+    get_parser.add_argument("--output", choices=("json", "text"), default="json")
+    get_parser.add_argument("-R", "--repo", help="Repository path or URL.")
+
+    trace_parser = subparsers.add_parser("trace", help="Trace a job by ID or name.")
+    trace_parser.add_argument("job")
+    trace_parser.add_argument("--pipeline-id", type=int)
+    trace_parser.add_argument("--branch")
+    trace_parser.add_argument("-R", "--repo", help="Repository path or URL.")
+
+    lint_parser = subparsers.add_parser("lint", help="Validate GitLab CI configuration.")
+    lint_parser.add_argument("path", nargs="?", help="CI YAML path; defaults to .gitlab-ci.yml.")
+    lint_parser.add_argument(
+        "--merged",
+        action="store_true",
+        help="Simulate pipeline creation so includes and rules are evaluated.",
+    )
+    lint_parser.add_argument("--ref", help="Ref used with merged simulation.")
+    lint_parser.add_argument("--include-jobs", action="store_true")
+    lint_parser.add_argument("-R", "--repo", help="Repository path or URL.")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cmd = build_command(args)
+    if args.print_command:
+        print(json.dumps({"command": cmd}, ensure_ascii=False, indent=2))
+        return 0
+    return run(cmd)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

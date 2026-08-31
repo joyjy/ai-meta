@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Compile one generic multi-turn LL state transition and print the next hot block."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from ll_contract_file import LLDocument, load_path, render_hot_block, runtime_projection
+
+LEDGER = Path(__file__).with_name("ll-ledger")
+
+
+def fail(message: str) -> int:
+    print(f"ERROR {message}", file=sys.stderr)
+    return 1
+
+
+def read_object(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("input root must be an object")
+    return value
+
+
+def normalized_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def event_from_command(command: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if command == "compile-reply":
+        return {"type": "reply_compiled", "result": payload}
+    if command == "add-focus":
+        return {"type": "focus_added", "focus": payload}
+    if command in {"activate-focus", "complete-focus", "supersede-focus"}:
+        event_type = command.replace("-focus", "")
+        return {
+            "type": f"focus_{event_type}d",
+            "focus_id": normalized_text(payload.get("focus_id")),
+        }
+    if command == "reject-hot":
+        return {"type": "hot_rejected", "reason": normalized_text(payload.get("reason"))}
+    if command == "human-decision":
+        return {"type": "human_decision", "decision": normalized_text(payload.get("decision"))}
+    if command == "session-rebind":
+        return {
+            "type": "session_rebind",
+            "from_session_id": normalized_text(payload.get("from_session_id")),
+            "to_session_id": normalized_text(payload.get("to_session_id")),
+        }
+    if command == "amend-root":
+        unexpected = sorted(set(payload) - {"actor", "goal"})
+        if unexpected:
+            raise ValueError(
+                "amend-root cannot carry structural fields " +
+                ", ".join(unexpected) +
+                "; compile a new FF, LL, and Codex goal")
+        if payload.get("actor") != "user":
+            raise ValueError("amend-root requires actor=user")
+        return {
+            "type": "root_amendment",
+            "actor": "user",
+            "goal": normalized_text(payload.get("goal")),
+        }
+    raise ValueError(f"unsupported command: {command}")
+
+
+def append_event(ledger: Path, event: dict[str, Any]) -> None:
+    current = load_path(ledger)
+    runtime_projection(LLDocument(
+        contract=current.contract,
+        front=current.front,
+        events=[*current.events, event],
+        segmented=current.segmented,
+    ))
+    with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        json.dump(event, handle, ensure_ascii=False)
+        event_path = Path(handle.name)
+    try:
+        result = subprocess.run(
+            [str(LEDGER), "append", str(ledger), "--event-file", str(event_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise ValueError(result.stderr.strip() or result.stdout.strip())
+    finally:
+        event_path.unlink(missing_ok=True)
+
+
+def run(command: str, ledger: Path, input_path: Path) -> int:
+    try:
+        event = event_from_command(command, read_object(input_path))
+        if command == "amend-root":
+            document = load_path(ledger)
+            current = runtime_projection(document)
+            if current.status == "completed":
+                raise ValueError(
+                    "completed LL cannot be amended or reopened; compile a new "
+                    "FF, initialize a new LL, and bind a new Codex goal")
+            if document.contract.get("runtime_binding", {}).get(
+                    "adapter") == "codex_goal":
+                raise ValueError(
+                    "a bound Codex goal cannot be amended in place; compile a "
+                    "new FF, initialize a new LL, and bind a new Codex goal")
+        append_event(ledger, event)
+        document = load_path(ledger)
+        print(json.dumps({
+            "path": str(ledger.resolve()),
+            "hot": render_hot_block(document, ledger),
+        }, ensure_ascii=False))
+        return 0
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return fail(str(exc))
+
+
+def parse_args() -> argparse.Namespace:
+    schemas = {
+        "compile-reply": (
+            "result JSON: status (continue|completed|blocked|needs_human), "
+            "summary, evidence[], blocker, and optional "
+            "next_focus{id, goal, done_when[]}"
+        ),
+        "add-focus": "focus JSON: id, goal, and done_when[]",
+        "activate-focus": "transition JSON: focus_id",
+        "complete-focus": "transition JSON: focus_id",
+        "supersede-focus": "transition JSON: focus_id",
+        "reject-hot": "rejection JSON: reason",
+        "human-decision": "decision JSON: decision",
+        "session-rebind": "binding JSON: from_session_id and to_session_id",
+        "amend-root": "human-gated JSON: actor=\"user\" and goal",
+    }
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "The command appends a validated event to the exact LL file. "
+            "Focus completion never implies Root completion; reconcile the Root "
+            "before emitting terminal status."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for name, schema in schemas.items():
+        child = subparsers.add_parser(name, help=schema, description=schema)
+        child.add_argument("ledger", help="exact segmented .ll path")
+        child.add_argument("--input", required=True, help="JSON payload path")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    return run(
+        args.command,
+        Path(args.ledger).expanduser().resolve(),
+        Path(args.input).expanduser().resolve(),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

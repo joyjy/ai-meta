@@ -1,0 +1,739 @@
+#!/usr/bin/env python3
+"""Validate legacy JSON or single-file segmented LL contracts."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from ll_contract_file import (
+    HOT_PACKET_HARD_LIMIT,
+    HOT_PACKET_LEGACY_LIMITS,
+    HOT_PACKET_PROTOCOL,
+    HOT_PACKET_SOFT_TARGET,
+    load_path,
+    load_text,
+    render_front,
+    render_hot_block,
+    supports_hot_packet_policy,
+)
+
+SCHEMA_VERSION = "ll.contract.v0"
+MODES = {"off", "lite", "full", "strict"}
+SCOPES = {"global", "project", "project+exit-gate", "unknown"}
+EXIT_STATES = {
+    "active",
+    "done",
+    "partial",
+    "needs_human",
+    "blocked",
+    "handoff",
+    "save_context",
+    "commit_ready",
+    "remote_write_ready",
+    "next_ff_ready",
+}
+GOAL_AUTHORIZATION_SOURCES = {"user_request", "user_confirmation"}
+NEXT_ACTIONS = {
+    "continue",
+    "report",
+    "save_context",
+    "engineering_exit",
+    "commit",
+    "push",
+    "open_mr",
+    "manual",
+    "next_ff",
+}
+ADAPTERS = {
+    "manual_report", "codex_goal", "symphony_workitem", "gtd_task", "unknown"
+}
+DISPATCH_TARGETS = {
+    "manual", "ff", "load-context", "engineering-exit", "save-context"
+}
+REMOTE_ACTIONS = {"push", "open_mr"}
+PRIVILEGED_REMOTE_DISPATCH_TARGETS = {"engineering-exit"}
+TERMINAL_STATES = {
+    "done",
+    "partial",
+    "needs_human",
+    "blocked",
+    "commit_ready",
+    "remote_write_ready",
+    "next_ff_ready",
+}
+CALL_USER_REASONS = {
+    "scope_change",
+    "destructive_action",
+    "remote_write",
+    "acceptance_gap",
+    "risk_acceptance",
+    "business_judgment",
+    "high_cost_unstable_validation",
+    "low_confidence_execution",
+}
+SIDE_EFFECTS = {
+    "read",
+    "local_edit",
+    "light_test",
+    "long_running_test",
+    "remote_write",
+    "destructive_change",
+}
+ASK_BEFORE = {
+    "scope_change",
+    "remote_write",
+    "destructive_action",
+    "high_cost_unstable_validation",
+    "low_confidence_execution",
+}
+LINTTEST_STATUSES = {"detected", "not_detected", "unknown", "not_checked"}
+LINTTEST_SOURCES = {
+    "project_native",
+    "discover_script",
+    "skill_discover_script",
+    "not_found",
+    "not_checked",
+}
+LINTTEST_AUTHORIZATIONS = {"user_request", "contract_acceptance"}
+FEEDBACK_TYPES = {
+    "current_task_correction",
+    # Legacy recovery compatibility only. ll-ledger rejects new append events
+    # for these reusable gaps; agent.audit.v1 owns new classification.
+    "loop_process_gap",
+    "tool_route_friction",
+    "doc_rule_gap",
+    "discarded",
+}
+FEEDBACK_DISPOSITIONS = {
+    "captured",
+    "applied_to_contract",
+    "requires_next_ff",
+    "routed_to_friction",
+    "routed_to_docs",
+    "discarded",
+}
+FEEDBACK_TASK_IMPACTS = {
+    "none",
+    "updates_scope",
+    "updates_acceptance",
+    "requires_user_decision",
+}
+ACCEPTANCE_SOURCE_TYPES = {
+    "existing_script",
+    "runtime_state",
+    "runtime_integration",
+    "domain_model",
+    "user_feedback",
+    "fixture",
+    "test",
+    "inferred",
+}
+EXISTING_CAPABILITY_FIELDS = {
+    "prior_entries",
+    "behavior_rules",
+    "runtime_data_sources",
+    "runtime_integrations",
+    "domain_roles",
+    "counterexamples",
+}
+CHECKPOINT_PHASES = {
+    "discovery_inventory",
+    "plan",
+    "implementation",
+    "verification",
+    "pre_final",
+}
+CHECKPOINT_STATUSES = {
+    "pending",
+    "passed",
+    "blocked",
+    "gap",
+    "skipped",
+}
+CHECKPOINT_GAP_ACTIONS = {
+    "continue",
+    "needs_human",
+    "update_contract",
+    "next_ff",
+    "block",
+}
+LOOP_LEDGER_TERMINAL_READY_STATES = {
+    "done",
+    "commit_ready",
+    "remote_write_ready",
+}
+LOOP_LEDGER_ARTIFACT_HINTS = {
+    "loop-ledger",
+    "skills/loop-ledger",
+    "commands/ll",
+    "scripts/verify-ll-contract",
+}
+
+
+@dataclass(frozen=True)
+class Finding:
+    level: str
+    code: str
+    message: str
+
+    def line(self) -> str:
+        return f"{self.level} {self.code} {self.message}"
+
+
+def read_input(path: str | None) -> dict[str, Any]:
+    if path and path != "-":
+        return load_path(Path(path)).contract
+    return load_text(sys.stdin.read()).contract
+
+
+def get(data: dict[str, Any], path: str) -> Any:
+    current: Any = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def is_non_empty(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return bool(value)
+    return True
+
+
+def require(data: dict[str, Any], path: str, findings: list[Finding]) -> Any:
+    value = get(data, path)
+    if not is_non_empty(value):
+        findings.append(
+            Finding("FAIL", "E_REQUIRED_FIELD", f"{path} is required"))
+    return value
+
+
+def require_enum(data: dict[str, Any], path: str, allowed: set[str],
+                 findings: list[Finding]) -> Any:
+    value = require(data, path, findings)
+    if is_non_empty(value) and value not in allowed:
+        findings.append(
+            Finding("FAIL", "E_ENUM",
+                    f"{path} has unsupported value {value!r}"))
+    return value
+
+
+def list_value(data: dict[str, Any], path: str) -> list[Any]:
+    value = get(data, path)
+    return value if isinstance(value, list) else []
+
+
+def require_enum_list(data: dict[str, Any], path: str, allowed: set[str],
+                      findings: list[Finding]) -> list[Any]:
+    values = require(data, path, findings)
+    if not isinstance(values, list):
+        if is_non_empty(values):
+            findings.append(Finding("FAIL", "E_ENUM", f"{path} must be a list"))
+        return []
+    for value in values:
+        if value not in allowed:
+            findings.append(
+                Finding("FAIL", "E_ENUM",
+                        f"{path} has unsupported value {value!r}"))
+    return values
+
+
+def validate_feedback(data: dict[str, Any], findings: list[Finding]) -> None:
+    feedback = get(data, "feedback")
+    if feedback is None:
+        return
+    if not isinstance(feedback, list):
+        findings.append(
+            Finding("FAIL", "E_FEEDBACK_SCHEMA", "feedback must be a list"))
+        return
+    for index, item in enumerate(feedback):
+        path = f"feedback[{index}]"
+        if not isinstance(item, dict):
+            findings.append(
+                Finding("FAIL", "E_FEEDBACK_SCHEMA",
+                        f"{path} must be an object"))
+            continue
+        for field in [
+                "id", "source", "quote", "type", "problem", "disposition",
+                "current_task_impact"
+        ]:
+            if not is_non_empty(item.get(field)):
+                findings.append(
+                    Finding("FAIL", "E_FEEDBACK_SCHEMA",
+                            f"{path}.{field} is required"))
+        if is_non_empty(
+                item.get("type")) and item.get("type") not in FEEDBACK_TYPES:
+            findings.append(
+                Finding(
+                    "FAIL", "E_ENUM",
+                    f"{path}.type has unsupported value {item.get('type')!r}"))
+        if is_non_empty(item.get("disposition")) and item.get(
+                "disposition") not in FEEDBACK_DISPOSITIONS:
+            findings.append(
+                Finding(
+                    "FAIL", "E_ENUM",
+                    f"{path}.disposition has unsupported value {item.get('disposition')!r}"
+                ))
+        impact = item.get("current_task_impact")
+        if is_non_empty(impact) and impact not in FEEDBACK_TASK_IMPACTS:
+            findings.append(
+                Finding(
+                    "FAIL", "E_ENUM",
+                    f"{path}.current_task_impact has unsupported value {impact!r}"
+                ))
+        if item.get("type") == "current_task_correction" and impact == "none":
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_FEEDBACK_SCHEMA",
+                    f"{path}.current_task_correction cannot have current_task_impact=none",
+                ))
+
+
+def has_existing_capability_inventory(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return any(
+        is_non_empty(value.get(field)) for field in EXISTING_CAPABILITY_FIELDS)
+
+
+def validate_acceptance_sources(data: dict[str, Any],
+                                findings: list[Finding]) -> None:
+    inventory = get(data, "ll_contract.target.existing_capability_inventory")
+    if inventory is not None and not isinstance(inventory, dict):
+        findings.append(
+            Finding(
+                "FAIL", "E_EXISTING_CAPABILITY",
+                "ll_contract.target.existing_capability_inventory must be an object"
+            ))
+        return
+
+    sources = get(data, "ll_contract.verification.acceptance_sources")
+    if sources is None:
+        if has_existing_capability_inventory(inventory):
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_ACCEPTANCE_PROVENANCE",
+                    "existing_capability_inventory requires verification.acceptance_sources",
+                ))
+        return
+    if not isinstance(sources, list):
+        findings.append(
+            Finding(
+                "FAIL", "E_ACCEPTANCE_PROVENANCE",
+                "ll_contract.verification.acceptance_sources must be a list"))
+        return
+    if has_existing_capability_inventory(inventory) and not sources:
+        findings.append(
+            Finding(
+                "FAIL",
+                "E_ACCEPTANCE_PROVENANCE",
+                "existing_capability_inventory requires non-empty verification.acceptance_sources",
+            ))
+    for index, item in enumerate(sources):
+        path = f"ll_contract.verification.acceptance_sources[{index}]"
+        if not isinstance(item, dict):
+            findings.append(
+                Finding("FAIL", "E_ACCEPTANCE_PROVENANCE",
+                        f"{path} must be an object"))
+            continue
+        for field in ["done_when", "source_type", "evidence"]:
+            if not is_non_empty(item.get(field)):
+                findings.append(
+                    Finding("FAIL", "E_ACCEPTANCE_PROVENANCE",
+                            f"{path}.{field} is required"))
+        source_type = item.get("source_type")
+        if is_non_empty(
+                source_type) and source_type not in ACCEPTANCE_SOURCE_TYPES:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_ENUM",
+                    f"{path}.source_type has unsupported value {source_type!r}",
+                ))
+
+    done_when = list_value(data, "ll_contract.verification.done_when")
+    source_conditions = [
+        item.get("done_when") for item in sources if isinstance(item, dict)
+    ]
+    if sources and source_conditions != done_when:
+        findings.append(
+            Finding(
+                "FAIL",
+                "E_ACCEPTANCE_PRESERVATION",
+                "verification.acceptance_sources must preserve done_when one-to-one and in order",
+            ))
+
+
+def validate_feedback_exit_consistency(data: dict[str, Any],
+                                       findings: list[Finding]) -> None:
+    exit_state = get(data, "ll_contract.exit.state")
+    if exit_state not in LOOP_LEDGER_TERMINAL_READY_STATES:
+        return
+    feedback = get(data, "feedback")
+    if not isinstance(feedback, list):
+        return
+    for index, item in enumerate(feedback):
+        if not isinstance(item, dict):
+            continue
+        impact = item.get("current_task_impact")
+        if impact in {"updates_scope", "updates_acceptance"
+            } and item.get("disposition") not in {
+                "applied_to_contract", "requires_next_ff", "discarded"
+            }:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_FEEDBACK_UNRESOLVED",
+                    f"feedback[{index}] affects current task acceptance/scope but exit.state={exit_state} before disposition is applied_to_contract, requires_next_ff, or discarded",
+                ))
+        target = str(item.get("target_artifact", ""))
+        applies_to = str(item.get("applies_to", ""))
+        is_loop_control_gap = item.get("type") in {
+            "loop_process_gap",
+            "tool_route_friction",
+            "doc_rule_gap",
+        } and (applies_to in {"ll", "loop-ledger"} or any(
+            hint in target for hint in LOOP_LEDGER_ARTIFACT_HINTS))
+        if is_loop_control_gap and item.get("disposition") == "captured":
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_LOOP_FEEDBACK_UNRESOLVED",
+                    f"feedback[{index}] changes Loop Ledger control rules but exit.state={exit_state} before disposition is applied_to_contract, requires_next_ff, routed_to_docs, routed_to_friction, or discarded",
+                ))
+
+
+def validate_checkpoints(data: dict[str, Any], findings: list[Finding]) -> None:
+    mode = get(data, "ll_contract.mode")
+    exit_state = get(data, "ll_contract.exit.state")
+    checkpoints = get(data, "ll_contract.checkpoints")
+    if mode in {"full", "strict"} and not is_non_empty(checkpoints):
+        findings.append(
+            Finding("FAIL", "E_CHECKPOINTS",
+                    "full/strict contracts require ll_contract.checkpoints"))
+        return
+    if checkpoints is None:
+        return
+    if not isinstance(checkpoints, list):
+        findings.append(
+            Finding("FAIL", "E_CHECKPOINTS",
+                    "ll_contract.checkpoints must be a list"))
+        return
+
+    phases = set()
+    for index, item in enumerate(checkpoints):
+        path = f"ll_contract.checkpoints[{index}]"
+        if not isinstance(item, dict):
+            findings.append(
+                Finding("FAIL", "E_CHECKPOINTS", f"{path} must be an object"))
+            continue
+        for field in ["id", "phase", "status", "required_evidence", "on_gap"]:
+            if not is_non_empty(item.get(field)):
+                findings.append(
+                    Finding("FAIL", "E_CHECKPOINTS",
+                            f"{path}.{field} is required"))
+        phase = item.get("phase")
+        if is_non_empty(phase):
+            phases.add(phase)
+            if phase not in CHECKPOINT_PHASES:
+                findings.append(
+                    Finding("FAIL", "E_ENUM",
+                            f"{path}.phase has unsupported value {phase!r}"))
+        status = item.get("status")
+        if is_non_empty(status) and status not in CHECKPOINT_STATUSES:
+            findings.append(
+                Finding("FAIL", "E_ENUM",
+                        f"{path}.status has unsupported value {status!r}"))
+        on_gap = item.get("on_gap")
+        if is_non_empty(on_gap) and on_gap not in CHECKPOINT_GAP_ACTIONS:
+            findings.append(
+                Finding("FAIL", "E_ENUM",
+                        f"{path}.on_gap has unsupported value {on_gap!r}"))
+        if exit_state == "done" and status not in {"passed", "skipped"}:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_CHECKPOINT_UNRESOLVED",
+                    f"{path} must be passed or skipped before exit.state=done",
+                ))
+
+    missing = CHECKPOINT_PHASES - phases
+    if mode in {"full", "strict"} and missing:
+        findings.append(
+            Finding(
+                "FAIL",
+                "E_CHECKPOINTS",
+                "ll_contract.checkpoints must cover phases " +
+                ", ".join(sorted(missing)),
+            ))
+
+    if exit_state == "next_ff_ready" and get(
+            data, "ll_contract.exit.next_action") != "next_ff":
+        findings.append(
+            Finding("FAIL", "E_NEXT_FF",
+                    "next_ff_ready requires exit.next_action=next_ff"))
+
+
+def validate(data: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
+
+    schema_version = get(data, "schema_version")
+    if schema_version != SCHEMA_VERSION:
+        findings.append(
+            Finding("FAIL", "E_SCHEMA_VERSION",
+                    "schema_version must equal ll.contract.v0"))
+
+    mode = require_enum(data, "ll_contract.mode", MODES, findings)
+    require(data, "ll_contract.id", findings)
+    require(data, "ll_contract.project.root", findings)
+    gitlab_flow = require(data, "ll_contract.project.gitlab_flow", findings)
+    if gitlab_flow == "unknown":
+        findings.append(
+            Finding("WARN", "W_UNKNOWN_FLOW", "project.gitlab_flow is unknown"))
+    require(data, "ll_contract.applies_to.skill", findings)
+    require_enum(data, "ll_contract.applies_to.scope", SCOPES, findings)
+    require(data, "ll_contract.target.outcome", findings)
+    require(data, "ll_contract.verification.done_when", findings)
+
+    if mode in {"full", "strict"}:
+        require(data, "ll_contract.blocker.required_evidence", findings)
+        require(data, "ll_contract.knowledge_gate", findings)
+        ask_before = require_enum_list(data,
+                                       "ll_contract.authorization.ask_before",
+                                       ASK_BEFORE, findings)
+        require_enum_list(data,
+                          "ll_contract.authorization.allowed_side_effects",
+                          SIDE_EFFECTS, findings)
+        missing_checkpoint = ASK_BEFORE - set(str(item) for item in ask_before)
+        if missing_checkpoint:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_AUTHORIZATION_BOUNDARY",
+                    "authorization.ask_before must include " +
+                    ", ".join(sorted(missing_checkpoint)),
+                ))
+
+    exit_state = require_enum(data, "ll_contract.exit.state", EXIT_STATES,
+                              findings)
+    next_action = require_enum(data, "ll_contract.exit.next_action",
+                               NEXT_ACTIONS, findings)
+    privileged_git_exit = get(data, "ll_contract.exit.privileged_git_exit")
+    dispatch_target = get(data, "dispatch.target")
+    applies_skill = get(data, "ll_contract.applies_to.skill")
+    privileged_remote_write = (
+        privileged_git_exit is True
+        and dispatch_target in PRIVILEGED_REMOTE_DISPATCH_TARGETS
+        and applies_skill == "engineering-exit")
+    adapter = require_enum(data, "runtime_binding.adapter", ADAPTERS, findings)
+    require(data, "runtime_binding.objective", findings)
+    hot_packet = get(data, "runtime_binding.hot_packet")
+    if hot_packet is not None and not supports_hot_packet_policy(hot_packet):
+        findings.append(Finding(
+            "FAIL",
+            "E_HOT_PACKET_POLICY",
+            "runtime_binding.hot_packet must use "
+            f"{HOT_PACKET_PROTOCOL} soft={HOT_PACKET_SOFT_TARGET} "
+            f"hard={HOT_PACKET_HARD_LIMIT} or legacy limits "
+            f"{sorted(HOT_PACKET_LEGACY_LIMITS)}",
+        ))
+    stop_when = require(data, "runtime_binding.stop_when", findings)
+    call_user_when = list_value(data, "runtime_binding.call_user_when")
+    if mode != "off":
+        require(data, "runtime_binding.call_user_when", findings)
+    require_enum(data, "dispatch.target", DISPATCH_TARGETS, findings)
+
+    if exit_state == "active" and next_action != "continue":
+        findings.append(
+            Finding("FAIL", "E_ACTIVE_NEXT_ACTION",
+                    "active exit state requires exit.next_action=continue"))
+
+    if adapter == "codex_goal":
+        goal_authorization = get(data, "dispatch.goal_authorization")
+        if not isinstance(goal_authorization, dict):
+            findings.append(
+                Finding(
+                    "FAIL", "E_GOAL_AUTHORIZATION",
+                    "codex_goal requires dispatch.goal_authorization"))
+        else:
+            source = goal_authorization.get("source")
+            if source not in GOAL_AUTHORIZATION_SOURCES:
+                findings.append(
+                    Finding(
+                        "FAIL", "E_GOAL_AUTHORIZATION",
+                        "codex_goal authorization source must be user_request or user_confirmation"
+                    ))
+            if goal_authorization.get(
+                    "objective_source") != "verified_contract":
+                findings.append(
+                    Finding(
+                        "FAIL", "E_GOAL_AUTHORIZATION",
+                        "codex_goal objective_source must be verified_contract"
+                    ))
+
+    if next_action in REMOTE_ACTIONS and not privileged_remote_write and get(
+            data,
+            "ll_contract.exit.remote_write_requires_confirmation") is not True:
+        findings.append(
+            Finding(
+                "FAIL",
+                "E_REMOTE_CONFIRMATION",
+                "remote write next_action requires remote_write_requires_confirmation=true",
+            ))
+    if privileged_git_exit is True and not privileged_remote_write:
+        findings.append(
+            Finding(
+                "FAIL",
+                "E_PRIVILEGED_GIT_EXIT",
+                "privileged_git_exit is only valid for engineering-exit dispatch",
+            ))
+
+    if isinstance(stop_when, list):
+        joined = " ".join(str(item) for item in stop_when)
+        if not any(state in joined for state in TERMINAL_STATES):
+            findings.append(
+                Finding(
+                    "FAIL", "E_STOP_WHEN",
+                    "runtime_binding.stop_when must include terminal exit states"
+                ))
+
+    if (next_action in REMOTE_ACTIONS and not privileged_remote_write
+            and "remote_write" not in call_user_when):
+        findings.append(
+            Finding("FAIL", "E_CALL_USER",
+                    "remote write requires call_user_when remote_write"))
+    if exit_state == "needs_human" and not (
+            CALL_USER_REASONS & set(str(item) for item in call_user_when)):
+        findings.append(
+            Finding("FAIL", "E_CALL_USER",
+                    "needs_human requires at least one call_user_when reason"))
+
+    commands = list_value(data, "ll_contract.verification.commands")
+    substitutes = list_value(data,
+                             "ll_contract.verification.substitute_evidence")
+    if exit_state == "done" and not commands and not substitutes:
+        findings.append(
+            Finding(
+                "FAIL", "E_DONE_VERIFICATION",
+                "done requires verification commands or substitute evidence"))
+    if not commands and not substitutes and adapter != "manual_report":
+        findings.append(
+            Finding("WARN", "W_NO_COMMANDS", "verification.commands is empty"))
+    if adapter == "unknown" and get(data, "dispatch.target") != "manual":
+        findings.append(
+            Finding("FAIL", "W_UNKNOWN_ADAPTER",
+                    "unknown adapter is only valid with manual dispatch"))
+
+    linttest_gate = get(data, "ll_contract.verification.linttest_gate")
+    if mode in {"full", "strict"}:
+        require(data, "ll_contract.verification.linttest_gate", findings)
+    if isinstance(linttest_gate, dict):
+        status = linttest_gate.get("status")
+        source = linttest_gate.get("source")
+        if status not in LINTTEST_STATUSES:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_ENUM",
+                    f"ll_contract.verification.linttest_gate.status has unsupported value {status!r}",
+                ))
+        if source not in LINTTEST_SOURCES:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_ENUM",
+                    f"ll_contract.verification.linttest_gate.source has unsupported value {source!r}",
+                ))
+        if linttest_gate.get("source") == "template":
+            findings.append(
+                Finding(
+                    "FAIL", "E_LINTTEST_GUESS",
+                    "linttest gate source cannot be a template or copied example"
+                ))
+        changed = linttest_gate.get("changed") is True
+        executed = linttest_gate.get("executed") is True
+        change_auth = linttest_gate.get("change_authorized_by")
+        execution_auth = linttest_gate.get("execution_authorized_by")
+        if changed and change_auth not in LINTTEST_AUTHORIZATIONS:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_LINTTEST_AUTHORIZATION",
+                    "linttest changes require user_request or contract_acceptance authorization",
+                ))
+        if executed and execution_auth not in LINTTEST_AUTHORIZATIONS:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "E_LINTTEST_AUTHORIZATION",
+                    "linttest execution requires user_request or contract_acceptance authorization",
+                ))
+        if executed and status != "detected":
+            findings.append(
+                Finding(
+                    "FAIL", "E_LINTTEST_AUTHORIZATION",
+                    "linttest execution requires detected project-native gate"))
+
+    validate_acceptance_sources(data, findings)
+    validate_checkpoints(data, findings)
+    validate_feedback(data, findings)
+    validate_feedback_exit_consistency(data, findings)
+
+    return findings
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Validate legacy JSON or segmented ll.contract.v0 files.")
+    parser.add_argument("contract",
+                        nargs="?",
+                        default="-",
+                        help="Contract path, or '-' for legacy JSON stdin.")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        document = (load_path(Path(args.contract))
+                    if args.contract != "-" else load_text(sys.stdin.read()))
+        data = document.contract
+    except (OSError, ValueError) as exc:
+        print(f"FAIL E_SCHEMA_VERSION {exc}")
+        return 1
+
+    findings = validate(data)
+    if args.contract != "-":
+        try:
+            path = Path(args.contract).expanduser().resolve()
+            if document.segmented:
+                render_hot_block(document, path)
+            else:
+                render_front(data, path)
+        except ValueError as exc:
+            findings.append(Finding("FAIL", "E_HOT_BLOCK", str(exc)))
+    failed = [finding for finding in findings if finding.level == "FAIL"]
+    if failed:
+        for finding in findings:
+            print(finding.line())
+        return 1
+
+    print("PASS ll.contract.v0")
+    for finding in findings:
+        print(finding.line())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

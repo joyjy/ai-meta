@@ -1,0 +1,19 @@
+# coding-conventions:begin python
+python_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.py')
+if [ -n "$python_files" ]; then
+  if ! command -v yapf >/dev/null 2>&1; then
+    echo "pre-commit: yapf is required to format staged Python files" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$python_files" | while IFS= read -r python_file; do
+    [ -n "$python_file" ] || continue
+    if ! git diff --quiet -- "$python_file"; then
+      echo "pre-commit: $python_file has unstaged changes; stage or stash them before formatting" >&2
+      exit 1
+    fi
+    yapf -i --style google "$python_file"
+    git add -- "$python_file"
+  done || exit 1
+fi
+# coding-conventions:end python

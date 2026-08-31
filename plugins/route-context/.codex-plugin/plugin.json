@@ -1,0 +1,23 @@
+{
+  "name": "ai-meta-route-context",
+  "version": "0.1.0+codex.20260728005136",
+  "description": "Resolve personal tool-route and path shorthand into route context before agent execution, so high-frequency tool-routes can move from lookup docs into prompt-time facts.",
+  "author": {
+    "name": "joyjy"
+  },
+  "homepage": "https://github.com/joyjy/ai-meta",
+  "license": "UNLICENSED",
+  "interface": {
+    "displayName": "AI Meta Route Context",
+    "shortDescription": "Injects resolved personal tool-route and path context.",
+    "longDescription": "Adds deterministic route-context facts for personal shorthand such as gtd plan, draft, snippet, writing.md, $46, and llm-council. Ordinary keyword, path, host, and injected-route rules are loaded live from ~/.ai/route-context.json, so data-only changes do not require plugin reinstall. GitLab URLs also provide parsed hostname, repository, and MR IID when available. It does not execute writes or change the user prompt.",
+    "developerName": "joyjy",
+    "category": "Productivity",
+    "capabilities": [
+      "Lifecycle hooks"
+    ],
+    "defaultPrompt": [
+      "Resolve route context for this prompt."
+    ]
+  }
+}

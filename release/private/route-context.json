@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "description": "Portable route-context base for the sanitized private distribution. Put machine-specific routes in ~/.ai/route-context.local.json.",
+  "path_routes": [],
+  "special_routes": [
+    {
+      "id": "plan-draft-document-placement",
+      "match": {
+        "keywords": [
+          "plan document",
+          "draft document",
+          "plan 文档",
+          "draft 文档",
+          "计划文档",
+          "方案文档",
+          "docs plan"
+        ]
+      },
+      "route": {
+        "id": "plan-draft-document-placement",
+        "name": "Project-layer plan and draft document placement",
+        "tool_route": "~/.ai/tool-routes.md#plan--draft-文档",
+        "notes": [
+          "Resolve the project-control directory from an explicit project route or index.md; never infer it from a similarly named checkout.",
+          "This route resolves placement only and does not authorize creating or editing a file."
+        ]
+      }
+    },
+    {
+      "id": "loopback-integration",
+      "match": {
+        "keywords": ["loopback", "localhost", "127.0.0.1", "listen EPERM"]
+      },
+      "route": {
+        "id": "loopback-integration",
+        "name": "Loopback integration verification",
+        "tool_route": "~/.ai/tool-routes.md#loopback-集成验证",
+        "notes": [
+          "Inspect whether the command binds a local port before choosing a sandbox escalation.",
+          "Keep approval scoped to the project runner or exact operation."
+        ]
+      }
+    },
+    {
+      "id": "gradle-wrapper-local-cache",
+      "match": {
+        "keywords": ["./gradlew", "gradlew", "Gradle wrapper", "gradle-*.zip.lck"]
+      },
+      "route": {
+        "id": "gradle-wrapper-local-cache",
+        "name": "Gradle wrapper local cache write",
+        "tool_route": "~/.ai/tool-routes.md#gradle-wrapper-本机缓存",
+        "notes": [
+          "When ~/.gradle is outside the writable sandbox, request a narrow ./gradlew escalation instead of changing GRADLE_USER_HOME by default."
+        ]
+      }
+    },
+    {
+      "id": "mcp-capability-discovery",
+      "match": {
+        "keywords": ["MCP", "没挂载", "工具不存在", "not mounted", "not installed"]
+      },
+      "route": {
+        "id": "mcp-capability-discovery",
+        "name": "MCP registration and mount diagnosis",
+        "tool_route": "~/.ai/tool-routes.md#mcp-能力发现与挂载诊断",
+        "notes": [
+          "Distinguish not configured, configured but not registered, registered but not mounted, and mounted but unauthenticated or unreachable.",
+          "The current task tool inventory does not prove installation state."
+        ]
+      }
+    }
+  ]
+}

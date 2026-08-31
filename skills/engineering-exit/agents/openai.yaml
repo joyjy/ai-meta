@@ -1,0 +1,5 @@
+interface:
+  display_name: "engineering-exit"
+  short_description: "Close implementation, verification, docs, and MR readiness"
+policy:
+  allow_implicit_invocation: false
