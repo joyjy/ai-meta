@@ -17,7 +17,8 @@ tags: [ai-meta, architecture, clients]
 ai-meta 的水平维度是三层适配：
 
 ```text
-<maintenance-checkout>/   可版本管理的源文件层
+owner repositories  可版本管理的源文件层
+<maintenance-checkout>/   全局底座、ai-meta 自有 workflow 与发布注册
 ~/.ai/              本机运行态聚合层
 工具配置目录         Claude Code / OpenCode / Codex 的最后一跳适配层
 ```
@@ -35,7 +36,7 @@ commands/               slash command 薄入口
 plugins/                Codex 本地 plugin 独立 source 目录
 mcp/                    去敏 MCP 配置模板
 scripts/                共享 helper
-skills/                 ai-meta 自研 skills 和模板
+skills/                 ai-meta 自有 skills 和模板；项目能力 skill 留在 owner repo
 docs/                   当前目标、运行架构、系统地图
 install.sh              发布软链到本机运行态
 ```
@@ -65,7 +66,7 @@ install.sh              发布软链到本机运行态
 
 ~/.config/opencode/skills/    -> ~/.ai/skills/
 ~/.claude/skills/             -> ~/.ai/skills/
-~/.agents/skills/             -> <maintenance-checkout>/skills/
+~/.agents/skills/             -> <maintenance-checkout>/skills/ + registered owner-repo skills
 ~/.codex/plugins/cache/       Codex plugin 安装缓存，本机运行态
 ```
 
@@ -73,6 +74,8 @@ Codex 没有本地 slash command / subagent 目录概念，因此共享全局指
 skills、MCP tools、单一脚本入口或 Codex plugin lifecycle hooks 桥接能力。repo 可维护本地
 plugin marketplace 和独立 plugin 目录；`~/.codex` 中的安装缓存、启用状态和 hook trust 属于
 本机运行态。各客户端目录和入口细节的维护归属见 [project-map](../project-map.md)。
+
+项目能力 skill 由能力 owner repo 维护 canonical 包，ai-meta `install.sh` 只登记其 source root，并将同一目录软链到 `~/.ai/skills/` 与 `~/.agents/skills/`。owner repo 不存在时跳过该能力并清理 ai-meta 管理的旧软链，不在 ai-meta 复制 fallback 内容。
 
 显式调用策略属于客户端适配元数据。仅允许用户主动运行的 skill 在共享 `SKILL.md` frontmatter 中声明 `disable-model-invocation: true`，供 Claude 读取；如果 Claude 同时发布 command 薄入口，该 command 也声明相同字段。Codex 在 skill 目录的 `agents/openai.yaml` 中声明 `policy.allow_implicit_invocation: false`。当前 explicit-only 集合是 `engineering-exit`、`load-context`、`loop-ledger` 和 `save-context`；`agent-doc-hygiene`、`grill`、`review-router` 和 `steelman` 保留语义触发及 agent 主动路由能力。缩写只存在于用户 command / invocation，不作为第二个 skill identity。
 

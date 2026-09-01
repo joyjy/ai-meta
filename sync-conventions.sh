@@ -47,6 +47,7 @@ if not os.path.isdir(TEMPLATE_ROOT):
 PREFERENCES_ROOT = os.path.realpath(os.path.join(os.path.dirname(TEMPLATE_ROOT), 'preferences'))
 PREFERENCES_AGENTS = os.path.realpath(os.path.join(home, 'Documents/projects/AGENTS.md'))
 IS_PREFERENCES_AGENTS = os.path.realpath(agents_file) == PREFERENCES_AGENTS
+DEFAULT_PREFERENCE_FILES = ('general.md', 'java.md', 'review.md')
 CONVENTIONS_SECTION = '## 编码规范'
 KNOWN_TEMPLATES = {
     'general',
@@ -90,8 +91,8 @@ def preference_paths(tpl_name):
         return []
     return [
         os.path.join(PREFERENCES_ROOT, name)
-        for name in sorted(os.listdir(PREFERENCES_ROOT))
-        if name.endswith('.md') and os.path.isfile(os.path.join(PREFERENCES_ROOT, name))
+        for name in DEFAULT_PREFERENCE_FILES
+        if os.path.isfile(os.path.join(PREFERENCES_ROOT, name))
     ]
 
 def preference_content(paths):

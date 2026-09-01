@@ -1,4 +1,0 @@
-interface:
-  display_name: "larkbot"
-  short_description: "Route common agent tasks through the local larkbot"
-  default_prompt: "Use $larkbot to send me a bot message."

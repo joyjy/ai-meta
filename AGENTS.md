@@ -16,7 +16,7 @@
 - 本 repo 的源码归属、生成关系和验证入口以 [`docs/architecture/source-map.md`](docs/architecture/source-map.md) 为 source of truth。
 - 个人 AI 系统模块、工作域、子模块和 context abbr 的归属以
   [`docs/project-map.md`](docs/project-map.md) 为准；新增长期对象时先登记维护边界。
-- 源文件在本 repo，`~/.ai/` 只放软链或本机运行态文件；各工具配置目录只做最后一跳适配。
+- ai-meta 自有源文件在本 repo；项目能力的 canonical skill 留在 owner repo，由 `install.sh` 登记并发布发现软链。`~/.ai/` 只放软链或本机运行态文件；各工具配置目录只做最后一跳适配。
 - `~/.ai/contexts/`、`~/.ai/work-items/` 和含 token 的 `~/.ai/mcp/config.json` 不进 git。
 - 允许经由 `~/.ai/instructions.md` 编辑全局指令，但该路径必须保持为指向 `instructions.md`
   的软链；若被编辑器替换成真实文件，运行 `bash install.sh` 修复。

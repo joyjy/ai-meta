@@ -45,8 +45,7 @@ ai-meta architecture 分为这些稳定 scope：
 ## Decisions / Invariants
 
 - 源文件进 repo，运行态留本机，客户端目录保持薄软链。
-- `~/.ai/` 是 aggregation 点，不是长期事实源。能进 git 的内容应该回到
-  `<maintenance-checkout>/` 维护。
+- `~/.ai/` 是 aggregation 点，不是长期事实源。能进 git 的内容应该回到对应 owner repo 维护；全局底座和 ai-meta 自有 workflow 回到 `<maintenance-checkout>/`。
 - context 只承担恢复索引职责；长期事实回写到对应 source of truth。
 - skill 链条保持浅：主 skill + 最多一层 reference；命中明确 gate 才路由 specialist。
 - README 面向人说明参考价值，AGENTS.md 面向 agent 说明执行边界。

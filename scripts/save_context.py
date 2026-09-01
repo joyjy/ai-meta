@@ -16,7 +16,12 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from context_ff_merge import load_context, load_yaml_module, render_context
+from context_ff_merge import (
+    load_context,
+    load_yaml_module,
+    render_context,
+    split_context,
+)
 
 CONTEXT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 ROUTE_INDEX_RE = re.compile(r"^# context: .+$")
@@ -162,7 +167,9 @@ def fallback_parse_frontmatter(frontmatter: str) -> dict[str, Any]:
     return data
 
 
-def parse_frontmatter(frontmatter: str) -> dict[str, Any]:
+def parse_frontmatter(
+    frontmatter: str, *, validate_next_route: bool = True
+) -> dict[str, Any]:
     try:
         import yaml  # type: ignore[import-not-found]
     except ImportError:
@@ -191,11 +198,25 @@ def parse_frontmatter(frontmatter: str) -> dict[str, Any]:
     if not isinstance(parsed.get("workstreams"), dict):
         raise ValueError("context YAML workstreams must be a mapping")
     next_route = parsed.get("next_route")
-    if (next_route is not None and next_route != "mainline" and
+    if (validate_next_route and next_route is not None and next_route != "mainline" and
             (not isinstance(next_route, str)
              or next_route not in parsed["workstreams"])):
         raise ValueError(f"context YAML next_route {next_route!r} does not exist")
     return parsed
+
+
+def compile_next_route(context: str, requested_route: str) -> str:
+    _, frontmatter, body = split_context(context)
+    data = parse_frontmatter(frontmatter, validate_next_route=False)
+    next_route = None if requested_route == "none" else requested_route
+    if (
+        next_route is not None
+        and next_route != "mainline"
+        and next_route not in data["workstreams"]
+    ):
+        raise ValueError(f"requested next route {requested_route!r} does not exist")
+    data["next_route"] = next_route
+    return render_context(data, body)
 
 
 def validate_context_structure(parser: argparse.ArgumentParser, context: str,
@@ -358,6 +379,13 @@ def main() -> int:
         help="Allow writing an empty context snapshot",
     )
     parser.add_argument(
+        "--next-route",
+        help=(
+            "Authoritative recommended route for a mainline context input: "
+            "mainline, none, or an existing workstream"
+        ),
+    )
+    parser.add_argument(
         "--timeline",
         default="",
         help="One-line Daily Note timeline text without leading '- '",
@@ -382,6 +410,11 @@ def main() -> int:
         action="store_true",
         help="Delete the target context snapshot instead of writing it",
     )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Validate and compile inputs without writing context or timeline files",
+    )
     args = parser.parse_args()
 
     if args.timeline_only and args.skip_timeline:
@@ -394,6 +427,15 @@ def main() -> int:
 
     if args.timeline_only and args.delete_context:
         parser.error("--timeline-only cannot be used with --delete-context")
+
+    if args.next_route == "":
+        parser.error("--next-route must not be empty")
+
+    if args.next_route is not None and (args.timeline_only or args.delete_context):
+        parser.error("--next-route requires a mainline context input")
+
+    if args.next_route is not None and args.allow_empty:
+        parser.error("--next-route cannot be used with --allow-empty")
 
     if context_input_count > 1:
         parser.error(
@@ -410,6 +452,42 @@ def main() -> int:
         except ValueError as exc:
             parser.error(str(exc))
 
+    context: str | None = None
+    if not args.timeline_only and not args.delete_context:
+        context = read_context(args)
+        assert path is not None
+        if workstream:
+            if args.allow_empty:
+                parser.error("--allow-empty is not valid for a workstream save")
+            if args.next_route is not None:
+                parser.error("--next-route is not valid for a workstream save")
+            try:
+                context = merge_workstream(path, args.abbr.split(":", 1)[0],
+                                           workstream, context)
+            except (OSError, ValueError) as exc:
+                parser.error(str(exc))
+        else:
+            if args.next_route is not None:
+                try:
+                    context = compile_next_route(context, args.next_route)
+                except ValueError as exc:
+                    parser.error(str(exc))
+            validate_context_input(parser, context, args.allow_empty, args.abbr)
+
+    timeline_now: datetime | None = None
+    if not args.skip_timeline and args.timeline.strip():
+        if args.date:
+            try:
+                timeline_now = datetime.strptime(args.date, "%Y-%m-%d")
+            except ValueError:
+                parser.error("--date must be in YYYY-MM-DD format")
+        else:
+            timeline_now = datetime.now()
+
+    if args.validate_only:
+        print("validation succeeded")
+        return 0
+
     if args.timeline_only:
         print("context skipped")
     elif args.delete_context:
@@ -424,20 +502,12 @@ def main() -> int:
         else:
             print(f"context already missing {path}")
     else:
-        context = read_context(args)
+        assert context is not None
         assert path is not None
         if workstream:
-            if args.allow_empty:
-                parser.error("--allow-empty is not valid for a workstream save")
-            try:
-                context = merge_workstream(path, args.abbr.split(":", 1)[0],
-                                           workstream, context)
-            except (OSError, ValueError) as exc:
-                parser.error(str(exc))
             atomic_write_text(path, context)
             print(f"merged workstream {workstream} into {path}")
         else:
-            validate_context_input(parser, context, args.allow_empty, args.abbr)
             atomic_write_text(path, context)
             print(f"wrote {path}")
 
@@ -445,13 +515,8 @@ def main() -> int:
         print("timeline skipped")
         return 0
 
-    if args.date:
-        try:
-            now = datetime.strptime(args.date, "%Y-%m-%d")
-        except ValueError:
-            parser.error("--date must be in YYYY-MM-DD format")
-    else:
-        now = datetime.now()
+    assert timeline_now is not None
+    now = timeline_now
     path = daily_note_path(now)
     daily = ensure_daily_note(path, now)
     daily, appended = append_timeline(daily, args.timeline.strip())

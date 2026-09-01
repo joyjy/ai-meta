@@ -66,9 +66,8 @@ Write this plain-language JSON to `audit-summary.json`:
   "object": "<short real project, route, or work object>",
   "finding": "<one plain-language sentence describing the most important finding, or that no evidence-backed finding exists>",
   "evidence": ["<up to three exact, useful anchors>"],
-  "recommendation": "<one plain-language next action; say no action when there are no candidates>",
-  "candidate_ids": ["<every audit_id from agent-audit.yaml, lane order, exactly once>"]
+  "recommendation": "<one plain-language next action; say no action when there are no candidates>"
 }
 ```
 
-This summary is a review aid, not a settlement decision or execution authorization. Avoid internal lane counts, receipt mechanics, and unexplained IDs in `finding` and `recommendation`. When both lanes are empty, use an empty `candidate_ids` list and empty `evidence` list.
+This summary is a review aid, not a settlement decision or execution authorization. Avoid internal lane counts, receipt mechanics, and unexplained IDs in `finding` and `recommendation`. The source helper derives `candidate_ids` from `agent-audit.yaml`; do not author that control field in this summary. When both lanes are empty, use an empty `evidence` list.

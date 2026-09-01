@@ -58,6 +58,22 @@ cleanup_ai_command_symlink() {
   fi
 }
 
+publish_project_skill() {
+  local name="$1" src="$2"
+  if [ ! -f "$src/SKILL.md" ]; then
+    cleanup_skill_symlink "$AI/skills" "$name"
+    cleanup_skill_symlink "$AGENTS_SKILLS" "$name"
+    echo "  [WARN] project skill unavailable: $name ($src)"
+    return
+  fi
+  if [ ! -f "$src/agents/openai.yaml" ]; then
+    echo "  [ERROR] project skill lacks Codex metadata: $src/agents/openai.yaml" >&2
+    return 1
+  fi
+  symlink "$src" "$AI/skills/$name"
+  symlink "$src" "$AGENTS_SKILLS/$name"
+}
+
 echo "==> ai-meta install (repo: $REPO)"
 mkdir -p "$AI/agents/opencode" "$AI/agents/claude"
 
@@ -131,6 +147,11 @@ for d in "$REPO/skills"/*/; do
   fi
   symlink "$d" "$AGENTS_SKILLS/$(basename "$d")"
 done
+
+echo ""
+echo "[project skills] owner repos -> shared discovery"
+larkbot_project_root="${AI_META_LARKBOT_PROJECT_ROOT:-$HOME/Documents/me/Projects/larkbot}"
+publish_project_skill "larkbot" "$larkbot_project_root/skills/larkbot"
 
 for name in \
   bmad-brainstorming \
