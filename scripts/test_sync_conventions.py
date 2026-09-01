@@ -141,6 +141,43 @@ class SyncConventionsTest(unittest.TestCase):
         self.assertNotIn("Node-only CLI / server", testing_only)
         self.assertIn("Node-only CLI / server", with_node_kit)
 
+    def test_personal_parent_only_includes_default_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            projects = home / "Documents" / "projects"
+            projects.mkdir(parents=True)
+            agents = projects / "AGENTS.md"
+            agents.write_text(
+                "<!-- coding-conventions:begin general -->\n"
+                "stale\n"
+                "<!-- coding-conventions:end general -->\n",
+                encoding="utf-8",
+            )
+            skill_dir = home / ".ai" / "skills" / "coding-conventions"
+            skill_dir.parent.mkdir(parents=True)
+            skill_dir.symlink_to(
+                ROOT / "skills" / "coding-conventions",
+                target_is_directory=True,
+            )
+
+            proc = subprocess.run(
+                [str(SYNC), str(agents)],
+                cwd=ROOT,
+                env={**os.environ, "HOME": str(home)},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            content = agents.read_text(encoding="utf-8")
+            self.assertIn("# 通用个人偏好", content)
+            self.assertIn("# Java 个人偏好", content)
+            self.assertIn("# Review 个人偏好", content)
+            self.assertNotIn("# IDaaS lintest MR Walkthrough", content)
+            self.assertNotIn("# Pitfall Watch", content)
+            self.assertNotIn("# Temporary Pitfalls", content)
+
 
 if __name__ == "__main__":
     unittest.main()

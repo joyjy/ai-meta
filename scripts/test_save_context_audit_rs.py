@@ -12,11 +12,60 @@ import sys
 import tempfile
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from save_context_audit_rs import (  # noqa: E402
+    parse_audit_candidates,
+    read_audit_summary,
+)
+
 
 SCRIPT = Path(__file__).with_name("save_context_audit_rs.py")
 
 
 class SaveContextAuditRsTest(unittest.TestCase):
+
+    def test_summary_candidate_ids_are_derived_from_valid_yaml_lane_order(self) -> None:
+        candidates = parse_audit_candidates(
+            "schema: agent.audit.v1\n"
+            "execution_friction:\n"
+            "- audit_id: friction-a\n"
+            "  evidence:\n"
+            "  - 'audit_id: not-a-candidate'\n"
+            "prompt_contract_gaps:\n"
+            "  - audit_id: prompt-b\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path = Path(tmp) / "audit-summary.json"
+            summary_path.write_text(
+                json.dumps({
+                    "schema": "save-context.audit-summary.v1",
+                    "thread_id": "thread-audit",
+                    "object": "save-context audit",
+                    "finding": "Two evidence-backed findings exist.",
+                    "evidence": ["agent-audit.yaml"],
+                    "recommendation": "Review both candidates.",
+                    "candidate_ids": ["worker-guessed-id"],
+                }),
+                encoding="utf-8",
+            )
+
+            summary = read_audit_summary(
+                summary_path, "thread-audit", candidates
+            )
+
+        self.assertEqual(
+            ["friction-a", "prompt-b"], summary["candidate_ids"]
+        )
+
+    def test_audit_candidates_reject_duplicate_lane_keys(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "duplicate key"):
+            parse_audit_candidates(
+                "schema: agent.audit.v1\n"
+                "execution_friction: []\n"
+                "execution_friction: []\n"
+                "prompt_contract_gaps: []\n"
+            )
 
     def test_dispatches_once_to_kimi_without_waiting_for_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -181,7 +230,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
                     "finding": "No evidence-backed finding exists.",
                     "evidence": [],
                     "recommendation": "No action.",
-                    "candidate_ids": [],
+                    "candidate_ids": ["worker-guessed-id"],
                 }),
                 encoding="utf-8",
             )
@@ -211,6 +260,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
                 "No evidence-backed finding exists.",
                 ready_payload["audit_summary"]["finding"],
             )
+            self.assertEqual([], ready_payload["audit_summary"]["candidate_ids"])
 
             settlement_input = root / "settlement-input.json"
             settlement_input.write_text(
@@ -349,7 +399,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
             successor = json.loads(redispatched.stdout)
             self.assertNotEqual("legacy-audit", successor["audit_id"])
             self.assertEqual(
-                "run-intent-owner-compiled-v2-audit-summary",
+                "run-intent-owner-compiled-v3-derived-summary-ids",
                 successor["dispatch_contract"],
             )
             self.assertEqual("/workspace/project", successor["project_cwd"])
@@ -451,7 +501,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
                 "schema: agent.audit.v1\n"
                 "thread_id: thread-audit\n"
                 "execution_friction:\n"
-                "  - audit_id: friction-a\n"
+                "- audit_id: friction-a\n"
                 "prompt_contract_gaps: []\n",
                 encoding="utf-8",
             )
@@ -475,6 +525,31 @@ class SaveContextAuditRsTest(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
+            template = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "settle",
+                    "--receipt", str(receipt_path),
+                    "--template",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, template.returncode, template.stderr)
+            self.assertEqual(
+                [{
+                    "lane": "execution_friction",
+                    "audit_id": "friction-a",
+                    "disposition": "",
+                    "destination": "",
+                    "reason": "",
+                    "durable_ref": "",
+                }],
+                json.loads(template.stdout)["items"],
+            )
+            self.assertFalse((audit_dir / "settlement.json").exists())
             settled = subprocess.run(
                 [
                     sys.executable,

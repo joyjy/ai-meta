@@ -16,9 +16,9 @@ tags: [ai-meta, architecture, source-of-truth]
 
 ### Repo And Runtime
 
-- `<maintenance-checkout>/` 是可版本管理源文件层。
+- 可版本管理源文件留在各自 owner repo；`<maintenance-checkout>/` 拥有全局底座、ai-meta 自有 workflow 和跨客户端发布注册。
 - `~/.ai/` 是本机运行态 aggregation 点，不是长期事实源。
-- 能进 git 的内容应该回到 `<maintenance-checkout>/` 维护。
+- 能进 git 的内容应该回到对应 owner repo 维护；项目能力 skill 不复制进 ai-meta。
 - `~/.ai/contexts/`、`~/.ai/work-items/` 和 token 类本机私有状态不进 git。
 - Codex plugin 的 marketplace 描述、manifest、hook adapter 和 helper 脚本进 repo；
   `~/.codex` 里的 marketplace 注册、安装缓存、启用状态和 hook trust 是本机运行态。
@@ -48,12 +48,12 @@ context 只保存恢复索引，不保存完整过程分析；长期事实应回
 
 - 发布前运行 ai-meta 专用入口预检，确保会发布的 command 有 Codex 可发现 skill / 桥接或显式例外。
 - 发布核心文件到 `~/.ai/`。
-- 发布 command、skill、hook 和选定 helper。
+- 发布 command、ai-meta 自有 skill、已登记 owner-repo skill、hook 和选定 helper。
 - 共享 MCP 私有配置存在时，同步 Codex 受管适配块；不覆盖同名手工配置。
 - 发布客户端最后一跳软链。
 - 清理 install script 中仍显式登记的退役入口。
 
-它不负责生成私有 token 配置，也不把运行态 context / work-items 写入 git。
+项目 skill source 不存在时，安装器清理自己管理的旧发现软链并跳过该能力；source 存在但缺少 Codex metadata 时失败，避免发布半个 skill。它不负责生成私有 token 配置，也不把运行态 context / work-items 写入 git。
 
 ### Project Source Map
 

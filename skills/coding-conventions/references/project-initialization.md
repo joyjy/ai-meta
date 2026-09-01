@@ -16,7 +16,7 @@
 - 新项目先写 `general`，再写测试、语言或工具模板。个人 / 自管项目已有其他 block 但缺 `general` 时，先检查父级；父级没有才补。
 - 模板标题整体降级，避免与项目文档主标题竞争；更新既有同名 block，不制造重复块，不修改 marker 外内容。
 - 团队项目中既存的个人偏好或个人路径应移出项目入口；不要把 `preferences/*` 展开到具体项目。
-- `../preferences/*` 不是独立模板；`sync-conventions.sh` 只把它们写入个人父级 `~/Documents/projects/AGENTS.md` 的 `general` 受控块。
+- `../preferences/*` 不是独立模板；`sync-conventions.sh` 只把 `general.md`、`java.md`、`review.md` 写入个人父级 `~/Documents/projects/AGENTS.md` 的 `general` 受控块，其余偏好按主 skill 的信号条件读取。
 
 ## Node Test Kit
 

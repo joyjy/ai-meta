@@ -220,6 +220,24 @@ def context_stage(
     }, completed)
 
 
+def context_preflight_stage(
+    context_args: list[str],
+    input_text: str | None,
+    commands: Commands,
+    runner: RunCommand,
+) -> tuple[dict[str, Any], subprocess.CompletedProcess[str]]:
+    completed = runner(
+        [*commands.context, *context_args, "--validate-only"], input_text
+    )
+    if completed.returncode != 0:
+        return ({
+            "status": "failed",
+            "exit_code": completed.returncode,
+            "detail": compact_detail(completed),
+        }, completed)
+    return ({"status": "succeeded"}, completed)
+
+
 def option_value(arguments: list[str], name: str) -> str:
     for index, argument in enumerate(arguments):
         if argument == name and index + 1 < len(arguments):
@@ -227,6 +245,13 @@ def option_value(arguments: list[str], name: str) -> str:
         if argument.startswith(f"{name}="):
             return argument.split("=", 1)[1]
     return ""
+
+
+def has_option(arguments: list[str], name: str) -> bool:
+    return any(
+        argument == name or argument.startswith(f"{name}=")
+        for argument in arguments
+    )
 
 
 def title_stage(
@@ -268,13 +293,25 @@ def orchestrate(
         admission, args.pause_override
     )
     if not admitted:
-        for name in ("audit", "context", "title"):
+        for name in ("preflight", "audit", "context", "title"):
             stages[name] = {"status": "skipped", "reason": "continue_work"}
         return 3, {
             "schema": "save-context.checkpoint.v1",
             "status": "continue_work",
             "stages": stages,
         }
+    stages["preflight"], preflight_result = context_preflight_stage(
+        context_args, input_text, commands, runner
+    )
+    if preflight_result.returncode != 0:
+        for name in ("audit", "context", "title"):
+            stages[name] = {"status": "skipped", "reason": "preflight_failed"}
+        return preflight_result.returncode, {
+            "schema": "save-context.checkpoint.v1",
+            "status": "failed",
+            "stages": stages,
+        }
+
     stages["audit"] = audit_stage(args, commands, runner)
     stages["context"], context_result = context_stage(
         context_args, input_text, commands, runner
@@ -332,7 +369,22 @@ def main() -> int:
         parser.error("orchestrated save requires <abbr> before context options")
     if not args.admission_file:
         parser.error("orchestrated save requires --admission-file")
+    if "--validate-only" in context_args:
+        parser.error("--validate-only is reserved for orchestrator preflight")
     args.abbr = context_args[0]
+    mainline_context_input = (
+        ":" not in args.abbr
+        and (
+            has_option(context_args, "--context-file")
+            or has_option(context_args, "--context-stdin")
+        )
+        and not has_option(context_args, "--allow-empty")
+    )
+    if mainline_context_input and not has_option(context_args, "--next-route"):
+        parser.error(
+            "orchestrated mainline save requires --next-route "
+            "<none|mainline|existing-workstream>"
+        )
     if (args.audit_thread_id or args.audit_rollout) and not args.audit_cwd:
         parser.error("--audit-cwd is required with an audit source")
     if args.audit_cwd and not (args.audit_thread_id or args.audit_rollout):

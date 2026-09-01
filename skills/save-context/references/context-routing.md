@@ -33,6 +33,7 @@ In Codex, use the same entry as a single checkpoint orchestrator:
 ~/.ai/scripts/save-context --orchestrate <abbr> \
   --admission-file <save-context.admission.v1.json> \
   --context-file <context-file> \
+  --next-route <none|mainline|existing-workstream> \
   --timeline "[HH:MM-HH:MM] <timeline text>" \
   --audit-thread-id <exact-thread-id> \
   --audit-cwd <exact-project-cwd> \
@@ -59,11 +60,11 @@ Use `decision=continue_work` with at least one `actionable` item when a newly di
 
 The admission envelope is bounded to 16 KiB, at most 20 `checked` and 20 `actionable` entries, and 500 characters per entry. Store only source references and compact readback; never copy tokens, raw logs, or full artifacts into it.
 
-The command emits one `save-context.checkpoint.v1` JSON receipt. Admission runs first, then audit, context/timeline, and title. Context failure preserves the helper's nonzero exit and skips title. Audit or title failure returns exit code 0 with receipt status `degraded`; neither failure rolls back a valid context checkpoint. Repeated invocation keeps audit and timeline idempotency in their owning helpers.
+The command emits one `save-context.checkpoint.v1` JSON receipt. Admission runs first, then a read-only context compile/validation preflight, audit, context/timeline, and title. Preflight failure preserves the helper's nonzero exit and skips audit plus every write stage, so malformed control fields cannot create duplicate audit receipts. Formal context failure preserves the helper's nonzero exit and skips title. Audit or title failure returns exit code 0 with receipt status `degraded`; neither failure rolls back a valid context checkpoint. Repeated invocation keeps audit and timeline idempotency in their owning helpers.
 
 Script rules:
 
-- For `<abbr>`, the agent generates the complete context markdown.
+- For `<abbr>`, the agent generates the complete context markdown and passes the human-selected `--next-route <none|mainline|existing-workstream>`. The helper treats that one value as authoritative and compiles both YAML `next_route` and the route-index `next=` field; do not author those two control fields independently. If the correct route is not evidenced, stop at the human checkpoint instead of guessing from cwd, recent context, or an available workstream.
 - For `<abbr>:<workstream>`, the agent passes a `context.workstream.v1`
   YAML/JSON payload. The script merges that route into the existing context and
   preserves mainline and unrelated workstreams.
@@ -81,6 +82,10 @@ Script rules:
   before content is sent.
 - Empty or whitespace-only context input is rejected before writing. Use
   `--allow-empty` only when deliberately blanking a snapshot.
+- `--validate-only` is the orchestrator's read-only preflight interface. It
+  compiles and validates the same input, including the deterministic timeline
+  date, without writing context or Daily Note files; direct checkpoint calls
+  normally omit it.
 - Non-empty input is validated before writing. Full context input must pass the
   context.v2 route-index/frontmatter/project checks; workstream input must pass
   the `context.workstream.v1` schema and field checks. The script writes by

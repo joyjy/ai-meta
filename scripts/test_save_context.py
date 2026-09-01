@@ -174,6 +174,99 @@ mainline:
             self.assertEqual(2, proc.returncode)
             self.assertIn("next_route ['forum'] does not exist", proc.stderr)
 
+    def test_next_route_compiles_header_and_yaml_from_one_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            stale = self.valid_context().replace(
+                "next=mainline", "next=guessed-route"
+            ).replace("next_route: mainline", "next_route: guessed-route")
+
+            proc = self.run_script(
+                home,
+                "amt",
+                "--context-stdin",
+                "--next-route", "none",
+                "--skip-timeline",
+                input_text=stale,
+            )
+
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            saved = (home / ".ai" / "contexts" / "amt.md").read_text(
+                encoding="utf-8"
+            )
+            route_index, frontmatter = save_context.split_context_frontmatter(saved)
+            self.assertTrue(route_index.endswith("next=none"))
+            self.assertIsNone(save_context.parse_frontmatter(frontmatter)["next_route"])
+
+    def test_next_route_rejects_unknown_requested_workstream_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+
+            proc = self.run_script(
+                home,
+                "amt",
+                "--context-stdin",
+                "--next-route", "missing",
+                "--skip-timeline",
+                input_text=self.valid_context(),
+            )
+
+            self.assertEqual(2, proc.returncode)
+            self.assertIn("requested next route 'missing' does not exist", proc.stderr)
+            self.assertFalse((home / ".ai" / "contexts" / "amt.md").exists())
+
+    def test_next_route_can_select_an_existing_workstream(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            context = self.valid_context().replace(
+                "workstreams: {}",
+                """workstreams:
+  forum:
+    state: active
+    summary: Review audit results
+    doing: []
+    blocked: []
+    next_step: settle ready receipt""",
+            )
+
+            proc = self.run_script(
+                home,
+                "amt",
+                "--context-stdin",
+                "--next-route", "forum",
+                "--skip-timeline",
+                input_text=context,
+            )
+
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            saved = (home / ".ai" / "contexts" / "amt.md").read_text(
+                encoding="utf-8"
+            )
+            route_index, frontmatter = save_context.split_context_frontmatter(saved)
+            self.assertTrue(route_index.endswith("next=forum"))
+            self.assertEqual(
+                "forum", save_context.parse_frontmatter(frontmatter)["next_route"]
+            )
+
+    def test_validate_only_checks_context_and_timeline_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+
+            proc = self.run_script(
+                home,
+                "amt",
+                "--context-stdin",
+                "--next-route", "none",
+                "--timeline", "[09:00-09:10] validate only",
+                "--validate-only",
+                input_text=self.valid_context(),
+            )
+
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            self.assertIn("validation succeeded", proc.stdout)
+            self.assertFalse((home / ".ai" / "contexts" / "amt.md").exists())
+            self.assertFalse((home / "Documents" / "me" / "Daily Notes").exists())
+
     def test_fallback_frontmatter_parser_accepts_empty_workstreams(
             self) -> None:
         _, frontmatter = save_context.split_context_frontmatter(

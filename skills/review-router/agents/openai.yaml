@@ -1,4 +1,4 @@
 interface:
   display_name: "review-router"
-  short_description: "Route code reviews through the right strategy"
-  default_prompt: "Use $review-router to review this change with the appropriate strategy."
+  short_description: "Route code and design reviews through the right strategy"
+  default_prompt: "Use $review-router to review this code change or explicit design artifact with the appropriate strategy."

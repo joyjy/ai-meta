@@ -73,7 +73,7 @@ ai-meta 不只管理启动 prompt，也维护 agent 完成一段工作的完整�
 - `grill`：连续压测 plan、设计或规则，直到关键结构性问题被说清楚。
 - `loop-ledger`（用户调用 `ll`）：把已确认工作单编译为准确的 Codex goal 与单文件运行契约，并管理恢复、验证和人工检查点。
 - `design-direction`（用户调用 `dd`）：为 UI 工作建立或恢复设计方向，避免迭代过程中风格漂移。
-- `review-router`（用户调用 `rr`）：按变更风险选择 simple、challenge、two-axis、quality 或 evolution review，并判断是否需要升级审查。
+- `review-router`（用户调用 `rr`）：按变更风险选择 simple、challenge、two-axis、quality、prune 或 evolution review；显式 `rr design` 评审方案语义与可实施性。
 - `agent-doc-hygiene`：治理 agent 高频加载文档，减少重复、陈旧规则和无效上下文。
 - `doc-arch-review`：评审架构文档、ADR、知识分层和 source-of-truth 边界。
 - `engineering-exit`：在实现后统一收束源码、文档、验证证据和 MR 准备。

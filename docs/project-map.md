@@ -14,11 +14,11 @@
 
 | 名称 | 类型 | 维护边界 | 主要职责 | Context |
 | --- | --- | --- | --- | --- |
-| `ai-meta` | AI 系统模块 | `<maintenance-checkout>` | `~/.ai/` 配置、共享指令、工具路由、skills、commands、软链发布、context 协议 | `amt` |
+| `ai-meta` | AI 系统模块 | `<maintenance-checkout>` | `~/.ai/` 配置、共享指令、工具路由、ai-meta 自有 skills、项目 skill 注册、commands、软链发布、context 协议 | `amt` |
 | `gtd` | 工作域 | `Projects/gtd` | 目标、任务、待办、日历、项目推进，以及 WorkItem 投影、tracker lifecycle、持久资源和 source closeout | `gtd` |
 | `snippet-lab` | 工作域 | `reference/snippet-lab` | 个人可复用 snippets 与示例用户值班周期工单分析 | `snippet-lab` |
 | `symphony-lite` | AI 系统模块（待封存） | `Projects/symphony-lite` | 历史 WorkItem 控制核与 Dashboard；冻结新增能力，只保留迁移和封存前的兼容入口，不再拥有 WorkItem lifecycle 或执行自动化 | `sl` |
-| `larkbot` | AI 系统模块 | `Projects/larkbot` | 飞书机器人、消息收发、会议助理、prompt、运行时安全边界 | `larkbot` |
+| `larkbot` | AI 系统模块 | `Projects/larkbot` | 飞书机器人、消息收发、会议助理、prompt、运行时安全边界，以及 canonical `skills/larkbot` agent workflow | `larkbot` |
 | `rollerskate` | AI 系统模块 | `Projects/rollerskate` | 由中心 Server 与用户设备上的 Local Runtime 组成的 Agent proactive system；Local 负责 WorkItem 所触发的 Agent Run、Session、workspace authority、执行、恢复与 trace，但不拥有 WorkItem lifecycle | `rs` |
 
 ## ai-meta 子模块
@@ -30,7 +30,7 @@
 | `final-form` | 把模糊需求收束为可执行 work order，明确 scope、验收、阻塞问题和分发目标 | `skills/final-form/SKILL.md` |
 | `grill` | 对 plan、设计、规则和协作模式做连续追问压测，达成可执行或可放弃的理解 | `skills/grill/SKILL.md` |
 | `steelman` | 在取证后、裁决前恢复争议观点的最强可行版本，完成有界挑战、分水岭识别与明确裁决 | `skills/steelman/SKILL.md` |
-| `review-router` | 为代码变更选择 simple、challenge、two-axis、quality 或 evolution review 策略，并返回 findings、verdict 和升级建议 | `skills/review-router/SKILL.md` |
+| `review-router` | 为代码变更选择 simple、challenge、two-axis、quality、prune 或 evolution review；通过显式 `design` strategy 评审方案语义与可实施性 | `skills/review-router/SKILL.md` |
 | `loop-ledger` | 从 intent、context、`ff` 编译路径显式绑定的可恢复执行契约，并用验证和人工检查点控制推进 | `skills/loop-ledger/SKILL.md`, `commands/ll.md`, `scripts/verify-ll-contract` |
 | `save/load-context` | 跨 session context 保存与加载、恢复索引格式、Codex skill 包装 | `skills/save-context/SKILL.md`, `skills/load-context/SKILL.md` |
 | `agent-doc-hygiene` | agent-facing 文档治理、加载路径瘦身、context/memory 有效性巡检 | `skills/agent-doc-hygiene/SKILL.md` |
@@ -56,17 +56,17 @@ Rollerskate 的部署和身份不变量：一个用户账号可以登录多台�
 
 | 客户端 / 层 | 维护边界 | 归属说明 |
 | --- | --- | --- |
-| Claude Code | `~/.claude/CLAUDE.md`, `~/.claude/commands/`, `~/.claude/skills/` | 最后一跳适配层；长期规则和入口源文件仍在 `<maintenance-checkout>` 或 `~/.ai` 聚合层 |
+| Claude Code | `~/.claude/CLAUDE.md`, `~/.claude/commands/`, `~/.claude/skills/` | 最后一跳适配层；长期规则和入口源文件仍在对应 owner repo，`~/.ai` 只做聚合 |
 | OpenCode | `~/.config/opencode/AGENTS.md`, `~/.config/opencode/commands/`, `~/.config/opencode/skills/` | 最后一跳适配层；通过软链共享全局指令、commands 和 skills |
 | Codex | `~/.codex/AGENTS.md`, 可发现 skills / MCP tools | 没有本地 slash command / subagent 目录概念；需要用户可见入口时必须提供 `skills/<name>/SKILL.md` 或 MCP / 脚本桥接，不能只发布 `~/.ai/commands/<name>.md` |
-| `~/.ai` 聚合层 | `~/.ai/instructions.md`, `~/.ai/tool-routes.md`, `~/.ai/commands/`, `~/.ai/scripts/` | 本机运行态聚合点，不是长期事实源；能进 git 的内容回到 `<maintenance-checkout>` |
-| repo 源文件层 | `<maintenance-checkout>` | 版本管理的 source of truth，维护指令、工具路由、commands、skills、scripts、docs 和安装脚本 |
+| `~/.ai` 聚合层 | `~/.ai/instructions.md`, `~/.ai/tool-routes.md`, `~/.ai/commands/`, `~/.ai/scripts/` | 本机运行态聚合点，不是长期事实源；能进 git 的内容回到对应 owner repo |
+| repo 源文件层 | `<maintenance-checkout>` 与能力 owner repos | 版本管理的 source of truth；ai-meta 维护全局底座、自有 skills 和发布注册，项目能力 skill 留在 owner repo |
 
 ai-meta 可以生成一个放在 `reference` 层并同步到私有 GitHub 的脱敏 `distribution` checkout。它在目标电脑上拥有安装和使用事实，但不建立第二套能力演进 ownership；agent 必须读取根目录 `.ai-meta-repo-role.json`，不得用 basename 或历史绝对路径在 `maintenance` 与 `distribution` 之间猜选。
 
 ## 核心职责分工
 
-- `ai-meta` 负责 AI 工具底座：规则、路由、技能、安装和跨客户端一致性。
+- `ai-meta` 负责 AI 工具底座：规则、路由、ai-meta 自有技能、项目 skill 注册、安装和跨客户端一致性；项目能力 skill 的 workflow 由对应 owner repo 维护。
 - `gtd` 负责现实目标和 WorkItem 控制面：从 source 生成可重建投影，维护 tracker lifecycle、资源、执行 binding、dispatch / reconcile adapter 和 source closeout。
 - `rollerskate` 负责 WorkItem 执行面：接收 GTD 固定 revision 的运行请求，拥有 Agent Run、Session、workspace grant / revision、异步 continuation、恢复和 trace；它不读取或推进 WorkItem lifecycle。
 - `symphony-lite` 进入封存准备状态：不再新增 WorkItem ownership 或自动化能力，只在迁移完成前保留历史实现和兼容入口。

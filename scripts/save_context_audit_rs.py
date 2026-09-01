@@ -31,7 +31,7 @@ SETTLEMENT_SCHEMA = "save-context.audit-settlement.v1"
 SETTLEMENT_NAME = "settlement.json"
 INSPECTION_SCHEMA = "save-context.audit-inspection.v1"
 INSPECTION_NAME = "inspection.json"
-DISPATCH_CONTRACT_REVISION = "run-intent-owner-compiled-v2-audit-summary"
+DISPATCH_CONTRACT_REVISION = "run-intent-owner-compiled-v3-derived-summary-ids"
 AUDIT_SUMMARY_SCHEMA = "save-context.audit-summary.v1"
 AUDIT_SUMMARY_NAME = "audit-summary.json"
 DISPOSITIONS = {"promoted", "resolved", "ignored", "deferred"}
@@ -181,33 +181,55 @@ def parse_json_object(raw: str, label: str) -> dict[str, Any]:
 
 
 def parse_audit_candidates(content: str) -> dict[str, list[str]]:
-    lanes = {"execution_friction": [], "prompt_contract_gaps": []}
-    seen_lanes: set[str] = set()
-    current_lane: str | None = None
-    for line in content.splitlines():
-        lane_match = re.match(
-            r"^(execution_friction|prompt_contract_gaps):(?:\s*\[\])?$",
-            line,
-        )
-        if lane_match:
-            current_lane = lane_match.group(1)
-            if current_lane in seen_lanes:
-                raise RuntimeError(f"duplicate audit lane: {current_lane}")
-            seen_lanes.add(current_lane)
-            if line.endswith("[]"):
-                current_lane = None
-            continue
-        if current_lane is None:
-            continue
-        match = re.match(r"^  - audit_id:\s*(.+?)\s*$", line)
-        if match:
-            audit_id = match.group(1).strip("'\"")
-            if not audit_id or audit_id in lanes[current_lane]:
-                raise RuntimeError(f"duplicate or empty audit_id in {current_lane}")
-            lanes[current_lane].append(audit_id)
-    missing_lanes = set(lanes) - seen_lanes
-    if missing_lanes:
-        raise RuntimeError(f"audit output is missing lanes: {sorted(missing_lanes)}")
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError as error:
+        raise RuntimeError("YAML support is required to read audit output") from error
+
+    class UniqueKeyLoader(yaml.SafeLoader):
+        pass
+
+    def construct_unique_mapping(
+        loader: Any, node: Any, deep: bool = False
+    ) -> dict[Any, Any]:
+        mapping: dict[Any, Any] = {}
+        for key_node, value_node in node.value:
+            key = loader.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key!r}",
+                    key_node.start_mark,
+                )
+            mapping[key] = loader.construct_object(value_node, deep=deep)
+        return mapping
+
+    UniqueKeyLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        construct_unique_mapping,
+    )
+    try:
+        audit = yaml.load(content, Loader=UniqueKeyLoader)
+    except yaml.YAMLError as error:
+        raise RuntimeError(f"audit output is invalid YAML: {error}") from error
+    if not isinstance(audit, dict):
+        raise RuntimeError("audit output must be a YAML mapping")
+
+    lanes: dict[str, list[str]] = {}
+    for lane in ("execution_friction", "prompt_contract_gaps"):
+        items = audit.get(lane)
+        if not isinstance(items, list):
+            raise RuntimeError(f"audit output lane {lane} must be a list")
+        ids: list[str] = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise RuntimeError(f"audit output lane {lane} item must be a mapping")
+            audit_id = item.get("audit_id")
+            if not isinstance(audit_id, str) or not audit_id or audit_id in ids:
+                raise RuntimeError(f"duplicate or empty audit_id in {lane}")
+            ids.append(audit_id)
+        lanes[lane] = ids
     return lanes
 
 
@@ -242,15 +264,12 @@ def read_audit_summary(
         not isinstance(item, str) or not item for item in evidence
     ):
         raise RuntimeError(f"audit summary evidence is invalid: {summary_path}")
-    candidate_ids = summary.get("candidate_ids")
     expected_ids = [
         candidate_id
         for lane in ("execution_friction", "prompt_contract_gaps")
         for candidate_id in candidates[lane]
     ]
-    if candidate_ids != expected_ids:
-        raise RuntimeError(f"audit summary candidate_ids do not match audit: {summary_path}")
-    return summary
+    return {**summary, "candidate_ids": expected_ids}
 
 
 def settlement_path_for(receipt_path: Path) -> Path:
@@ -518,7 +537,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
                 "agent-audit.yaml exists in the admitted workspace",
                 "agent-audit.yaml uses the exact agent.audit.v1 schema",
                 "audit-summary.json exists and uses save-context.audit-summary.v1",
-                "audit-summary.json candidate_ids exactly match agent-audit.yaml",
+                "audit-summary.json satisfies the plain-language summary contract",
                 "The terminal result cites both output artifacts",
             ],
             "contextRefs": [
@@ -787,6 +806,31 @@ def settle(args: argparse.Namespace) -> dict[str, Any]:
         json.dumps(settlement, ensure_ascii=False, indent=2) + "\n",
     )
     return settlement_result(settlement, settlement_path)
+
+
+def settlement_template(args: argparse.Namespace) -> dict[str, Any]:
+    receipt_path = Path(args.receipt).expanduser().resolve()
+    receipt = parse_json_object(
+        receipt_path.read_text(encoding="utf-8"),
+        "receipt",
+    )
+    _, output_path = validate_receipt_layout(receipt_path, receipt)
+    _, candidates = read_audit_output(output_path)
+    return {
+        "schema": SETTLEMENT_SCHEMA,
+        "items": [
+            {
+                "lane": lane,
+                "audit_id": audit_id,
+                "disposition": "",
+                "destination": "",
+                "reason": "",
+                "durable_ref": "",
+            }
+            for lane in ("execution_friction", "prompt_contract_gaps")
+            for audit_id in candidates[lane]
+        ],
+    }
 
 
 def discard(args: argparse.Namespace) -> dict[str, Any]:
@@ -1363,7 +1407,9 @@ def parser() -> argparse.ArgumentParser:
 
     settle_parser = commands.add_parser("settle")
     settle_parser.add_argument("--receipt", required=True)
-    settle_parser.add_argument("--input", required=True)
+    settlement_source = settle_parser.add_mutually_exclusive_group(required=True)
+    settlement_source.add_argument("--input")
+    settlement_source.add_argument("--template", action="store_true")
 
     discard_parser = commands.add_parser("discard")
     discard_parser.add_argument("--receipt", required=True)
@@ -1399,7 +1445,7 @@ def main() -> int:
         elif args.command == "status":
             output = status(args)
         elif args.command == "settle":
-            output = settle(args)
+            output = settlement_template(args) if args.template else settle(args)
         elif args.command == "discard":
             output = discard(args)
         elif args.command == "supersede":

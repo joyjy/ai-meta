@@ -5,19 +5,18 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 
 # coding-conventions
 
-先读最近的 `AGENTS.md` / `CLAUDE.md`。
-
 ## Routing
 
 - 已有 `coding-conventions:begin <template-id>`：读取对应模板；冲突时以模板为准，unsupported ID 或缺失模板要报告。
 - 无受控块但要实现、调试、验证或评审：按技术栈读模板；团队 / 外部项目不加载 `preferences/*`。
-- 实现、调试、验证或评审：加载模板后，必须从任务、代码、配置、SQL、接口契约和部署做 bounded Pattern Routes scan，不等用户说出 pattern 名。仅读与当前决策直接相关的命中 pattern 并检查 forces；不预读其他条目或递归 Related。
+- 实现、调试、验证或评审：按下方信号做 bounded Pattern Routes scan，只读命中条目并检查 forces，不预读或递归 Related。
 - 初始化、注入模板、配置 hook 或接入 `node-test-kit`：读取 `references/project-initialization.md`，扫描并展示候选，获得确认后才能写入。
 - 校验工程约定和验证能力：读取 `references/project-audit.md`；默认只读。
-- 维护 pitfall：读 `references/pitfall-maintenance.md`；晋升时同读 `../engineering-exit/references/evidence-classification.md`。
+- 维护 pitfall：读 `references/pitfall-maintenance.md`；候选只读 `preferences/pitfall-watch.md` 的相关 signature；晋升同读 `../engineering-exit/references/evidence-classification.md`。
 - 维护 pattern：读 `references/pattern-maintenance.md`；晋升时同读 evidence classification，调整 label 时再读 `patterns/label.md`。
-- 实现、调试或评审命中未过期 temporary pitfall 的技术栈、错误文本或依赖信号：直接读取 `preferences/temporary.md` 中该条；不展开无关条目。
-- 更新普通模板：展示现状和拟写入规则，确认后只改对应模板。
+- 目标 SQL 方言不明，或首次使用日期、字符串、行构造等方言特性：读 `preferences/temporary.md` 的对应未过期条目。
+- IDaaS 行为变更：读 `preferences/lintest-walkthrough.md`。
+- 更新普通模板：展示现状与拟写规则，确认后只改对应模板。
 
 ## Ownership Boundaries
 
