@@ -45,13 +45,12 @@ def arguments(**overrides: object) -> argparse.Namespace:
         "audit_cwd": "/project",
         "audit_ll": None,
         "pause_override": False,
-        "refresh_title": True,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
 
 
-COMMANDS = Commands(("audit",), ("context",), ("title",))
+COMMANDS = Commands(("audit",), ("context",))
 SCRIPT = Path(__file__).with_name("save_context_orchestrator.py")
 READY_ADMISSION = {
     "schema": "save-context.admission.v1",
@@ -74,13 +73,12 @@ class OrchestratorWorkflowTest(unittest.TestCase):
             "run_id": "run-1",
             "receipt_path": "/audit/receipt.json",
             "output_path": "/audit/agent-audit.yaml",
-            "steward": "kimi",
+            "participant_policy": "runtime-selected",
         })
         runner = RecordingRunner([
             completed(stdout="validation succeeded\n"),
             completed(stdout=audit),
             completed(stdout="wrote /context\nappended /daily: - [09:00] done\n"),
-            completed(stdout="Codex session titles refreshed: db=1\n"),
         ])
 
         code, receipt = orchestrate(
@@ -94,22 +92,18 @@ class OrchestratorWorkflowTest(unittest.TestCase):
 
         self.assertEqual(0, code)
         self.assertEqual("succeeded", receipt["status"])
-        self.assertEqual(["context", "audit", "context", "title"], [call[0][0] for call in runner.calls])
+        self.assertEqual(["context", "audit", "context"], [call[0][0] for call in runner.calls])
         self.assertIn("--validate-only", runner.calls[0][0])
         self.assertNotIn("--validate-only", runner.calls[2][0])
         self.assertEqual("context payload", runner.calls[0][1])
         self.assertEqual("context payload", runner.calls[2][1])
-        self.assertEqual(
-            ["title", "--current", "--daily-note-title", "[09:00] done"],
-            runner.calls[3][0],
-        )
+        self.assertNotIn("title", receipt["stages"])
 
     def test_audit_failure_is_reported_without_blocking_checkpoint(self) -> None:
         runner = RecordingRunner([
             completed(stdout="validation succeeded\n"),
             completed(1, stderr="audit unavailable"),
             completed(stdout="wrote /context\ntimeline skipped\n"),
-            completed(stdout="Codex state not found; skipped\n"),
         ])
 
         code, receipt = orchestrate(
@@ -125,9 +119,9 @@ class OrchestratorWorkflowTest(unittest.TestCase):
         self.assertEqual("degraded", receipt["status"])
         self.assertEqual("failed", receipt["stages"]["audit"]["status"])
         self.assertEqual("succeeded", receipt["stages"]["context"]["status"])
-        self.assertEqual(4, len(runner.calls))
+        self.assertEqual(3, len(runner.calls))
 
-    def test_context_failure_is_fail_closed_and_skips_title(self) -> None:
+    def test_context_failure_is_fail_closed(self) -> None:
         runner = RecordingRunner([completed(2, stderr="invalid context")])
 
         code, receipt = orchestrate(
@@ -143,14 +137,12 @@ class OrchestratorWorkflowTest(unittest.TestCase):
         self.assertEqual("failed", receipt["status"])
         self.assertEqual("failed", receipt["stages"]["preflight"]["status"])
         self.assertEqual("preflight_failed", receipt["stages"]["audit"]["reason"])
-        self.assertEqual("preflight_failed", receipt["stages"]["title"]["reason"])
         self.assertEqual(1, len(runner.calls))
 
-    def test_title_failure_is_non_blocking_and_timeline_duplicate_is_not_reused(self) -> None:
+    def test_receipt_never_claims_native_title_write(self) -> None:
         runner = RecordingRunner([
             completed(stdout="validation succeeded\n"),
             completed(stdout="wrote /context\ntimeline already exists /daily\n"),
-            completed(1, stderr="title database is locked"),
         ])
 
         code, receipt = orchestrate(
@@ -163,10 +155,10 @@ class OrchestratorWorkflowTest(unittest.TestCase):
         )
 
         self.assertEqual(0, code)
-        self.assertEqual("degraded", receipt["status"])
+        self.assertEqual("succeeded", receipt["status"])
         self.assertEqual("skipped", receipt["stages"]["audit"]["status"])
-        self.assertEqual(["title", "--current"], runner.calls[2][0])
-        self.assertEqual("failed", receipt["stages"]["title"]["status"])
+        self.assertEqual(["context", "context"], [call[0][0] for call in runner.calls])
+        self.assertNotIn("title", receipt["stages"])
 
     def test_continue_work_skips_every_output_stage(self) -> None:
         runner = RecordingRunner([])
@@ -185,7 +177,7 @@ class OrchestratorWorkflowTest(unittest.TestCase):
         self.assertEqual("blocked", receipt["stages"]["admission"]["status"])
         self.assertEqual([], runner.calls)
         self.assertEqual(
-            {"preflight", "audit", "context", "title"},
+            {"preflight", "audit", "context"},
             {
                 name
                 for name, stage in receipt["stages"].items()
@@ -203,7 +195,6 @@ class OrchestratorWorkflowTest(unittest.TestCase):
             arguments(
                 audit_thread_id=None,
                 audit_cwd=None,
-                refresh_title=False,
                 pause_override=True,
             ),
             ["amt:work", "--context-file", "/tmp/context", "--skip-timeline"],

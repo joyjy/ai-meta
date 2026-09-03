@@ -67,7 +67,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
                 "prompt_contract_gaps: []\n"
             )
 
-    def test_dispatches_once_to_kimi_without_waiting_for_result(self) -> None:
+    def test_dispatches_once_without_fixing_participant_or_waiting(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex_home = root / "codex"
@@ -157,7 +157,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
             self.assertEqual(receipt, json.loads(second.stdout))
             self.assertEqual("pending", receipt["status"])
             self.assertEqual("run_test", receipt["run_id"])
-            self.assertEqual("kimi", receipt["steward"])
+            self.assertEqual("runtime-selected", receipt["participant_policy"])
             self.assertEqual("x", counter.read_text(encoding="utf-8"))
             self.assertFalse(Path(receipt["output_path"]).exists())
 
@@ -168,10 +168,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
                 run_request["requestId"],
             )
             self.assertEqual("change", run_request["desiredEffect"])
-            self.assertEqual(
-                ["agent:kimi"],
-                run_request["requestedParticipantRefs"],
-            )
+            self.assertNotIn("requestedParticipantRefs", run_request)
             self.assertEqual(
                 Path(receipt["workspace"]).as_uri(),
                 run_request["workspaceRef"],
@@ -399,9 +396,10 @@ class SaveContextAuditRsTest(unittest.TestCase):
             successor = json.loads(redispatched.stdout)
             self.assertNotEqual("legacy-audit", successor["audit_id"])
             self.assertEqual(
-                "run-intent-owner-compiled-v3-derived-summary-ids",
+                "run-intent-owner-compiled-v4-runtime-selected-participant",
                 successor["dispatch_contract"],
             )
+            self.assertEqual("runtime-selected", successor["participant_policy"])
             self.assertEqual("/workspace/project", successor["project_cwd"])
             self.assertEqual(
                 {
@@ -412,6 +410,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
             )
             run_request = json.loads(capture.read_text(encoding="utf-8"))
             self.assertEqual("RunIntent@1", run_request["schemaVersion"])
+            self.assertNotIn("requestedParticipantRefs", run_request)
             self.assertNotIn("workspace", run_request)
             self.assertNotIn("maxSteps", run_request)
 

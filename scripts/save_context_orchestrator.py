@@ -32,10 +32,6 @@ class Commands:
         sys.executable,
         str(SCRIPT_DIR / "save_context.py"),
     )
-    title: tuple[str, ...] = (
-        sys.executable,
-        str(SCRIPT_DIR / "codex_session_titles.py"),
-    )
 
 
 def run_command(
@@ -189,7 +185,9 @@ def audit_stage(
         "status": receipt.get("status", "pending"),
         **{
             key: receipt[key]
-            for key in ("run_id", "receipt_path", "output_path", "steward")
+            for key in (
+                "run_id", "receipt_path", "output_path", "participant_policy"
+            )
             if key in receipt
         },
     }
@@ -254,32 +252,6 @@ def has_option(arguments: list[str], name: str) -> bool:
     )
 
 
-def title_stage(
-    refresh_title: bool,
-    timeline_appended: bool,
-    context_args: list[str],
-    commands: Commands,
-    runner: RunCommand,
-) -> dict[str, Any]:
-    if not refresh_title:
-        return {"status": "skipped", "reason": "not_requested"}
-    command = [*commands.title, "--current"]
-    timeline = option_value(context_args, "--timeline")
-    if timeline_appended and timeline:
-        command.extend(["--daily-note-title", timeline])
-    completed = runner(command, None)
-    if completed.returncode != 0:
-        return {
-            "status": "failed",
-            "exit_code": completed.returncode,
-            "detail": compact_detail(completed),
-        }
-    return {
-        "status": "succeeded",
-        "detail": compact_detail(completed),
-    }
-
-
 def orchestrate(
     args: argparse.Namespace,
     context_args: list[str],
@@ -293,7 +265,7 @@ def orchestrate(
         admission, args.pause_override
     )
     if not admitted:
-        for name in ("preflight", "audit", "context", "title"):
+        for name in ("preflight", "audit", "context"):
             stages[name] = {"status": "skipped", "reason": "continue_work"}
         return 3, {
             "schema": "save-context.checkpoint.v1",
@@ -304,7 +276,7 @@ def orchestrate(
         context_args, input_text, commands, runner
     )
     if preflight_result.returncode != 0:
-        for name in ("audit", "context", "title"):
+        for name in ("audit", "context"):
             stages[name] = {"status": "skipped", "reason": "preflight_failed"}
         return preflight_result.returncode, {
             "schema": "save-context.checkpoint.v1",
@@ -317,20 +289,12 @@ def orchestrate(
         context_args, input_text, commands, runner
     )
     if context_result.returncode != 0:
-        stages["title"] = {"status": "skipped", "reason": "context_failed"}
         return context_result.returncode, {
             "schema": "save-context.checkpoint.v1",
             "status": "failed",
             "stages": stages,
         }
 
-    stages["title"] = title_stage(
-        args.refresh_title,
-        stages["context"]["timeline"] == "appended",
-        context_args,
-        commands,
-        runner,
-    )
     degraded = any(
         stage["status"] == "failed"
         for name, stage in stages.items()
@@ -353,7 +317,6 @@ def orchestration_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit-ll")
     parser.add_argument("--admission-file")
     parser.add_argument("--pause-override", action="store_true")
-    parser.add_argument("--refresh-title", action="store_true")
     return parser
 
 

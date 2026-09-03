@@ -80,30 +80,23 @@ dates, preserve each date's latest checkpoint instead of collapsing everything
 to the newest date. This is a deterministic calendar partition, not an activity
 range; do not apply the previous 09:00 cutoff or invent overnight clusters.
 
-## Codex Session Title Refresh
+## Codex Task Title Refresh
 
-If `~/.codex/state_5.sqlite` exists, run:
-
-```bash
-python3 ~/.ai/scripts/codex_session_titles.py --current \
-  --daily-note-title "<Daily Note timeline entry>"
-```
+After `save-context.checkpoint.v1` reports a successful context stage, refresh the current task through the client's native task-title or rename capability. In Codex Desktop, call the native `set_thread_title` tool with the exact current task ID. Do not edit `~/.codex/state_5.sqlite`, `session_index.jsonl`, or other client databases/indexes directly, and do not run `codex_session_titles.py` as a write path.
 
 Rules:
 
 - Non-blocking.
-- Refresh only the current/newest Codex session title.
-- When a Daily Note entry was appended, pass that exact entry to
-  `--daily-note-title`; the script strips the time range and uses the beginning
-  as the title summary while preserving the `[abbr][MMdd]` prefix.
-- If no Daily Note entry was appended, omit `--daily-note-title` and use normal
-  inference.
-- Use `--recent` or `--all` only for explicit manual title maintenance.
+- Refresh only the exact current task; never select it by newest timestamp.
+- Preserve the established `[abbr][MMdd] <summary>` shape. Use the explicit save-context route for `abbr` and the checkpoint's local date for `MMdd`.
+- Derive `<summary>` from the primary substantive user goal. Ignore control-only `load-context`, `engineering-exit`, and `save-context` invocations plus injected skill/environment blocks; do not reduce the title to a workflow stage.
+- A Daily Note entry may supply concise wording, but it does not override the substantive goal when it only describes a checkpoint or handoff.
+- Keep an already specific and accurate title when observable; otherwise prefer the user's language and a distinctive outcome-oriented summary.
+- Historical maintenance is explicit-only. Inventory tasks through native list/read capabilities, exclude automation from source identity and execution context, then rename exact task IDs one at a time through the native tool. Do not infer automation solely from a short title.
+- If the native tool cannot rename an archived task, temporarily unarchive that exact task, rename it, restore its archived state, and verify both fields. Never leave archival state changed as a title-maintenance side effect.
 - Capture output and include `title refresh: <old> -> <new>` or
   `title refresh: 当前标题未变化（已符合规则）`.
-- If missing or failed, report under `待确认`.
-- If Codex Desktop overwrites the title, tell the user to restart Codex Desktop
-  or rerun later.
+- If the native capability is missing or fails, report the exact skip/failure reason under `待确认`; do not fall back to local database writes.
 
 ## Self-Check
 
@@ -131,7 +124,7 @@ Before final output, confirm:
 - Agent frictions were recorded or intentionally skipped as one-off/noise.
 - Team/external `AGENTS.md` did not receive private/local/personal content.
 - ADRs and convention-level decisions were written to the correct layer.
-- Codex title refresh ran or skip/failure is reported.
+- Codex native task title refresh ran or skip/failure is reported.
 
 ## Output
 
@@ -172,7 +165,7 @@ After saving, summarize:
 ### Git Commit 决策
 - 无需 commit / 已 commit：`<message>` / 用户确认暂缓：<原因> / 未处理：建议 `<message>`
 
-### Codex Session
+### Codex Task
 - title refresh: `<old> -> <new>` / 当前标题未变化（已符合规则）
 - title refresh: 跳过：<原因>
 - title refresh: 失败：<原因>

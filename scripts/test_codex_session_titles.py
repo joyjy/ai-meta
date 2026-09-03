@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,32 +86,23 @@ class InferAbbrTest(unittest.TestCase):
         )
 
 
-class BackupRetentionTest(unittest.TestCase):
+class LegacyEntryTest(unittest.TestCase):
 
-    def test_prune_old_backups_keeps_only_recent_week(self) -> None:
+    def test_write_mode_is_disabled_before_local_state_access(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            old_backup = Path(tmp) / "state_5.sqlite.20260601-120000.bak"
-            fresh_backup = Path(tmp) / "state_5.sqlite.20260622-120000.bak"
-            ignored = Path(tmp) / "notes.txt"
-            old_backup.write_text("old")
-            fresh_backup.write_text("fresh")
-            ignored.write_text("ignored")
+            env = os.environ.copy()
+            env["HOME"] = tmp
 
-            now = datetime(2026, 6, 22, 12, 0, 0)
-            os.utime(old_backup, (now.timestamp() - 8 * 24 * 60 * 60, now.timestamp() - 8 * 24 * 60 * 60))
-            os.utime(fresh_backup, (now.timestamp() - 6 * 24 * 60 * 60, now.timestamp() - 6 * 24 * 60 * 60))
-            os.utime(ignored, (now.timestamp() - 30 * 24 * 60 * 60, now.timestamp() - 30 * 24 * 60 * 60))
+            result = subprocess.run(
+                [sys.executable, str(Path(titles.__file__)), "--current"],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
 
-            previous_backup_dir = titles.BACKUP_DIR
-            try:
-                titles.BACKUP_DIR = Path(tmp)
-
-                self.assertEqual(1, titles.prune_old_backups(now))
-                self.assertFalse(old_backup.exists())
-                self.assertTrue(fresh_backup.exists())
-                self.assertTrue(ignored.exists())
-            finally:
-                titles.BACKUP_DIR = previous_backup_dir
+            self.assertEqual(2, result.returncode)
+            self.assertIn("client-native task rename", result.stderr)
 
 
 if __name__ == "__main__":

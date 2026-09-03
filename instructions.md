@@ -95,7 +95,7 @@
 - 当 agent 已明确提出“是否写入 / 是否按此修改 / 是否执行”并说明范围后，用户用
   “OK / 嗯 / 可以 / 就这样 / 行”等简短同意回复，视为授权执行刚才确认的范围；不得扩展到
   新文件、新目标或后续额外改动。
-- 当 agent 准备选择执行对象、产生副作用、进入等待 / 监控或宣称完成时，先核验 `owner / source identity / authority / terminal oracle`。普通内容字段可据证推断；这些控制字段无法从代码、文件、上下文或工具查明时保持 `unknown`，不得用 cwd、最近对象、词面相似、可用默认值或 artifact completion 补全，并停在相应 human checkpoint。
+- 当 agent 准备选择执行对象、产生副作用、进入等待 / 监控或宣称完成时，先核验 `owner / source identity / authority / terminal oracle`。对 CI 或异步 Run，绑定 source-owned terminal oracle 不表示当前任务必须同步等到终态；除非用户明确要求监控 / 等待，或项目 source of truth 把终态定义为本次 acceptance，否则只回读一次，`pending / running` 时记录 exact identity、当前状态和后续 oracle 后结束，后续由独立监控或新的 source event 收口。普通内容字段可据证推断；这些控制字段无法从代码、文件、上下文或工具查明时保持 `unknown`，不得用 cwd、最近对象、词面相似、可用默认值或 artifact completion 补全，并停在相应 human checkpoint。
 - 按意图清晰度分流：
   - 明确执行请求：命中执行白名单时直接做，必要时只补一句验证方式。
   - 模糊执行请求：若目标已接近可执行，先产出 `final-form` work order；能从上下文确定的字段直接填入，
