@@ -61,7 +61,7 @@ ff:
   `activity` is explicitly `idle` or `active`; represent both as separate proven targets. A missing or unknown target dimension that affects claimed scope keeps `ready_for_dispatch: false`. Success on one target pair is not evidence for another.
 - `verification_loop`: only when verification changes the implementation. It may contain trigger, current-agent loop, cold-start checks, stop conditions, and retained artifacts; omit unused subfields.
 - `parallelization`: omit for `main_agent`. For `tool_parallel` or `readonly_subagents`, record narrow tasks and one reason.
-- `automation_candidate`: only when the request matches the stable-event / bounded-agent / verifiable-artifact signal in `../../coding-conventions/patterns/event-admitted-bounded-agent-run.md`. It is advisory and never changes `dispatch_target`, `ready_for_dispatch`, current-task authorization, or loop-ledger runtime authority:
+- `automation_candidate`: only when a repeated stable event enters the same manual or scripted handling chain, the work can be bounded to a specific agent step, the result has an independent artifact/readback oracle, and source, dispatcher, runtime, skill, and artifact owners can be distinguished. It is advisory and never changes `dispatch_target`, `ready_for_dispatch`, current-task authorization, or loop-ledger runtime authority:
 
   ```yaml
   automation_candidate:
@@ -72,7 +72,7 @@ ff:
     smallest_experiment: <bounded one-shot verification>
   ```
 
-  `runtime` is exactly `rollerskate`; `fit` and `partial` follow the pattern's recognition gates. `partial` requires non-empty `missing_gates` and must not recommend automatic Run admission. `evidence` and `smallest_experiment` are non-empty for both values. Omit the whole object when the signal is absent; never serialize `not_fit` or an empty candidate.
+  `runtime` is exactly `rollerskate`. Use `fit` only when stable identity, structural admission, bounded authority, dedupe/freshness, terminal oracle, and human fallback are all proven. Otherwise use `partial` with non-empty `missing_gates` and do not recommend automatic Run admission. `evidence` and `smallest_experiment` are non-empty for both values. Omit the whole object when the signal is absent; never serialize `not_fit` or an empty candidate.
 - `output_target`: use `context` only for saved or cross-session recovery output; ordinary chat defaults to `chat` without serializing it.
 - `origin_session_id`: capture the creator's stable thread id only when final-form crosses context, GTD, Symphony, rework, or handoff boundaries.
 

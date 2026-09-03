@@ -26,7 +26,6 @@ disable-model-invocation: true
 - plan、durable docs、ADR 或 source comment 生命周期：`references/doc-lifecycle.md`。
 - agent docs、architecture/source-map 或 release preflight：`references/review-gates.md`，并按域运行 `../agent-doc-hygiene/SKILL.md` 或 `../doc-arch-review/SKILL.md`。
 - 风险、release、review 或外部事实混合证据等级：`references/evidence-classification.md`。
-- event intake → agent/skill → artifact/readback：`../coding-conventions/patterns/event-admitted-bounded-agent-run.md`。
 - 准备或更新 MR/PR package：`references/mr-template.md`。
 - 存在 exact loop-ledger artifact：`references/state-closeout.md`；只形成 audit handoff，不投递 audit。
 - 当前 route 仅存在 exact context-backed final-form：只读取 `references/state-closeout.md`。

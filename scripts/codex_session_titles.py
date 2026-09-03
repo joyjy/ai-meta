@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Refresh Codex session titles from real user intent.
+"""Inventory legacy Codex title candidates from local session state.
 
 Title format: [abbr][MMdd] summary
+
+Direct title writes are disabled because current Codex task metadata is owned by
+the client-native rename capability, not the local SQLite/index files.
 """
 
 from __future__ import annotations
@@ -10,8 +13,8 @@ import argparse
 import json
 import os
 import re
-import shutil
 import sqlite3
+import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -21,8 +24,6 @@ CODEX_HOME = Path.home() / ".codex"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = CODEX_HOME / "state_5.sqlite"
 INDEX_PATH = CODEX_HOME / "session_index.jsonl"
-BACKUP_DIR = CODEX_HOME / "tmp" / "session-title-backups"
-BACKUP_RETENTION_DAYS = 7
 LOCAL_TZ = timezone(timedelta(hours=8))
 
 NOISE_PREFIXES = (
@@ -305,32 +306,6 @@ def needs_refresh(title: str) -> bool:
     return any(fragment in title for fragment in noisy_fragments)
 
 
-def backup_files() -> str:
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    for path in [DB_PATH, DB_PATH.with_name(DB_PATH.name + "-wal"), DB_PATH.with_name(DB_PATH.name + "-shm"), INDEX_PATH]:
-        if path.exists():
-            shutil.copy2(path, BACKUP_DIR / f"{path.name}.{stamp}.bak")
-    prune_old_backups()
-    return stamp
-
-
-def prune_old_backups(now: datetime | None = None) -> int:
-    if not BACKUP_DIR.exists():
-        return 0
-    now = now or datetime.now()
-    cutoff = now.timestamp() - BACKUP_RETENTION_DAYS * 24 * 60 * 60
-    pruned = 0
-    for path in BACKUP_DIR.glob("*.bak"):
-        if not path.is_file():
-            continue
-        if path.stat().st_mtime >= cutoff:
-            continue
-        path.unlink()
-        pruned += 1
-    return pruned
-
-
 def index_title(row: dict[str, Any]) -> str:
     for key in ("thread_name", "title", "name"):
         if key in row:
@@ -355,44 +330,14 @@ def index_update_count(index_rows: list[dict[str, Any]], update_map: dict[str, s
     return updates
 
 
-def update_index_titles(index_rows: list[dict[str, Any]], update_map: dict[str, str]) -> int:
-    index_updates = 0
-    if not INDEX_PATH.exists() or not update_map:
-        return index_updates
-
-    out = []
-    for row in index_rows:
-        thread_id = row.get("thread_id") or row.get("id") or row.get("conversation_id")
-        if thread_id in update_map:
-            touched = False
-            changed = False
-            for key in ("thread_name", "title", "name"):
-                if key in row:
-                    touched = True
-                    if row[key] != update_map[thread_id]:
-                        row[key] = update_map[thread_id]
-                        changed = True
-            if not touched:
-                row["thread_name"] = update_map[thread_id]
-                changed = True
-            if changed:
-                index_updates += 1
-        out.append(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
-
-    tmp = INDEX_PATH.with_suffix(".jsonl.tmp")
-    tmp.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
-    tmp.replace(INDEX_PATH)
-    return index_updates
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--current", action="store_true", help="refresh the newest session only")
-    group.add_argument("--recent", action="store_true", help="refresh recent sessions only")
-    group.add_argument("--all", action="store_true", help="refresh every session")
+    group.add_argument("--current", action="store_true", help="inventory the current/newest session only")
+    group.add_argument("--recent", action="store_true", help="inventory recent sessions only")
+    group.add_argument("--all", action="store_true", help="inventory every session")
     parser.add_argument("--limit", type=int, default=30, help="recent session count")
-    parser.add_argument("--set-title", help="set a specific title instead of inferring one")
+    parser.add_argument("--set-title", help="preview a specific title instead of inferring one")
     parser.add_argument(
         "--daily-note-title",
         help="use the beginning of the Daily Note timeline entry as the title summary",
@@ -401,6 +346,14 @@ def main() -> int:
     parser.add_argument("--force-reinfer", action="store_true", help="re-infer titles even when they look valid")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    if not args.dry_run:
+        print(
+            "Direct Codex title writes are disabled; use the client-native "
+            "task rename capability instead. Add --dry-run for legacy inventory.",
+            file=sys.stderr,
+        )
+        return 2
 
     if not DB_PATH.exists():
         print("Codex state not found; skipped")
@@ -413,7 +366,7 @@ def main() -> int:
         if row.get("thread_id") or row.get("id") or row.get("conversation_id")
     }
 
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
     current_thread_id = os.environ.get("CODEX_THREAD_ID", "")
     if args.current and current_thread_id:
@@ -444,19 +397,9 @@ def main() -> int:
             print(f"Codex thread not found: {target}")
             return 1
         updates = [(target, row.get("title") or "", args.set_title)]
-        if args.dry_run:
-            for thread_id, old, new in updates:
-                print(f"{thread_id}: {old!r} -> {new!r}")
-            print("dry-run updates: 1")
-            return 0
-
-        stamp = backup_files()
-        con.execute("update threads set title=? where id=?", (args.set_title, target))
-        con.commit()
-        con.close()
-        index_updates = update_index_titles(index_rows, {target: args.set_title})
-        print(f"Codex session title set: db=1, index={index_updates}, backup={stamp}")
-        print(f"- {target}: {updates[0][1] or '(empty)'} -> {args.set_title}")
+        for thread_id, old, new in updates:
+            print(f"{thread_id}: {old!r} -> {new!r}")
+        print("dry-run updates: 1")
         return 0
 
     updates: list[tuple[str, str, str]] = []
@@ -484,30 +427,9 @@ def main() -> int:
         if current_title != new_title:
             updates.append((thread_id, current_title, new_title))
 
-    if args.dry_run:
-        for thread_id, old, new in updates:
-            print(f"{thread_id}: {old!r} -> {new!r}")
-        print(f"dry-run db updates: {len(updates)}, index updates: {index_update_count(index_rows, desired_index_titles)}")
-        return 0
-
-    index_only_updates = index_update_count(index_rows, desired_index_titles)
-    if not updates and not index_only_updates:
-        print("Codex session titles refreshed: db=0, index=0, backup=skipped")
-        return 0
-
-    stamp = backup_files()
-    for thread_id, _, new_title in updates:
-        con.execute("update threads set title=? where id=?", (new_title, thread_id))
-    con.commit()
-    con.close()
-
-    index_updates = update_index_titles(index_rows, desired_index_titles)
-
-    print(f"Codex session titles refreshed: db={len(updates)}, index={index_updates}, backup={stamp}")
-    if updates:
-        print("Updated titles:")
-        for thread_id, old, new in updates:
-            print(f"- {thread_id}: {old or '(empty)'} -> {new}")
+    for thread_id, old, new in updates:
+        print(f"{thread_id}: {old!r} -> {new!r}")
+    print(f"dry-run db updates: {len(updates)}, index updates: {index_update_count(index_rows, desired_index_titles)}")
     return 0
 
 

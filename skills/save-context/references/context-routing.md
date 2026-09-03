@@ -36,11 +36,10 @@ In Codex, use the same entry as a single checkpoint orchestrator:
   --next-route <none|mainline|existing-workstream> \
   --timeline "[HH:MM-HH:MM] <timeline text>" \
   --audit-thread-id <exact-thread-id> \
-  --audit-cwd <exact-project-cwd> \
-  --refresh-title
+  --audit-cwd <exact-project-cwd>
 ```
 
-Use `--audit-rollout <exact-rollout>` instead of `--audit-thread-id` when the rollout is already known, and add `--audit-ll <exact-ll-path>` only when an effective loop-ledger is bound. Omit the audit source when audit is intentionally skipped; omit `--refresh-title` outside Codex or when title refresh is intentionally skipped.
+Use `--audit-rollout <exact-rollout>` instead of `--audit-thread-id` when the rollout is already known, and add `--audit-ll <exact-ll-path>` only when an effective loop-ledger is bound. Omit the audit source when audit is intentionally skipped. Task title refresh is not a shell stage; after a successful context stage, use the client-native rename capability defined in `timeline-title-output.md`.
 
 Before creating any output artifact, write a short admission file from current source-owner readback:
 
@@ -60,7 +59,7 @@ Use `decision=continue_work` with at least one `actionable` item when a newly di
 
 The admission envelope is bounded to 16 KiB, at most 20 `checked` and 20 `actionable` entries, and 500 characters per entry. Store only source references and compact readback; never copy tokens, raw logs, or full artifacts into it.
 
-The command emits one `save-context.checkpoint.v1` JSON receipt. Admission runs first, then a read-only context compile/validation preflight, audit, context/timeline, and title. Preflight failure preserves the helper's nonzero exit and skips audit plus every write stage, so malformed control fields cannot create duplicate audit receipts. Formal context failure preserves the helper's nonzero exit and skips title. Audit or title failure returns exit code 0 with receipt status `degraded`; neither failure rolls back a valid context checkpoint. Repeated invocation keeps audit and timeline idempotency in their owning helpers.
+The command emits one `save-context.checkpoint.v1` JSON receipt. Admission runs first, then a read-only context compile/validation preflight, audit, and context/timeline. Preflight failure preserves the helper's nonzero exit and skips audit plus every write stage, so malformed control fields cannot create duplicate audit receipts. Formal context failure preserves the helper's nonzero exit. Audit failure returns exit code 0 with receipt status `degraded` and does not roll back a valid context checkpoint. Native title rename happens only after the receipt proves the context stage succeeded. Repeated invocation keeps audit and timeline idempotency in their owning helpers.
 
 Script rules:
 

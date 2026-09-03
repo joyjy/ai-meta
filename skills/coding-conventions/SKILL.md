@@ -38,15 +38,17 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 - 共享 topic 上单个 consumer 需要独立 retry / replay / backfill，broker 无法隔离补发，或代码出现私有 Inbox、ACK durability、attempt ledger → `patterns/consumer-owned-retryable-execution-unit.md`
 - UI 写操作与 polling / SSE / WebSocket / cache revalidation / 并发响应并存，或存在 pending、optimistic、Undo、乱序覆盖 → `patterns/ui-interaction.md`
 - 过期 / 状态数据批量删除缺少合适业务索引，代码使用 keyset / cursor / checkpoint，或需要用 `EXPLAIN` 约束扫描放大 → `patterns/primary-key-sweep-for-destructive-cleanup.md`
+- 表使用 `is_delete` / `is_deleted` / `deleted_at` 软删除，同时存在业务唯一键、删除后复用、recreate / restore，或 `UNIQUE(business_key, is_delete)` 与 Boolean / BIGINT 语义不明 → `patterns/lifecycle-safe-soft-delete-uniqueness.md`
 - 定时 / 批处理 / leader-only 长任务使用固定 TTL 分布式锁，任务可能超过 TTL，或 watchdog、owner-safe renew / release、fencing 语义不明 → `patterns/renewable-owner-checked-lease.md`
 - 讨论 ODS / DWD / DIM / DWS / DM / ADS、grain、事实 / 维度、指标口径、CDC、迟到数据、回刷或分层取舍 → `patterns/business-process-first-warehouse-modeling.md`
 - Java / JDBC / MySQL 出现 `DATETIME` / `TIMESTAMP`、`Instant` / `LocalDateTime`、connection / session timezone、DST、多时区展示或本地调度 → `patterns/explicit-wall-time-and-instant-boundaries.md`
 - 首次或变更外部厂商 API / SDK，成功与错误混用 HTTP 2xx、JSON / binary、`Content-Type`，或 raw response / 未知响应契约不透明 → `patterns/vendor-api-contract-preflight.md`
-- 状态跨进程 / 节点 / 区域 / 数据库 / 消息系统，正在比较 Raft、2PC、Saga、CRDT、复制 / 投影，或需要定义 partition、crash、rollout 与恢复边界 → `patterns/failure-model-first-distributed-state-design.md`
-- “可写副本 / 多主 / leader proxy / ingress”含义不清，或需要区分谁接收命令、谁提交、谁排序、谁参与 commit、谁只构建 projection → `patterns/authority-ordering-replication-separation.md`
-- 使用强一致 / 最终一致 / CP / AP / RYW / bounded staleness 描述系统，或需要逐操作定义 commit point、read visibility、session guarantee、timeout unknown outcome → `patterns/operation-scoped-consistency-contract.md`
-- 多区域统一读写 API、单一 authority、forwarding edge、本地 projection、versioned write-through / RYW fast path 与后台收敛同时出现 → `patterns/single-writer-forwarding-edge-replica.md`
-- 稳定 message / MR revision / Issue / schedule occurrence 反复触发 listener / poller / dispatcher 后的 skill、Agent 或人工复制命令，并产出可 readback artifact / terminal result → `patterns/event-admitted-bounded-agent-run.md`
+- 缓存模式选型，或 DB / Redis 失效、回填、双删、负缓存、删除复活等分叉窗口 → `patterns/authority-first-cache-consistency.md`；命中后不再加载 `operation-scoped-consistency-contract`
+- 分布式状态单选最窄命中，不级联加载：
+  - 多区域统一 API、单 authority、forwarding edge、versioned projection / write-through → `patterns/single-writer-forwarding-edge-replica.md`
+  - “可写副本 / 多主 / leader proxy”含义不清，需要拆分 ingress、authority、ordering、commit 与 projection → `patterns/authority-ordering-replication-separation.md`
+  - 非具体缓存选型的强一致 / 最终一致 / CP / AP / RYW，需要逐操作定义 commit、visibility、partition 与 unknown outcome → `patterns/operation-scoped-consistency-contract.md`
+  - 其他跨边界状态设计，正在比较 consensus、atomic commit、Saga、CRDT 或恢复边界 → `patterns/failure-model-first-distributed-state-design.md`
 
 ## Safety Gates
 

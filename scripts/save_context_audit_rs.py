@@ -31,7 +31,9 @@ SETTLEMENT_SCHEMA = "save-context.audit-settlement.v1"
 SETTLEMENT_NAME = "settlement.json"
 INSPECTION_SCHEMA = "save-context.audit-inspection.v1"
 INSPECTION_NAME = "inspection.json"
-DISPATCH_CONTRACT_REVISION = "run-intent-owner-compiled-v3-derived-summary-ids"
+DISPATCH_CONTRACT_REVISION = (
+    "run-intent-owner-compiled-v4-runtime-selected-participant"
+)
 AUDIT_SUMMARY_SCHEMA = "save-context.audit-summary.v1"
 AUDIT_SUMMARY_NAME = "audit-summary.json"
 DISPOSITIONS = {"promoted", "resolved", "ignored", "deferred"}
@@ -75,14 +77,13 @@ def run(command: list[str], *, cwd: Path | None = None) -> str:
 def audit_identity(
     packet: str,
     route: str,
-    participant: str,
     ll_path: Path | None,
 ) -> str:
     material = [
         DISPATCH_CONTRACT_REVISION,
         packet,
         route,
-        participant,
+        "participant-policy:runtime-selected",
         WORKER_INSTRUCTIONS.read_text(encoding="utf-8"),
     ]
     if ll_path is not None:
@@ -500,7 +501,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         packet = frozen_packet
     thread_id = packet_thread_id(packet, args.thread_id or rollout.stem)
     project_cwd = Path(args.cwd).expanduser().resolve()
-    audit_id = audit_identity(packet, args.route, args.participant, ll_path)
+    audit_id = audit_identity(packet, args.route, ll_path)
     audit_dir = Path(args.audit_root).expanduser().resolve() / audit_id
     workspace = audit_dir / "workspace"
     receipt_path = audit_dir / "receipt.json"
@@ -546,7 +547,6 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
             ],
             "workspaceRef": workspace.as_uri(),
             "desiredEffect": "change",
-            "requestedParticipantRefs": [f"agent:{args.participant}"],
             "terminalEvidence": [output_path.as_uri(), summary_path.as_uri()],
         }
         write_text(
@@ -578,7 +578,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         "status": "pending",
         "dispatch_contract": DISPATCH_CONTRACT_REVISION,
         "run_id": run_id,
-        "steward": args.participant,
+        "participant_policy": "runtime-selected",
         "thread_id": thread_id,
         "route": args.route,
         "project_cwd": str(project_cwd),
@@ -606,9 +606,8 @@ def redispatch(args: argparse.Namespace) -> dict[str, Any]:
         )
     rollout = source_receipt.get("rollout")
     route = source_receipt.get("route")
-    participant = source_receipt.get("steward")
-    if not all(isinstance(value, str) and value for value in (rollout, route, participant)):
-        raise RuntimeError("source receipt is missing rollout, route, or participant")
+    if not all(isinstance(value, str) and value for value in (rollout, route)):
+        raise RuntimeError("source receipt is missing rollout or route")
     ll_value = source_receipt.get("ll_path")
     if ll_value is not None and not isinstance(ll_value, str):
         raise RuntimeError("source receipt ll_path is invalid")
@@ -621,7 +620,6 @@ def redispatch(args: argparse.Namespace) -> dict[str, Any]:
         cwd=project_cwd_from_receipt(source_receipt_path, source_receipt),
         route=route,
         ll=ll_value,
-        participant=participant,
         rs_command=args.rs_command,
         audit_root=str(source_receipt_path.parent.parent),
         codex_home=args.codex_home,
@@ -1371,9 +1369,6 @@ def parser() -> argparse.ArgumentParser:
     dispatch_parser.add_argument("--cwd", required=True)
     dispatch_parser.add_argument("--route", required=True)
     dispatch_parser.add_argument("--ll")
-    dispatch_parser.add_argument(
-        "--participant", "--steward", dest="participant", default="kimi"
-    )
     dispatch_parser.add_argument("--rs-command", default=str(DEFAULT_RS))
     dispatch_parser.add_argument("--audit-root", default=str(DEFAULT_AUDIT_ROOT))
     dispatch_parser.add_argument(

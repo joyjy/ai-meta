@@ -2,6 +2,10 @@
 
 本文件记录 ai-meta 已完成的项目历史。当前未完成事项保留在 [`index.md`](index.md)。
 
+## 2026-09
+
+- [x] (2026-09-02) 将 save-context 标题刷新从 Codex 本地 SQLite/index 旁路写入迁移到客户端原生 task rename capability；脚本 receipt 不再伪报标题阶段，旧 `codex_session_titles.py` 写模式 fail closed，仅保留 dry-run inventory
+
 ## 2026-08
 
 - [x] (2026-08-05) 完成 agent-facing 文档治理：移除已退出发布路径的 `my-bmad-*` commands 与旧手册，收敛 README 运行细节和 context contract 摘要，把 GitLab MR description / artifact 与 Gradle wrapper 首次执行门禁注入 route-context，并将 tool-routes 的 GitLab 操作手册下沉到 helper README

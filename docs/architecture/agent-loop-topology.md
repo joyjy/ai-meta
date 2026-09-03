@@ -155,8 +155,9 @@ agent 或人行动”，再投影为 auto WorkItem 或 attention。
   产生 human attention。
 
 当前 MR owner feedback 和 blocked reminder 已能进入 GTD attention；viewer 的
-agent-first 路径已能生成 revision-specific auto WorkItem，但生产自动 dispatch、Rollerskate
-terminal result reconcile 和 GTD attention 的稳定回流仍属于未闭合边界。
+agent-first 路径由 GTD ReviewEngagement 直接提交 revision-bound Rollerskate RunIntent，并由
+GTD 对 terminal result 做 revision freshness reconcile。其他 proactive source 的通用自动准入和
+terminal 回流仍需由各自 owner 单独证明。
 
 ## Composition Patterns
 
@@ -172,14 +173,15 @@ schedule -> bounded work identity -> goal contract -> verification -> outcome
 ### Proactive To Goal To Turn
 
 ```text
-domain event -> auto WorkItem -> agent goal loop -> fresh terminal result
+domain event -> GTD ReviewEngagement -> revision-bound RunIntent
+  -> Rollerskate Agent Run -> fresh terminal result
   -> attention -> human review
 ```
 
-适用于 MR reviewer 路径。agent 先处理可自动检查的部分，人只在结果已准备好、失败或需要
-业务判断时介入。需要判断一个具体事件链是否适合采用该组合时，读取
-[事件准入的有界 Agent Run](../../skills/coding-conventions/patterns/event-admitted-bounded-agent-run.md)；
-它拥有结构准入、Run authority、source reconcile 和 agent 候选识别门槛。
+适用于 MR reviewer 路径。agent 先处理可自动检查的部分，人只在结果已准备好或需要
+业务判断时介入。具体事件链的 source identity、revision freshness 与 reconcile 由 GTD 的
+ReviewEngagement 契约判断，Run authority 由 Rollerskate 契约判断；尚未落地的类似链路再由
+`final-form` 的 `automation_candidate` 契约判断是否值得做 bounded experiment。
 
 ### Turn To Goal To Turn
 
@@ -206,13 +208,13 @@ time 或 proactive trigger 可以只产生 attention，不必总是启动 agent�
   [base fixture](../../scripts/fixtures/ll-contracts/base_ll_contract.json) 拥有 goal-loop 控制契约。
 - `~/.codex/automations/` 保存 Codex Automation 本机 schedule/runtime 配置，不是业务规则的
   durable source of truth。
-- GTD 的 `docs/architecture/event-driven-ownership.md` 和
-  `docs/architecture/attention-control-plane.md` 拥有 event-domain-attention 边界。
-- GTD 的 `docs/architecture/workitem-projection.md` 拥有 WorkItem projection、tracker lifecycle、
-  resource、dispatch/reconcile adapter 和 source closeout；Rollerskate 的
+- GTD 的 `docs/architecture/event-driven-ownership.md` 拥有 MR event、ReviewEngagement、revision-bound
+  RunIntent、freshness reconcile 和 reviewed state；`docs/architecture/attention-control-plane.md`
+  拥有 need-me projection 与 source-side resolution 边界。
+- GTD 的 `docs/architecture/workitem-projection.md` 拥有非 MR WorkItem projection、tracker lifecycle、
+  resource 和 source closeout；Rollerskate 的
   `docs/architecture/local-review.md` 拥有 Agent Run、Session、workspace authority、执行与 trace。
-- [事件准入的有界 Agent Run](../../skills/coding-conventions/patterns/event-admitted-bounded-agent-run.md)
-  拥有可迁移实现结构、hard gates 和 `automation_candidate` 识别契约。
+- `final-form` 的 `references/work-order-contract.md` 拥有 advisory `automation_candidate` 的识别门槛和输出契约；它不授予 Run authority。
 - context 只保存恢复 route、当前状态和 next work order；session history 只提供调查证据，
   两者都不替代对应项目的 durable facts。
 
@@ -265,6 +267,5 @@ time 或 proactive trigger 可以只产生 attention，不必总是启动 agent�
 
 - [Architecture index](./index.md)
 - [vertical-agent-ll](./vertical-agent-ll.md)
-- [事件准入的有界 Agent Run](../../skills/coding-conventions/patterns/event-admitted-bounded-agent-run.md)
 - [Source-of-Truth Boundaries](./source-of-truth-boundaries.md)
 - [Project map](../project-map.md)
