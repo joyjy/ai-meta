@@ -245,13 +245,6 @@ def option_value(arguments: list[str], name: str) -> str:
     return ""
 
 
-def has_option(arguments: list[str], name: str) -> bool:
-    return any(
-        argument == name or argument.startswith(f"{name}=")
-        for argument in arguments
-    )
-
-
 def orchestrate(
     args: argparse.Namespace,
     context_args: list[str],
@@ -335,19 +328,6 @@ def main() -> int:
     if "--validate-only" in context_args:
         parser.error("--validate-only is reserved for orchestrator preflight")
     args.abbr = context_args[0]
-    mainline_context_input = (
-        ":" not in args.abbr
-        and (
-            has_option(context_args, "--context-file")
-            or has_option(context_args, "--context-stdin")
-        )
-        and not has_option(context_args, "--allow-empty")
-    )
-    if mainline_context_input and not has_option(context_args, "--next-route"):
-        parser.error(
-            "orchestrated mainline save requires --next-route "
-            "<none|mainline|existing-workstream>"
-        )
     if (args.audit_thread_id or args.audit_rollout) and not args.audit_cwd:
         parser.error("--audit-cwd is required with an audit source")
     if args.audit_cwd and not (args.audit_thread_id or args.audit_rollout):

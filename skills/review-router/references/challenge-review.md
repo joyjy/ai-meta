@@ -11,9 +11,9 @@ Run one evidence-backed pass after implementation checks. Treat the current evid
 
 ## Review Prior And Questions
 
-Begin with one change-specific failure prior: `I know this class of change often fails when ...`. Tie it to the current diff, consumer path, or lifecycle; generic skepticism does not qualify.
+Identify a change-specific failure hypothesis grounded in the current diff, consumer path, or lifecycle. Treat it as a hypothesis to verify, not an assumed defect or a required opening phrase.
 
-Always answer: `What would a confident agent incorrectly declare complete here, and which evidence fails to prove it?`
+Check which completion claim could exceed the available evidence; if none does, report that without inventing a proof gap.
 
 Then select one or two lenses that can materially change readiness:
 
@@ -24,7 +24,7 @@ Then select one or two lenses that can materially change readiness:
 
 ## Proof Boundary
 
-Always state:
+Report the material proof boundary:
 
 - `agent proved`: conclusions supported by direct evidence from this run;
 - `agent did not prove`: remaining inference, constrained coverage, unavailable state, or judgment;
@@ -39,4 +39,4 @@ Do not write generic `manual testing recommended`. Do not delegate a check the a
 - `current-scope improvement`: a small attributable correction strengthens the current result without changing goal or acceptance.
 - `inspiration`: a useful improvement expands current scope and is advisory only.
 
-Run one pass, answer the mandatory question, select at most two additional lenses, and report at most three material findings. End with `next_review.strategy: none` unless another atomic strategy has a concrete unresolved question; challenge never recommends itself.
+Run one pass with the selected lenses. Merge duplicate symptoms into their underlying finding and omit immaterial concerns; do not hide a material finding to meet a count target. End with `next_review.strategy: none` unless another atomic strategy has a concrete unresolved question; challenge never recommends itself.

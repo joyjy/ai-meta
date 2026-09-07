@@ -1,6 +1,6 @@
 # Project Initialization
 
-用于 `/cc init`、初始化 `coding-conventions`、向项目 `AGENTS.md` 注入模板、配置模板附属 hook、接入 Node test kit，或更新普通模板规则。先扫描、展示候选并获得确认，之后才写入。
+用于 `/cc init`、初始化 `coding-conventions`、向项目 `AGENTS.md` 注入模板、配置模板附属 hook、接入 Node test kit，或更新普通模板规则。先扫描目标与现有配置；用户已明确目标模板和改动范围时直接完成，否则展示具体候选供确认。
 
 ## Scan And Selection
 
@@ -8,7 +8,7 @@
 2. 从 package、Gradle、Python、CLI、前端和测试信号选择模板。`general` 是所有项目基线；父级已有 `general` 时子项目不重复。
 3. Repo 已有团队维护的 AGENTS / CLAUDE / README / CONTRIBUTING 或 CI 约定时，默认按团队 / 外部项目处理，并排除 `../preferences/*`、个人本机路径、私有 helper 和个人 workflow。
 4. 展示：已接入、推荐接入、可选接入、已验证的附属资源；Node 项目还要说明推荐 `node-js` 或 `node-ts-build`、将新增的配置与 npm scripts。
-5. 给出推荐默认组合并询问用户选择；确认前不写 `AGENTS.md`、hook、配置或模板。
+5. 复用用户已选定的组合与范围；仅在模板组合、hook 或构建接入仍未确定时，给出具体候选并询问一次。
 
 ## Managed Blocks
 
@@ -38,6 +38,6 @@
 
 ## Template Updates
 
-更新普通模板时，先确定目标模板；若内容是 pitfall，转到 `pitfall-maintenance.md`。展示现有相关文本和拟写入规则，获得确认后只改对应模板，并运行该模板或同步器已有的最窄验证。
+更新普通模板时，先确定目标模板；若内容是 pitfall，转到 `pitfall-maintenance.md`。按用户已明确的规则只改对应模板；规则或范围未定时展示现状与拟写内容并确认。运行该模板或同步器已有的最窄验证。
 
 完成注入后，报告未被模板 partial 覆盖的 CI、Git hook 或 verify 缺口；不要临场补写新的 hook。

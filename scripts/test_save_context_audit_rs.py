@@ -545,6 +545,7 @@ class SaveContextAuditRsTest(unittest.TestCase):
                     "destination": "",
                     "reason": "",
                     "durable_ref": "",
+                    "signature": "",
                 }],
                 json.loads(template.stdout)["items"],
             )
@@ -563,6 +564,89 @@ class SaveContextAuditRsTest(unittest.TestCase):
             )
             self.assertNotEqual(0, settled.returncode)
             self.assertIn("missing candidates", settled.stderr)
+
+    def test_settlement_groups_two_lanes_into_one_promoted_occurrence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audit_dir = root / "audit"
+            workspace = audit_dir / "workspace"
+            workspace.mkdir(parents=True)
+            output_path = workspace / "agent-audit.yaml"
+            output_path.write_text(
+                "schema: agent.audit.v1\n"
+                "thread_id: thread-audit\n"
+                "execution_friction:\n"
+                "- audit_id: friction-a\n"
+                "prompt_contract_gaps:\n"
+                "- audit_id: prompt-a\n",
+                encoding="utf-8",
+            )
+            receipt_path = audit_dir / "receipt.json"
+            receipt_path.write_text(
+                json.dumps({
+                    "schema": "save-context.audit-dispatch.v1",
+                    "audit_id": "audit",
+                    "status": "pending",
+                    "run_id": "run_test",
+                    "thread_id": "thread-audit",
+                    "project_cwd": "/workspace/project",
+                    "workspace": str(workspace),
+                    "output_path": str(output_path),
+                }),
+                encoding="utf-8",
+            )
+            durable_ref = str(root / "agent-frictions.md") + "#examplesignature"
+            settlement_input = root / "settlement-input.json"
+            settlement_input.write_text(
+                json.dumps({
+                    "schema": "save-context.audit-settlement.v1",
+                    "items": [
+                        {
+                            "lane": "execution_friction",
+                            "audit_id": "friction-a",
+                            "disposition": "promoted",
+                            "destination": "global_friction",
+                            "reason": "execution friction recurred",
+                            "durable_ref": durable_ref,
+                            "signature": "example.signature",
+                        },
+                        {
+                            "lane": "prompt_contract_gaps",
+                            "audit_id": "prompt-a",
+                            "disposition": "promoted",
+                            "destination": "global_friction",
+                            "reason": "prompt compiler owns the correction",
+                            "durable_ref": durable_ref,
+                            "signature": "example.signature",
+                        },
+                    ],
+                }),
+                encoding="utf-8",
+            )
+
+            settled = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "settle",
+                    "--receipt", str(receipt_path),
+                    "--input", str(settlement_input),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(0, settled.returncode, settled.stderr)
+            payload = json.loads(settled.stdout)
+            self.assertEqual("thread-audit", payload["occurrence"]["thread_id"])
+            self.assertEqual(
+                "/workspace/project", payload["occurrence"]["project_cwd"]
+            )
+            self.assertEqual(
+                ["example.signature", "example.signature"],
+                [item["signature"] for item in payload["items"]],
+            )
 
     def test_discard_then_prune_preserves_tombstone(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

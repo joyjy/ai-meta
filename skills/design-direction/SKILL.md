@@ -5,11 +5,11 @@ description: Establish or recover a design direction for HTML, pages, demos, das
 
 # design-direction
 
-Use before new UI work, major redesign, or when an acceptable UI drifts. Skip tiny fixes in a clear design system. State compact Design Read, then implement or audit and verify; project evidence is primary.
+Use before new UI work, major redesign, or when an acceptable UI drifts. Skip tiny fixes in a clear design system. State a compact Design Read from project evidence; continue implementation only when the user's request already authorizes it. Direction discussion alone ends with the proposed direction, not edits or a runtime audit.
 
 ## Modes
 
-- **Initialize Direction**: new UI, substantial redesign, or no clear design contract. Ask what the surface should become.
+- **Initialize Direction**: new UI, substantial redesign, or no clear design contract. Infer the intended surface from the request and evidence; ask only about a material unresolved choice.
 - **Recover Baseline**: an acceptable UI is drifting, or the user asks to preserve its current feel. Infer what already works from its layout, density, type, color, component, control, and state language.
 
 In recovery, preserve the existing language. Switch modes only when the user asks to change the overall style. Persistence is a gate, not a third mode.
@@ -24,7 +24,7 @@ Load only triggered direct references; local references do not route onward.
 
 ## Safety And Ownership
 
-- `DESIGN.md` persistence requires explicit lock/save intent, a compact proposed contract, and user confirmation.
+- `DESIGN.md` persistence requires explicit lock/save intent and confirmation of the compact proposed contract; a request to save an already displayed and accepted contract supplies that confirmation.
 - Personal `DESIGN.md` belongs only at the personal project root that owns `index.md`; never infer cwd or a team/external source repo as a fallback.
 - Project-native design docs in team/source repos are read-only evidence unless the user separately authorizes editing them.
 - Never replace a design document wholesale. Preserve unrelated content and patch only the confirmed section.
@@ -36,8 +36,8 @@ Load only triggered direct references; local references do not route onward.
 2. Identify product, audience, repeated job, density, references, constraints, dislikes, and anti-examples. State conservative inferences for missing evidence.
 3. Read available UI, screenshots, prototypes, tokens, components, and project-native design docs. A personal-root `DESIGN.md` is long-term intent.
 4. State one Design Read and three to five observable invariants. Ask at most one question only when the unresolved choice materially changes direction.
-5. Implement or audit against it. Keep exact values in tokens and behavior in components/tests.
-6. Read `rendered-verification.md`, inspect desktop and mobile output preferably in a browser, and correct material drift before reporting done.
+5. For authorized implementation or audit, use the Design Read as the baseline. Keep exact values in tokens and behavior in components/tests; audit-only requests report findings without editing.
+6. When implementing or verifying the UI, read `rendered-verification.md` and inspect the relevant rendered surface. Correct drift only within authorized implementation scope; a direction-only discussion needs no browser run.
 7. If the user asks to persist the accepted direction, follow `design-persistence.md`.
 
 ## Runtime Design Read

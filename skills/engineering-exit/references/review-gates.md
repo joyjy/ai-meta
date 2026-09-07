@@ -76,6 +76,15 @@ Check release-quality dimensions when relevant:
 
 - Validation evidence: changed cases, relevant regression slice, CI or manual
   path, and skipped checks with reason.
+- Version and artifact metadata: decide whether the project release policy
+  requires a version bump. When the project uses SemVer, select `major` for an
+  incompatible API or contract change, `minor` for backward-compatible
+  functionality, and `patch` for a backward-compatible fix. When the repository
+  owns the release version, complete the bump in the current delivery and verify
+  that the declared version, build artifact, and publication coordinates agree;
+  when versioning occurs after merge, record the exact follow-up action. Do not
+  require a bump merely because the project uses a particular language or build
+  tool.
 - Release pack inputs: issue / AR / MR links, service repo / owner, final build
   items that must be filled after merge, and test-environment deployment
   expectation.
@@ -129,7 +138,7 @@ secrets, or the command is not discoverable.
 
 ## Stop Conditions
 
-Stop before MR preparation if:
+以下情况阻止受影响的写入或 ready 结论；继续独立的已授权检查与可审阅草稿准备：
 
 - Dirty paths cannot be classified into safe commit groups and preserved /
   unknown groups, or their overlap makes the branch / MR package ambiguous.

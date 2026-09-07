@@ -31,6 +31,11 @@ class SyncMcpConfigTest(unittest.TestCase):
                             "headers": {"Authorization": "Bearer secret-token"},
                             "_oauth": {"refresh_token": "<test-redacted-token>"},
                         },
+                        "dida365": {
+                            "type": "remote",
+                            "url": "https://dida.example.test/mcp",
+                            "headers": {"Authorization": "Bearer dida-token"},
+                        },
                         "local-only": {"type": "stdio", "command": "example"},
                     }
                 }
@@ -58,7 +63,7 @@ class SyncMcpConfigTest(unittest.TestCase):
             text=True,
         )
 
-    def test_sync_preserves_unmanaged_config_and_publishes_remote_server(self) -> None:
+    def test_sync_preserves_unmanaged_config_and_publishes_compatible_remote_server(self) -> None:
         self.codex_config.write_text('model = "gpt-test"\n', encoding="utf-8")
         self.codex_config.chmod(0o644)
 
@@ -66,8 +71,10 @@ class SyncMcpConfigTest(unittest.TestCase):
 
         config = self.codex_config.read_text(encoding="utf-8")
         self.assertIn('model = "gpt-test"', config)
-        self.assertIn('[mcp_servers."meego"]', config)
-        self.assertIn('"Authorization" = "Bearer secret-token"', config)
+        self.assertIn('[mcp_servers."dida365"]', config)
+        self.assertIn('"Authorization" = "Bearer dida-token"', config)
+        self.assertNotIn('[mcp_servers."meego"]', config)
+        self.assertNotIn("secret-token", config)
         self.assertNotIn("<test-redacted-token>", config)
         self.assertNotIn("local-only", config)
         self.assertNotIn("secret-token", result.stdout)
@@ -84,7 +91,7 @@ class SyncMcpConfigTest(unittest.TestCase):
 
     def test_sync_rejects_unmanaged_name_collision(self) -> None:
         self.codex_config.write_text(
-            '[mcp_servers.meego]\nurl = "https://manual.test/mcp"\n',
+            '[mcp_servers.dida365]\nurl = "https://manual.test/mcp"\n',
             encoding="utf-8",
         )
         original = self.codex_config.read_text(encoding="utf-8")
@@ -92,13 +99,26 @@ class SyncMcpConfigTest(unittest.TestCase):
         result = self.run_sync(check=False)
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unmanaged MCP server(s): meego", result.stderr)
+        self.assertIn("unmanaged MCP server(s): dida365", result.stderr)
         self.assertEqual(self.codex_config.read_text(encoding="utf-8"), original)
+
+    def test_sync_preserves_native_oauth_server_with_same_name(self) -> None:
+        self.codex_config.write_text(
+            '[mcp_servers.meego]\nurl = "https://native-oauth.test/mcp"\n',
+            encoding="utf-8",
+        )
+
+        self.run_sync()
+
+        config = self.codex_config.read_text(encoding="utf-8")
+        self.assertIn('[mcp_servers.meego]', config)
+        self.assertIn('url = "https://native-oauth.test/mcp"', config)
+        self.assertEqual(config.count("mcp_servers.meego"), 1)
 
     def test_dry_run_validates_without_creating_config(self) -> None:
         result = self.run_sync("--dry-run")
 
-        self.assertIn("would manage 1 server(s): meego", result.stdout)
+        self.assertIn("would manage 1 server(s): dida365", result.stdout)
         self.assertFalse(self.codex_config.exists())
 
 

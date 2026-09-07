@@ -8,9 +8,11 @@ never persists user/assistant messages, tool inputs, or tool output bodies.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -94,6 +96,18 @@ def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
                             delete=False) as handle:
         json.dump(data, handle, ensure_ascii=False, sort_keys=True, indent=2)
         handle.write("\n")
+        temporary = Path(handle.name)
+    os.replace(temporary, path)
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    mode = path.stat().st_mode & 0o777
+    with NamedTemporaryFile("w",
+                            encoding="utf-8",
+                            dir=path.parent,
+                            delete=False) as handle:
+        handle.write(content)
+        os.fchmod(handle.fileno(), mode)
         temporary = Path(handle.name)
     os.replace(temporary, path)
 
@@ -494,9 +508,9 @@ def open_summary(inbox: Path, limit: int) -> dict[str, Any]:
     if limit < 1 or limit > 50:
         raise ValueError("--limit must be between 1 and 50")
 
-    entries: list[dict[str, str]] = []
+    entries: list[dict[str, Any]] = []
     in_open = False
-    current: dict[str, str] | None = None
+    current: dict[str, Any] | None = None
     for line in inbox.read_text(encoding="utf-8").splitlines():
         if line == "## Open":
             in_open = True
@@ -514,6 +528,15 @@ def open_summary(inbox: Path, limit: int) -> dict[str, Any]:
             continue
         if line.startswith("- Signature："):
             current["signature"] = line.removeprefix("- Signature：").strip()
+        elif line.startswith("- Occurrence："):
+            current["bound_occurrence_count"] = int(
+                current.get("bound_occurrence_count", 0)
+            ) + 1
+        elif line.startswith("- 复现："):
+            match = re.match(r"^- 复现：\+?(\d+)", line)
+            if not match:
+                raise ValueError(f"invalid recurrence line: {line}")
+            current["recurrence"] = int(match.group(1))
         elif line.startswith("- 障碍："):
             summary = line.removeprefix("- 障碍：").strip()
             first_sentence, separator, _ = summary.partition("。")
@@ -530,11 +553,238 @@ def open_summary(inbox: Path, limit: int) -> dict[str, Any]:
         entry for entry in entries
         if entry.get("signature") and entry.get("summary")
     ][:limit]
+    for entry in visible:
+        recurrence = int(entry.get("recurrence", 0))
+        occurrence_count = recurrence + 1
+        bound_count = int(entry.pop("bound_occurrence_count", 0))
+        entry["recurrence"] = recurrence
+        entry["occurrence_count"] = occurrence_count
+        if bound_count == occurrence_count:
+            entry["identity_status"] = "bound"
+        elif bound_count == 0:
+            entry["identity_status"] = "legacy_unbound"
+        else:
+            entry["identity_status"] = "incomplete"
     return {
         "open_count": len(entries),
         "shown": len(visible),
         "limit": limit,
         "entries": visible,
+    }
+
+
+def codex_thread_project_occurrence_key(thread_id: str, project_cwd: str) -> str:
+    identity = json.dumps(
+        {"project_cwd": project_cwd, "thread_id": thread_id},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "codex-thread-project:" + hashlib.sha256(identity.encode()).hexdigest()
+
+
+def promoted_occurrence(settlement_path: Path,
+                        signature: str) -> tuple[str, dict[str, str], str]:
+    settlement = json.loads(settlement_path.read_text(encoding="utf-8"))
+    if not isinstance(settlement, dict) or settlement.get(
+            "schema") != "save-context.audit-settlement.v1":
+        raise ValueError(f"invalid save-context settlement: {settlement_path}")
+    if settlement.get("status") != "settled":
+        raise ValueError(f"save-context settlement is not settled: {settlement_path}")
+    items = settlement.get("items")
+    if not isinstance(items, list):
+        raise ValueError(f"settlement has no items: {settlement_path}")
+    matches = [
+        item for item in items
+        if isinstance(item, dict)
+        and item.get("disposition") == "promoted"
+        and item.get("destination") == "global_friction"
+        and item.get("signature") == signature
+    ]
+    if not matches:
+        raise ValueError(
+            f"no promoted global friction matches signature {signature}"
+        )
+    durable_refs = [item.get("durable_ref") for item in matches]
+    if not all(isinstance(ref, str) and ref for ref in durable_refs) or len(
+        set(durable_refs)
+    ) != 1:
+        raise ValueError(
+            f"promoted items for {signature} do not share one durable_ref"
+        )
+    durable_ref = durable_refs[0]
+    occurrence = settlement.get("occurrence")
+    audit_id = settlement.get("audit_id")
+    if not isinstance(occurrence, dict) or not all(
+        isinstance(occurrence.get(field), str) and occurrence[field]
+        for field in ("kind", "key", "thread_id", "project_cwd")
+    ):
+        raise ValueError("settlement occurrence identity is incomplete")
+    if occurrence["kind"] != "codex_thread_project":
+        raise ValueError("unsupported promoted occurrence kind")
+    expected_key = codex_thread_project_occurrence_key(
+        occurrence["thread_id"], occurrence["project_cwd"]
+    )
+    if occurrence["key"] != expected_key:
+        raise ValueError("promoted occurrence key does not match its identity")
+    if not isinstance(audit_id, str) or not audit_id:
+        raise ValueError("settlement is missing audit_id")
+    return durable_ref, occurrence, audit_id
+
+
+def open_entry_bounds(lines: list[str], signature: str) -> tuple[int, int]:
+    try:
+        open_start = lines.index("## Open") + 1
+    except ValueError as error:
+        raise ValueError("friction inbox is missing ## Open") from error
+    open_end = next(
+        (index for index in range(open_start, len(lines))
+         if lines[index].startswith("## ")),
+        len(lines),
+    )
+    starts = [
+        index for index in range(open_start, open_end)
+        if lines[index].startswith("### ")
+    ]
+    matches: list[tuple[int, int]] = []
+    for offset, start in enumerate(starts):
+        end = starts[offset + 1] if offset + 1 < len(starts) else open_end
+        if f"- Signature：{signature}" in lines[start:end]:
+            matches.append((start, end))
+    if len(matches) != 1:
+        raise ValueError(
+            f"expected one Open friction with signature {signature}, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def occurrence_payload(line: str) -> dict[str, str]:
+    prefix = "- Occurrence："
+    try:
+        payload = json.loads(line.removeprefix(prefix))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid occurrence line: {line}") from error
+    if not isinstance(payload, dict) or not all(
+        isinstance(payload.get(field), str) and payload[field]
+        for field in ("key", "thread_id", "project_cwd", "evidence")
+    ):
+        raise ValueError(f"incomplete occurrence line: {line}")
+    expected_key = codex_thread_project_occurrence_key(
+        payload["thread_id"], payload["project_cwd"]
+    )
+    if payload["key"] != expected_key:
+        raise ValueError(f"occurrence key does not match its identity: {line}")
+    return payload
+
+
+def record_occurrence(inbox: Path, settlement_path: Path,
+                      signature: str, initialize: bool = False) -> dict[str, Any]:
+    inbox = inbox.resolve()
+    # Lock a stable sidecar: atomic replacement changes the inbox inode.
+    with inbox.with_name(inbox.name + ".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _record_occurrence_locked(inbox, settlement_path, signature, initialize)
+
+
+def _record_occurrence_locked(inbox: Path, settlement_path: Path,
+                             signature: str, initialize: bool) -> dict[str, Any]:
+    durable_ref, occurrence, audit_id = promoted_occurrence(
+        settlement_path.resolve(), signature)
+    durable_path, separator, _ = durable_ref.rpartition("#")
+    if not separator or Path(durable_path).expanduser().resolve() != inbox.resolve():
+        raise ValueError(
+            f"promoted occurrence durable_ref does not target inbox: {durable_ref}"
+        )
+
+    original = inbox.read_text(encoding="utf-8")
+    lines = original.splitlines()
+    start, end = open_entry_bounds(lines, signature)
+    occurrence_lines = [
+        line for line in lines[start:end] if line.startswith("- Occurrence：")
+    ]
+    occurrences = [occurrence_payload(line) for line in occurrence_lines]
+    existing_keys = {item["key"] for item in occurrences}
+    if len(existing_keys) != len(occurrences):
+        raise ValueError(f"duplicate occurrence identities for signature {signature}")
+    recurrence_indexes = [
+        index for index in range(start, end)
+        if lines[index].startswith("- 复现：")
+    ]
+    if len(recurrence_indexes) > 1:
+        raise ValueError(f"multiple recurrence lines for signature {signature}")
+    if recurrence_indexes:
+        match = re.match(r"^- 复现：\+?(\d+)", lines[recurrence_indexes[0]])
+        if not match:
+            raise ValueError(
+                f"invalid recurrence line for signature {signature}"
+            )
+        if not occurrences:
+            raise ValueError(
+                f"legacy recurrence for {signature} has no occurrence identities"
+            )
+        if int(match.group(1)) != len(occurrences) - 1:
+            raise ValueError(
+                f"recurrence count does not match occurrence identities for {signature}"
+            )
+    if occurrence["key"] in existing_keys:
+        return {
+            "signature": signature,
+            "occurrence_key": occurrence["key"],
+            "occurrence_count": len(occurrences),
+            "recurrence": max(len(occurrences) - 1, 0),
+            "updated": False,
+        }
+    if not occurrences and not initialize:
+        raise ValueError(
+            f"friction {signature} has no occurrence identity; migrate it or use "
+            "--initialize only when creating a new entry"
+        )
+    if occurrences and initialize:
+        raise ValueError(
+            f"--initialize is only valid for a new friction occurrence history: {signature}"
+        )
+
+    payload = {
+        "key": occurrence["key"],
+        "thread_id": occurrence["thread_id"],
+        "project_cwd": occurrence["project_cwd"],
+        "evidence": f"save-context-audit:{audit_id}",
+    }
+    occurrence_line = "- Occurrence：" + json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    insert_at = recurrence_indexes[0] if recurrence_indexes else next(
+        (index for index in range(start, end)
+         if lines[index].startswith("- 状态：")),
+        end,
+    )
+    lines.insert(insert_at, occurrence_line)
+    occurrence_count = len(occurrences) + 1
+    recurrence = occurrence_count - 1
+    if recurrence:
+        recurrence_line = (
+            f"- 复现：+{recurrence}（最近：save-context-audit:{audit_id}）"
+        )
+        recurrence_index = next(
+            (index for index in range(start, end + 1)
+             if lines[index].startswith("- 复现：")),
+            None,
+        )
+        if recurrence_index is None:
+            status_index = next(
+                (index for index in range(start, end + 1)
+                 if lines[index].startswith("- 状态：")),
+                end + 1,
+            )
+            lines.insert(status_index, recurrence_line)
+        else:
+            lines[recurrence_index] = recurrence_line
+    atomic_write_text(inbox, "\n".join(lines) + ("\n" if original.endswith("\n") else ""))
+    return {
+        "signature": signature,
+        "occurrence_key": occurrence["key"],
+        "occurrence_count": occurrence_count,
+        "recurrence": recurrence,
+        "updated": True,
     }
 
 
@@ -773,6 +1023,12 @@ def build_parser() -> argparse.ArgumentParser:
     summary_parser.add_argument("--inbox", type=Path, default=default_inbox())
     summary_parser.add_argument("--limit", type=int, default=8)
 
+    record_parser = subparsers.add_parser("record-occurrence")
+    record_parser.add_argument("--inbox", type=Path, default=default_inbox())
+    record_parser.add_argument("--settlement", type=Path, required=True)
+    record_parser.add_argument("--signature", required=True)
+    record_parser.add_argument("--initialize", action="store_true")
+
     status_parser = subparsers.add_parser("status")
     status_parser.add_argument("--owner", required=True)
 
@@ -819,6 +1075,9 @@ def main(argv: list[str] | None = None) -> int:
                                                             []), args.source_id)
         elif args.command == "open-summary":
             result = open_summary(args.inbox, args.limit)
+        elif args.command == "record-occurrence":
+            result = record_occurrence(args.inbox, args.settlement,
+                                       args.signature, args.initialize)
         elif args.command == "status":
             result = status_events(args.root, args.owner)
         elif args.command == "settle":

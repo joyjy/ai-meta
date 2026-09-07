@@ -12,7 +12,7 @@ Use only after the user explicitly asks to lock or save an accepted direction.
 
 ## Confirmation And Write
 
-Show this compact proposed contract and obtain explicit confirmation before writing `<project-root>/DESIGN.md`:
+Show this compact proposed contract and obtain confirmation before writing `<project-root>/DESIGN.md`. An explicit request to save the already displayed and accepted contract is sufficient; ask again only when the target or contract changes:
 
 ```markdown
 # Design

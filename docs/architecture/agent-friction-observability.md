@@ -29,6 +29,7 @@ tags: [ai-meta, architecture, agent-ll, observability]
 - `status`：只返回指定 owner 的 actionable count 及 lifecycle / event-type 计数，供 save/load 提醒，不展开 facts；其中 actionable 仅包含 `pending` / `claimed`，`deferred` 仍保留在 lifecycle 统计中但不触发待处理提示；
 - `settle`：要求 exact expected owner 和显式 resolution，将候选标记为 `promoted`、
   `resolved`、`ignored` 或 `deferred`，settled events 写月度 JSONL rollup；
+- `record-occurrence`：消费已结算 audit 中由 receipt 派生的 exact thread/project identity，在 Agent 已完成 signature 归并后幂等更新对应 durable entry；同一 signature 的多 lane 只形成一个 occurrence，新条目首次登记需要显式 `--initialize`，无 identity 的旧条目 fail closed；
 - `cleanup --dry-run`：按 event-level TTL 输出 exact delete / orphan-review / protected paths，
   不执行删除。
 
@@ -41,12 +42,7 @@ v0 产生 `task_aborted`、`patch_failure` 和 `repeated_file_edit_candidate`。
 在现有 Codex JSONL 中只稳定暴露 completed，不能安全推出 process exit code，所以不生成
 `tool_failure`。collector 不持久化 user / assistant message、tool input 或 tool output。
 
-`save-context` 与 loop-ledger closeout 共用 `agent.audit.v1` semantic audit contract 和异步 completion
-语义，但只有 `save-context` 自动 dispatch；engineering-exit 只 hand off exact ledger path，不创建第二份 audit。Save-context 从 exact rollout 生成 bounded recovery packet，并和可选 effective loop-ledger
-contract 一起放入隔离的本机 audit workspace；原始 rollout 不复制。随后通过 Rollerskate 异步
-投递给 `@kimi`，立即以 `run_id + receipt_path + output_path + summary_path` 记录 pending，不等待结果；Kimi 通过 Rollerskate 已授予的隔离 workspace write profile 非交互写入
-指定结果，后续 save 或显式 follow-up 再收取和结算。不执行 save 时，用户可显式触发一次 audit follow-up；engineering-exit 不因 audit 缺席或 pending 阻塞用户可见终态，也不归档 ledger。结算方只按 receipt 绑定的 exact `ll_path` 延迟归档。报告分成 execution friction 与 prompt/final-form/loop-ledger fidelity gap 两条 lane，不建立第二套
-event store；主 agent 仍逐条验证和结算，只有 promoted / deferred 内容进入 durable artifact。
+独立审计由用户显式请求触发，使用 `agent.audit.v1` semantic audit contract。helper 从 exact rollout 生成 bounded recovery packet，和可选 effective loop-ledger contract 一起放入隔离的本机 audit workspace；原始 rollout 不复制。通过 Rollerskate Codex Steward 选择已准入 Worker，异步投递后立即以 `run_id + receipt_path + output_path + summary_path` 记录 pending。显式 follow-up 收取并结算结果；engineering-exit 只交接 exact ledger path，不因 audit 缺席或 pending 阻塞用户可见终态，也不归档 ledger。结算方只按 receipt 绑定的 exact `ll_path` 延迟归档。报告分成 execution friction 与 prompt/final-form/loop-ledger fidelity gap 两条 lane，不建立第二套 event store；主 agent 逐条验证和结算，只有 promoted / deferred 内容进入 durable artifact。
 
 ## Ownership And Settlement
 
@@ -57,9 +53,7 @@ event store；主 agent 仍逐条验证和结算，只有 promoted / deferred �
 - `/save-context` 负责 checkpoint 和 semantic settlement；context route identity 本身就是查询键，
   不扩展 `context.v2` 或复制 event body。选择 `promoted` 时必须同步形成 durable entry 或已确认 final-form。
 - loop-ledger 写入并验证 exact session file 后才可 claim 同 route events。objective events 与单文件 loop-ledger 中仅用于当前任务 correction 的 feedback 是不同 schema 和 ownership；legacy future-loop feedback 与 `<session>.feedback.jsonl` 只作为迁移输入保留。
-- `save-context` 是 semantic settlement owner，但不成为 event owner。它在会话证据仍可用时
-  结算当前 scope 的 events；`promoted` 必须同时形成 `agent-frictions.md` 条目或用户确认的
-  follow-up final-form，`resolved` 必须关联已有 durable fix 或验证锚点。
+- `save-context` 在会话证据仍可用时结算当前 scope 的 objective events，但不成为 event owner。独立 audit 的结果由显式 follow-up 结算；promoted `global_friction` settlement 必须写入 normalized signature，helper 从可信 receipt 派生唯一的 `thread_id + project_cwd` occurrence，同一 settlement 内指向相同 `signature + durable_ref` 的多 lane item 共享该 identity，但只有主 Agent 的显式 `record-occurrence` 调用能修改 `agent-frictions.md`。`promoted` 必须同时形成该 durable entry 或用户确认的 follow-up final-form，`resolved` 必须关联已有 durable fix 或验证锚点。
 
 ## Relationships / Source Of Truth
 
@@ -70,6 +64,7 @@ event store；主 agent 仍逐条验证和结算，只有 promoted / deferred �
 - [`scripts/save_context_audit_rs.py`](../../scripts/save_context_audit_rs.py)：异步审计 workspace 的 dispatch、settlement/discard、归档打包、只读 inventory 与授权后回收事实源；[`scripts/test_save_context_audit_rs.py`](../../scripts/test_save_context_audit_rs.py) 提供独立回归 oracle。
 - `skills/save-context`、`skills/load-context` 和 `skills/loop-ledger` 只拥有各自入口的调用与人机边界，不复制事件实现。
 - `~/.ai/frictions/` 是本机运行态，不进入 Git，也不反向定义 durable 架构规则。
+- `record-occurrence` 在 inbox 同目录的 `<inbox-name>.lock` 上持有旁路锁，覆盖完整读改写事务，避免并发登记丢失 occurrence；锁文件保留以稳定锁身份，原子替换只负责完整写入。既有记录含重复 identity 时拒绝写入。
 
 ## Retention
 
@@ -89,8 +84,7 @@ event store；主 agent 仍逐条验证和结算，只有 promoted / deferred �
 - Event 文件是唯一记录体；JSONL 用于交换与 rollup，不复制会话正文。
 - workflow 入口调用同一 CLI，不各自解析 rollout 或维护第二套 schema。
 - Context 保持恢复索引职责；event ownership 存在 event store，以 route identity 查询。
-- 不自动 promotion、不自动修改 durable rules、不自动删除；`save-context` 负责为语义结算形成
-  对应 durable 产物或明确补证条件。
+- 不自动 promotion、不自动修改 durable rules、不自动删除；`save-context` 负责为语义结算形成对应 durable 产物或明确补证条件。Occurrence identity 和计数是确定性写入：语义层选择 signature，脚本只验证可信 source、去重并计算 `复现 = distinct occurrence - 1`。
 
 ## Change Guidance
 

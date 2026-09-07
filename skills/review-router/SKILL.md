@@ -15,7 +15,7 @@ For code reviews, resolve target/baseline, acceptance/spec, project standards, f
 
 For `design`, fix the exact artifact, its driving problem or outcome, material constraints and current-state anchors, and the decision or acceptance question. The artifact may be a file, named section, or explicit proposal in the conversation; it does not require a Git diff. Treat its rationale as claims, not evidence, and inspect only the referenced reality needed to judge a material claim.
 
-Stop for an unresolved target or code baseline. Stop code review for an empty diff; a thin but identifiable design artifact receives a `not-ready` verdict when missing decisions are themselves the finding. Bind MR/PR review to its actual head revision; never use `HEAD~1` or one commit as the full change.
+Resolve target and baseline from available evidence; ask one focused question only if ambiguity still changes the review scope. Stop code review for an empty diff; a thin but identifiable design artifact receives a `not-ready` verdict when missing decisions are themselves the finding. Bind MR/PR review to its actual head revision; use `HEAD~1` or a single commit only when that is the user-selected review scope.
 
 ## Selection
 
@@ -27,7 +27,7 @@ Stop for an unresolved target or code baseline. Stop code review for an empty di
 - `caller=engineering-exit` → simple plus at most one evidence-backed escalation; caller owns disposition.
 - `rr design|challenge|two-axis|quality|prune|evolution` → only that strategy.
 
-Choose the one next strategy most likely to change readiness. Diff size or checklist availability is not evidence for escalation.
+Choose `none` when no material question remains; otherwise select the one next strategy most likely to change readiness. Diff size or checklist availability is not evidence for escalation.
 
 ## Strategy Routes
 
@@ -37,7 +37,7 @@ Choose the one next strategy most likely to change readiness. Diff size or check
 - **Evolution**: read `references/evolution-review.md` only with caller-owned revision/round state.
 - **Two-axis**: use `~/Documents/reference/matt-skills/skills/engineering/code-review/SKILL.md`; fix baseline and report independent Spec and Standards passes.
 - **Quality**: use `~/Documents/reference/addy-agent-skills/skills/code-review-and-quality/SKILL.md`; read only `The Five-Axis Review`, `Review Process`, and `Verification`, then select material axes.
-- **Prune**: use `~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md`; tag cuts `delete|stdlib|native|yagni|shrink`, identify replacements, sort by reduction, and end with `net: -<N> lines possible.` or `Lean already. Ship.` Remove rejected-scope residue unless independent safety, compatibility, or contract evidence requires it. Never label accessibility, data-loss prevention, or a minimal runnable check as bloat.
+- **Prune**: use `~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md`; tag cuts `delete|stdlib|native|yagni|shrink`, identify replacements, sort by reduction, and end with `net: -<N> lines possible.` or `Lean already. Ship.` Flag rejected-scope residue for removal unless independent safety, compatibility, or contract evidence requires it. Never label accessibility, data-loss prevention, or a minimal runnable check as bloat.
 
 External lenses are direct and narrow; do not inherit tracker/client workflow. If missing, apply the local bullet contract without searching or installing substitutes.
 

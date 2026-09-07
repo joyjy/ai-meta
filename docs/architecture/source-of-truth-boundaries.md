@@ -37,10 +37,10 @@ context 只保存恢复索引，不保存完整过程分析；长期事实应回
 
 ### MCP Boundary
 
-- `~/.ai/mcp/config.json` 是本机 MCP endpoint、headers、OAuth refresh 信息的事实源。
+- `~/.ai/mcp/config.json` 保存使用共享配置的独立 MCP client 所需 endpoint、headers 和 OAuth refresh 信息。
 - repo 只保留 `mcp/config.example.json`，用于说明结构，不包含 token。
-- 客户端私有 MCP 配置只做适配、迁移来源或 fallback，不作为跨工具事实源。
-- `scripts/sync-mcp-config` 将共享配置中的 remote server 转换到 Codex `config.toml` 的受管配置块；`install.sh` 负责首次同步，token 刷新后可独立重跑该脚本，Codex 重启后生效。
+- 各客户端原生注册和认证状态由该客户端拥有；共享配置不覆盖原生 OAuth，也不把客户端私有状态作为跨工具事实源。
+- Codex MCP server 由 Codex 原生命令注册和授权；`install.sh` 不复制 MCP 配置或凭据。`scripts/sync-mcp-config` 仅保留为旧共享配置中兼容 remote server 的手工迁移工具，并明确排除使用 Codex 原生 OAuth 的 Meego。
 
 ### Install Boundary
 
@@ -49,7 +49,7 @@ context 只保存恢复索引，不保存完整过程分析；长期事实应回
 - 发布前运行 ai-meta 专用入口预检，确保会发布的 command 有 Codex 可发现 skill / 桥接或显式例外。
 - 发布核心文件到 `~/.ai/`。
 - 发布 command、ai-meta 自有 skill、已登记 owner-repo skill、hook 和选定 helper。
-- 共享 MCP 私有配置存在时，同步 Codex 受管适配块；不覆盖同名手工配置。
+- 不复制共享 MCP 私有配置或 token 到客户端；各 MCP client 独立注册 server 并持有自己的认证状态。
 - 发布客户端最后一跳软链。
 - 清理 install script 中仍显式登记的退役入口。
 

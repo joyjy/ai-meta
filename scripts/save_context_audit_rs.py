@@ -361,6 +361,7 @@ def read_settlement(path: Path, audit_id: str) -> dict[str, Any]:
         raise RuntimeError(f"settled candidate_counts are invalid: {path}")
     seen: set[tuple[str, str]] = set()
     actual_counts = {lane: 0 for lane in expected_lanes}
+    requires_occurrence = False
     for item in items:
         if not isinstance(item, dict):
             raise RuntimeError(f"settlement item is not an object: {path}")
@@ -380,10 +381,39 @@ def read_settlement(path: Path, audit_id: str) -> dict[str, Any]:
             not isinstance(item.get("durable_ref"), str) or not item["durable_ref"]
         ):
             raise RuntimeError(f"settlement item durable_ref is missing: {path}")
+        if disposition == "promoted" and item.get("destination") == "global_friction":
+            signature = item.get("signature")
+            if signature is not None and (
+                not isinstance(signature, str) or not signature
+            ):
+                raise RuntimeError(
+                    f"settlement item signature is invalid: {path}"
+                )
+            if isinstance(signature, str):
+                requires_occurrence = True
         seen.add(key)
         actual_counts[lane] += 1
     if actual_counts != counts:
         raise RuntimeError(f"settlement candidate_counts do not match items: {path}")
+    occurrence = settlement.get("occurrence")
+    if occurrence is not None:
+        if not isinstance(occurrence, dict) or not all(
+            isinstance(occurrence.get(field), str) and occurrence[field]
+            for field in ("kind", "key", "thread_id", "project_cwd")
+        ):
+            raise RuntimeError(f"settlement occurrence identity is invalid: {path}")
+        if occurrence["kind"] != "codex_thread_project":
+            raise RuntimeError(f"settlement occurrence kind is invalid: {path}")
+        expected_occurrence = codex_thread_project_occurrence(
+            occurrence["thread_id"], occurrence["project_cwd"]
+        )
+        if any(
+            occurrence[field] != expected_occurrence[field]
+            for field in ("key", "thread_id", "project_cwd")
+        ):
+            raise RuntimeError(f"settlement occurrence key is invalid: {path}")
+    if requires_occurrence and occurrence is None:
+        raise RuntimeError(f"settlement occurrence identity is missing: {path}")
     return settlement
 
 
@@ -398,6 +428,36 @@ def read_inspection(path: Path, run_id: str) -> dict[str, Any]:
 
 def candidate_counts(candidates: dict[str, list[str]]) -> dict[str, int]:
     return {lane: len(ids) for lane, ids in candidates.items()}
+
+
+def codex_thread_project_occurrence(thread_id: str,
+                                    project_cwd: str) -> dict[str, str]:
+    canonical_cwd = str(Path(project_cwd).expanduser().resolve())
+    identity = json.dumps(
+        {"project_cwd": canonical_cwd, "thread_id": thread_id},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {
+        "kind": "codex_thread_project",
+        "key": "codex-thread-project:" + hashlib.sha256(identity.encode()).hexdigest(),
+        "thread_id": thread_id,
+        "project_cwd": canonical_cwd,
+    }
+
+
+def occurrence_from_receipt(
+    receipt_path: Path,
+    receipt: dict[str, Any],
+) -> dict[str, str]:
+    thread_id = receipt.get("thread_id")
+    if not isinstance(thread_id, str) or not thread_id:
+        raise RuntimeError("receipt is missing thread_id for promoted friction")
+    return codex_thread_project_occurrence(
+        thread_id,
+        project_cwd_from_receipt(receipt_path, receipt),
+    )
 
 
 def settlement_result(settlement: dict[str, Any], path: Path) -> dict[str, Any]:
@@ -763,6 +823,7 @@ def settle(args: argparse.Namespace) -> dict[str, Any]:
         destination = item.get("destination")
         reason = item.get("reason")
         durable_ref = item.get("durable_ref")
+        signature = item.get("signature")
         key = (lane, candidate_id)
         if key not in expected or key in actual:
             raise RuntimeError(f"unknown or duplicate settlement candidate: {key}")
@@ -776,6 +837,12 @@ def settle(args: argparse.Namespace) -> dict[str, Any]:
             not isinstance(durable_ref, str) or not durable_ref
         ):
             raise RuntimeError(f"durable_ref is required for {key} ({disposition})")
+        if disposition == "promoted" and destination == "global_friction" and (
+            not isinstance(signature, str) or not signature
+        ):
+            raise RuntimeError(
+                f"signature is required for {key} (promoted global_friction)"
+            )
         normalized = {
             "lane": lane,
             "audit_id": candidate_id,
@@ -785,12 +852,22 @@ def settle(args: argparse.Namespace) -> dict[str, Any]:
         }
         if isinstance(durable_ref, str) and durable_ref:
             normalized["durable_ref"] = durable_ref
+        if isinstance(signature, str) and signature:
+            normalized["signature"] = signature
         normalized_items.append(normalized)
         actual.add(key)
     missing = expected - actual
     if missing:
         raise RuntimeError(f"settlement is missing candidates: {sorted(missing)}")
 
+    promoted_items = [
+        item for item in normalized_items
+        if item["disposition"] == "promoted"
+        and item["destination"] == "global_friction"
+    ]
+    occurrence = (
+        occurrence_from_receipt(receipt_path, receipt) if promoted_items else None
+    )
     settlement = {
         "schema": SETTLEMENT_SCHEMA,
         "audit_id": audit_id,
@@ -798,6 +875,7 @@ def settle(args: argparse.Namespace) -> dict[str, Any]:
         "settled_at": datetime.now(timezone.utc).isoformat(),
         "candidate_counts": candidate_counts(candidates),
         "items": normalized_items,
+        **({"occurrence": occurrence} if occurrence is not None else {}),
     }
     write_text(
         settlement_path,
@@ -824,6 +902,7 @@ def settlement_template(args: argparse.Namespace) -> dict[str, Any]:
                 "destination": "",
                 "reason": "",
                 "durable_ref": "",
+                "signature": "",
             }
             for lane in ("execution_friction", "prompt_contract_gaps")
             for audit_id in candidates[lane]

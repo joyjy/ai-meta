@@ -9,7 +9,7 @@ Compile nearly executable intent into the smallest specification preserving scop
 
 ## Core Rules
 
-- Keep chat within 12 lines. Show `Goal`, `Scope`, and `Acceptance` once each; group multiple clauses on that line with compact numbering or semicolons.
+- Keep the work order concise. Show `Goal`, `Scope`, and `Acceptance` once each; preserve meaningful boundaries rather than fitting a line quota.
 - Use `final-form` in prose/headings; reserve `ff`/`/ff` for invocation and `ff` for the machine schema key.
 - Show optional fields only when task-specific; omit empty groups and inert machine metadata.
 - Fill known facts. Ask only about scope, acceptance, destructive/remote action, data model, file layout, compatibility, responsibility, or dispatch target.
@@ -27,13 +27,13 @@ Use this only when a known target admits materially different terminal effects, 
 
 ## Routing
 
-- If structural choices remain, route to `grill` and ask the first one; continue when choices are coupled. Term collisions across direction, owner, or responsibility are structural ambiguity.
+- Ask the first material blocker directly. Route to `grill` for coupled structural choices or explicit stress-testing; a routine clarification does not require a second conversation workflow. Term collisions across direction, owner, or responsibility are structural ambiguity.
 - Existing-session/client continuation is structural. Read `references/work-order-contract.md`; prove each surface/activity pair and delivery semantics before Ready.
 - A repeated stable event → manual routing → bounded agent step → verifiable artifact is a rollerskate signal. Evaluate it through the `automation_candidate` contract in `references/work-order-contract.md`; emit only advisory metadata, never Run authorization.
 - Do not inflate an executable request to populate fields.
-- Ready Codex work needing substantive checkpoints, iterative verification, or recovery is controlled execution: offer agent-owned `/ll` dispatch.
+- Use `/ll` when selected by the user/project, or offer it when durable orchestration materially helps. Steps or tests alone do not require it; ordinary authorized work returns ready to the caller without another permission round.
 - Show one action line: while blocked show only `Blocking question`; when Ready show only `Next`.
-- If an exact displayed destructive/effect list is the only blocker and `/ll` the sole execution route, one question may confirm both effect and immediate handoff. A short affirmative dispatches the unchanged semantic fields without a Ready restatement. Keep them separate when any boundary is unresolved or the user asked only to prepare.
+- One question may confirm both exact effects and `/ll` handoff only when those are the sole remaining boundary and execution is requested; details live in the dispatch reference.
 - Explicit `/ll`, `/loop`, or loop-ledger invocation supplies dispatch authorization. Compile internally and return control when structurally ready; do not show another confirmation screen.
 
 ## References
@@ -45,11 +45,11 @@ References are direct and do not route onward.
 
 ## Workflow
 
-1. Gather request, decisions, paths, capability evidence, dirty boundary, and exact antecedents. Resolve and confirm deletion paths before Ready.
+1. Gather request, decisions, paths, capability evidence, dirty boundary, and exact antecedents.
 2. Write one observable goal, narrow include/exclude scope, and 2–4 observable acceptance conditions; cover every antecedent before grouping.
 3. Load the machine contract only when gated. Add inventory for restore/absorb/migrate/rewrite/replace/extend, continuation for an existing session/client, verification loops when results drive revision, and parallelization only for real parallel slices.
 4. Ask only the first blocker. Mark Ready only when scope is complete and the receiver can start without reinterpretation.
-5. Show the single action using the Routing gates above. A substantive correction updates machine fields/revision identity and expires prior authorization.
+5. Show the single action using the Routing gates above. Corrections update machine fields/revision identity; recheck only the changed authority boundary, accounting for authorization already supplied by the user's correction.
 
 ## Chat Output
 
@@ -68,8 +68,8 @@ final-form:
 - Next: <only when Ready>
 ```
 
-For controlled Codex execution, use `Next: 是否由我将此版本分发给 /ll，编译 loop-ledger contract、校验并创建 Codex goal？`
+For a new `/ll` offer: `Next: 是否按此范围启动 loop-ledger 和 Codex goal？` Already-authorized dispatch needs no repeat offer.
 
 When routing to grill, state that structural ambiguity remains and ask one structural question.
 
-Outside explicit invocation, do not persist context or start loop-ledger. Confirmation authorizes only the displayed boundary; route it without asking again. loop-ledger owns machine compilation and goal creation, so do not edit implementation first.
+Persistence and dispatch require authorization for the displayed scope. When `/ll` is selected, it owns machine compilation and goal creation before implementation.
