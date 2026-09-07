@@ -13,7 +13,7 @@ Require the caller to supply:
 - previous verdicts and unresolved findings bound to their originating revision;
 - verification evidence for the current revision.
 
-If these inputs are absent, fall back to `simple`, `two-axis`, `quality`, or `prune`; do not invent persistence inside review-router.
+If required inputs cannot be resolved from the caller, report the exact missing inputs and `needs_human`. An explicitly selected evolution review does not silently become another strategy; the caller may choose a one-shot review instead. Do not invent persistence inside review-router.
 
 ## Round
 

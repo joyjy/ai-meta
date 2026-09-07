@@ -144,7 +144,6 @@ After saving, summarize:
 
 ### Agent 运行摩擦层
 - 无变更 / recorded: <friction title> / updated: <friction title> / skipped: <原因>
-- 独立 agent 审计：frictions <N>；prompt/contract gaps <N>；promoted <N> / resolved <N> / ignored <N> / deferred <N> / skipped（<原因>）
 - 摩擦结算：promoted <N> / resolved <N> / ignored <N> / deferred <N> / 无
 - 产物 / 补证条件：<promoted 对应 durable entry 或 final-form；deferred 对应缺失证据与重试条件；无则省略>
 

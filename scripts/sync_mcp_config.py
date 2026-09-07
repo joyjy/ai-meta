@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish shared remote MCP entries into Codex's managed config block."""
+"""Publish compatible shared remote MCP entries into Codex's managed block."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from typing import Any, Sequence
 
 BEGIN_MARKER = "# ai-meta:mcp:begin"
 END_MARKER = "# ai-meta:mcp:end"
+CODEX_NATIVE_OAUTH_SERVERS = frozenset({"meego"})
 TABLE_PATTERN = re.compile(
     r'^\s*\[\s*mcp_servers\.(?:"((?:[^"\\]|\\.)*)"|([A-Za-z0-9_-]+))\s*\]\s*(?:#.*)?$'
 )
@@ -51,6 +52,11 @@ def load_remote_servers(source: Path) -> dict[str, dict[str, Any]]:
         if not isinstance(raw_server, dict):
             raise SyncError(f"MCP server {name!r} must be an object")
         if raw_server.get("type") != "remote":
+            continue
+
+        if name in CODEX_NATIVE_OAUTH_SERVERS:
+            # These servers use Codex's native OAuth store and stay outside the
+            # generated block so shared access tokens cannot override OAuth.
             continue
 
         url = raw_server.get("url")
@@ -157,7 +163,10 @@ def write_atomic(path: Path, content: str) -> None:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Publish shared remote MCP entries into Codex config."
+        description=(
+            "Publish compatible shared remote MCP entries into Codex config; "
+            "servers assigned to native Codex OAuth stay client-owned."
+        )
     )
     parser.add_argument(
         "--source",

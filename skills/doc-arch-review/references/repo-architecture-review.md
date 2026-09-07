@@ -1,10 +1,10 @@
 # Repository Architecture Review
 
-Use for repo architecture, documentation architecture, canonical source-map review, or a structural change that may have invalidated ownership documentation. The main skill simultaneously loads `../../../docs/architecture/source-map-contract.md`; that contract owns required content and presentation.
+Use for repo architecture, documentation architecture, canonical source-map review, or a structural change that may have invalidated ownership documentation. For source-map or structural-change review, the main skill loads `../../../docs/architecture/source-map-contract.md`; that contract owns the managed-project content and presentation requirements.
 
 ## Source Map Review
 
-- Require one canonical `docs/architecture/source-map.md`, linked from `docs/architecture/index.md`; `AGENTS.md` carries only a short early pointer and never copies the map.
+- For a managed project covered by the source-map contract, require one canonical `docs/architecture/source-map.md`, linked from the architecture entry; `AGENTS.md` carries only a short pointer. For other projects, evaluate the established ownership map without imposing personal paths or creating a competing map.
 - Compare the map with repo roots, manifests, workspace/package/service metadata, build/test entrypoints, generated artifacts, architecture boundaries, shared contracts, and documentation layers.
 - A missing or wrong major root, owner, shared contract, or generated-source mapping is `P1` when it can cause an incorrect change; otherwise `P2`.
 - Prefer a concise fenced `text` directory tree, followed only by boundary notes and cross-cutting mappings the tree cannot express. Do not repeat the tree as a full root-by-root inventory.
@@ -12,7 +12,7 @@ Use for repo architecture, documentation architecture, canonical source-map revi
 
 ## Source Health Preflight
 
-Run a shallow preflight for repo architecture reviews unless the user explicitly limits review to one named document. This is structural evidence, not code review.
+Run a shallow preflight for repo-wide architecture reviews. For a named document or bounded exit gate, inspect only the paths needed to verify its claims or changed boundaries. This is structural evidence, not code review.
 
 Inspect:
 
@@ -37,7 +37,7 @@ High-signal thresholds:
 ## Repo Review Workflow
 
 1. Resolve the repo root, architecture entry, source-map path, and review baseline.
-2. Run the shallow preflight without reading unrelated implementation.
-3. Apply the source-map contract to declared roots, ownership, shared contracts, generated mappings, documentation layers, and validation entrypoints.
+2. Run the applicable preflight without reading unrelated implementation.
+3. When the source-map contract applies, check declared roots, ownership, shared contracts, generated mappings, documentation layers, and validation entrypoints. Otherwise use the project's established documentation contract.
 4. Check that common structural changes have actionable guidance and that nearby entry docs point to, rather than copy, the canonical map.
 5. Keep inventory/count observations separate from proven semantic findings.

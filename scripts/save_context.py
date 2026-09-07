@@ -167,9 +167,7 @@ def fallback_parse_frontmatter(frontmatter: str) -> dict[str, Any]:
     return data
 
 
-def parse_frontmatter(
-    frontmatter: str, *, validate_next_route: bool = True
-) -> dict[str, Any]:
+def parse_frontmatter(frontmatter: str) -> dict[str, Any]:
     try:
         import yaml  # type: ignore[import-not-found]
     except ImportError:
@@ -198,25 +196,11 @@ def parse_frontmatter(
     if not isinstance(parsed.get("workstreams"), dict):
         raise ValueError("context YAML workstreams must be a mapping")
     next_route = parsed.get("next_route")
-    if (validate_next_route and next_route is not None and next_route != "mainline" and
+    if (next_route is not None and next_route != "mainline" and
             (not isinstance(next_route, str)
              or next_route not in parsed["workstreams"])):
         raise ValueError(f"context YAML next_route {next_route!r} does not exist")
     return parsed
-
-
-def compile_next_route(context: str, requested_route: str) -> str:
-    _, frontmatter, body = split_context(context)
-    data = parse_frontmatter(frontmatter, validate_next_route=False)
-    next_route = None if requested_route == "none" else requested_route
-    if (
-        next_route is not None
-        and next_route != "mainline"
-        and next_route not in data["workstreams"]
-    ):
-        raise ValueError(f"requested next route {requested_route!r} does not exist")
-    data["next_route"] = next_route
-    return render_context(data, body)
 
 
 def validate_context_structure(parser: argparse.ArgumentParser, context: str,
@@ -379,13 +363,6 @@ def main() -> int:
         help="Allow writing an empty context snapshot",
     )
     parser.add_argument(
-        "--next-route",
-        help=(
-            "Authoritative recommended route for a mainline context input: "
-            "mainline, none, or an existing workstream"
-        ),
-    )
-    parser.add_argument(
         "--timeline",
         default="",
         help="One-line Daily Note timeline text without leading '- '",
@@ -428,15 +405,6 @@ def main() -> int:
     if args.timeline_only and args.delete_context:
         parser.error("--timeline-only cannot be used with --delete-context")
 
-    if args.next_route == "":
-        parser.error("--next-route must not be empty")
-
-    if args.next_route is not None and (args.timeline_only or args.delete_context):
-        parser.error("--next-route requires a mainline context input")
-
-    if args.next_route is not None and args.allow_empty:
-        parser.error("--next-route cannot be used with --allow-empty")
-
     if context_input_count > 1:
         parser.error(
             "use only one context input: --context-file or --context-stdin")
@@ -459,19 +427,12 @@ def main() -> int:
         if workstream:
             if args.allow_empty:
                 parser.error("--allow-empty is not valid for a workstream save")
-            if args.next_route is not None:
-                parser.error("--next-route is not valid for a workstream save")
             try:
                 context = merge_workstream(path, args.abbr.split(":", 1)[0],
                                            workstream, context)
             except (OSError, ValueError) as exc:
                 parser.error(str(exc))
         else:
-            if args.next_route is not None:
-                try:
-                    context = compile_next_route(context, args.next_route)
-                except ValueError as exc:
-                    parser.error(str(exc))
             validate_context_input(parser, context, args.allow_empty, args.abbr)
 
     timeline_now: datetime | None = None

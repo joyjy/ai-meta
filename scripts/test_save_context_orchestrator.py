@@ -64,6 +64,24 @@ CONTINUE_ADMISSION = {
     "checked": ["gitlab:pipeline:792714=failed"],
     "actionable": ["diagnose pipeline 792714 before checkpoint"],
 }
+MAINLINE_CONTEXT = """---
+# context: project=amt; mainline=active; workstreams=0(); next=mainline
+schema: context.v2
+project: amt
+goal: Test context.
+mainline:
+  state: active
+  summary: null
+  doing: []
+  blocked: []
+  next_steps: []
+workstreams: {}
+next_route: mainline
+updated: 2026-09-04
+---
+
+# amt Context
+"""
 
 
 class OrchestratorWorkflowTest(unittest.TestCase):
@@ -263,14 +281,16 @@ class OrchestratorWorkflowTest(unittest.TestCase):
                 daily_notes[0].read_text(encoding="utf-8").count("orchestrator smoke"),
             )
 
-    def test_real_entry_requires_compiler_owned_next_route_for_mainline(self) -> None:
+    def test_real_entry_accepts_mainline_without_next_route_option(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env["HOME"] = tmp
             admission_path = Path(tmp) / "admission.json"
             context_path = Path(tmp) / "context.md"
             admission_path.write_text(
                 json.dumps(READY_ADMISSION), encoding="utf-8"
             )
-            context_path.write_text("not read before route gate", encoding="utf-8")
+            context_path.write_text(MAINLINE_CONTEXT, encoding="utf-8")
 
             result = subprocess.run(
                 [
@@ -285,12 +305,16 @@ class OrchestratorWorkflowTest(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 check=False,
+                env=env,
             )
 
-            self.assertEqual(2, result.returncode)
-            self.assertIn(
-                "orchestrated mainline save requires --next-route",
-                result.stderr,
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("succeeded", json.loads(result.stdout)["status"])
+            self.assertEqual(
+                MAINLINE_CONTEXT,
+                (Path(tmp) / ".ai" / "contexts" / "amt.md").read_text(
+                    encoding="utf-8"
+                ),
             )
 
     def test_real_entry_rejects_invalid_context_before_audit_dispatch(self) -> None:
@@ -314,7 +338,6 @@ class OrchestratorWorkflowTest(unittest.TestCase):
                     "--audit-cwd", "/project",
                     "amt",
                     "--context-file", str(context_path),
-                    "--next-route", "none",
                     "--skip-timeline",
                 ],
                 text=True,

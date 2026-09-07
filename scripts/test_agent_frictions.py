@@ -3,12 +3,16 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).with_name("agent_frictions.py")
 SPEC = importlib.util.spec_from_file_location("agent_frictions", MODULE_PATH)
@@ -219,6 +223,7 @@ class AgentFrictionsTest(unittest.TestCase):
                 "- Signature：first.signature\n"
                 "- 障碍：first short summary\n"
                 "- fallback：SECRET-LONG-FALLBACK\n"
+                "- 复现：2（legacy format）\n"
                 "- 状态：open\n\n"
                 "### 2026-08-27 Second\n"
                 "- Signature：second.signature\n"
@@ -237,7 +242,155 @@ class AgentFrictionsTest(unittest.TestCase):
             self.assertEqual(2, result["shown"])
             self.assertEqual("first.signature",
                              result["entries"][0]["signature"])
+            self.assertEqual(2, result["entries"][0]["recurrence"])
+            self.assertEqual(3, result["entries"][0]["occurrence_count"])
+            self.assertEqual(
+                "legacy_unbound", result["entries"][0]["identity_status"]
+            )
+            self.assertEqual(0, result["entries"][1]["recurrence"])
+            self.assertEqual(1, result["entries"][1]["occurrence_count"])
+            self.assertEqual(
+                "legacy_unbound", result["entries"][1]["identity_status"]
+            )
             self.assertNotIn("SECRET", json.dumps(result))
+
+    def test_record_occurrence_is_idempotent_and_counts_distinct_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inbox = root / "agent-frictions.md"
+            inbox.write_text(
+                "# Agent Frictions\n\n## Open\n\n"
+                "### 2026-09-04 Example\n"
+                "- Signature：example.signature\n"
+                "- 障碍：example\n"
+                "- 状态：open\n\n"
+                "## Closed\n",
+                encoding="utf-8",
+            )
+
+            def write_settlement(name: str, thread_id: str) -> Path:
+                settlement = root / f"{name}.json"
+                identity = json.dumps(
+                    {
+                        "project_cwd": "/workspace/project",
+                        "thread_id": thread_id,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                occurrence_key = (
+                    "codex-thread-project:"
+                    + hashlib.sha256(identity.encode()).hexdigest()
+                )
+                settlement.write_text(
+                    json.dumps({
+                        "schema": "save-context.audit-settlement.v1",
+                        "audit_id": name,
+                        "status": "settled",
+                        "items": [
+                            {
+                                "lane": "execution_friction",
+                                "audit_id": "candidate-a",
+                                "disposition": "promoted",
+                                "destination": "global_friction",
+                                "signature": "example.signature",
+                                "durable_ref": str(inbox) + "#examplesignature",
+                            },
+                            {
+                                "lane": "prompt_contract_gaps",
+                                "audit_id": "candidate-b",
+                                "disposition": "promoted",
+                                "destination": "global_friction",
+                                "signature": "example.signature",
+                                "durable_ref": str(inbox) + "#examplesignature",
+                            },
+                        ],
+                        "occurrence": {
+                            "kind": "codex_thread_project",
+                            "key": occurrence_key,
+                            "thread_id": thread_id,
+                            "project_cwd": "/workspace/project",
+                        },
+                    }),
+                    encoding="utf-8",
+                )
+                return settlement
+
+            first_settlement = write_settlement("audit-first", "thread-1")
+            with self.assertRaisesRegex(ValueError, "has no occurrence identity"):
+                agent_frictions.record_occurrence(
+                    inbox, first_settlement, "example.signature"
+                )
+            first = agent_frictions.record_occurrence(
+                inbox, first_settlement, "example.signature", initialize=True
+            )
+            repeated = agent_frictions.record_occurrence(
+                inbox, first_settlement, "example.signature", initialize=True
+            )
+            second = agent_frictions.record_occurrence(
+                inbox,
+                write_settlement("audit-second", "thread-2"),
+                "example.signature",
+            )
+
+            self.assertTrue(first["updated"])
+            self.assertEqual(1, first["occurrence_count"])
+            self.assertEqual(0, first["recurrence"])
+            self.assertFalse(repeated["updated"])
+            self.assertEqual(1, repeated["occurrence_count"])
+            self.assertTrue(second["updated"])
+            self.assertEqual(2, second["occurrence_count"])
+            self.assertEqual(1, second["recurrence"])
+            content = inbox.read_text(encoding="utf-8")
+            self.assertEqual(2, content.count("- Occurrence："))
+            self.assertIn("- 复现：+1（最近：save-context-audit:audit-second）", content)
+
+            first_write_ready = threading.Event()
+            release_first = threading.Event()
+            second_finished = threading.Event()
+            original_write = agent_frictions.atomic_write_text
+
+            def paused_write(path: Path, content: str) -> None:
+                if '"thread_id":"thread-3"' in content and '"thread_id":"thread-4"' not in content:
+                    first_write_ready.set()
+                    if not release_first.wait(5):
+                        raise RuntimeError("concurrent writer fixture timed out")
+                original_write(path, content)
+
+            third_input = write_settlement("audit-third", "thread-3")
+            fourth_input = write_settlement("audit-fourth", "thread-4")
+
+            def second_writer() -> dict:
+                try:
+                    return agent_frictions.record_occurrence(
+                        inbox, fourth_input, "example.signature"
+                    )
+                finally:
+                    second_finished.set()
+
+            with patch.object(agent_frictions, "atomic_write_text", paused_write):
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    third = pool.submit(agent_frictions.record_occurrence,
+                                        inbox, third_input, "example.signature")
+                    try:
+                        self.assertTrue(first_write_ready.wait(5))
+                        fourth = pool.submit(second_writer)
+                        self.assertFalse(second_finished.wait(0.2))
+                    finally:
+                        release_first.set()
+                    self.assertTrue(third.result(timeout=5)["updated"])
+                    self.assertTrue(fourth.result(timeout=5)["updated"])
+            content = inbox.read_text(encoding="utf-8")
+            self.assertEqual(4, content.count("- Occurrence："))
+            self.assertIn("- 复现：+3", content)
+
+            duplicate = next(line for line in content.splitlines()
+                             if line.startswith("- Occurrence："))
+            damaged = content.replace(duplicate, duplicate + "\n" + duplicate, 1)
+            inbox.write_text(damaged, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate occurrence identities"):
+                agent_frictions.record_occurrence(inbox, fourth_input, "example.signature")
+            self.assertEqual(damaged, inbox.read_text(encoding="utf-8"))
 
     def test_checkpoint_claim_and_owner_isolation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

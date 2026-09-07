@@ -8,7 +8,7 @@ Read this reference only for checkpoint policy, risk verification, feedback/fric
 - Execute one bounded checkpoint at a time. After at most two repair cycles for the same failure, stop as `blocked` or `needs_human` unless new evidence or an approved fallback appears.
 - For unfamiliar bootstrap chains, record source, trigger command, downstream behavior, network effects, and credential or persistence surfaces. Dynamic or network-loaded execution remains low-confidence until a visible preflight proves it.
 - Discover the project-native linttest/lintest gate without changing or executing it unless authorized. A template or copied example is not evidence; do not invent a gate when no stable one exists.
-- Commit, push, MR creation, deletion, and remote writes require explicit authorization. The only Git exception is a contract dispatched to `engineering-exit` with privileged git exit under the current repo flow; it does not cover deletion or unrelated remote state.
+- Resolve Git and other side-effect authority from the user request, global rules, and the verified contract. A loop-ledger adds no permissions and does not require renewed approval for actions already authorized. `engineering-exit` privileged git exit applies only within its scope and repo flow; deletion and unrelated remote state retain their own gates.
 
 ## Feedback And Friction
 
@@ -24,5 +24,5 @@ Objective friction stays separate until claimed. After the exact loop-ledger ver
 - Use `done` only when every `done_when` condition has external evidence and the effective appended state verifies.
 - Structural follow-up exits as `next_ff_ready` with next action `next_ff`; do not execute that final-form inside the completed run.
 - Terminal events remain in the same file. `/ll` never moves or archives it.
-- `engineering-exit` verifies and hands off the exact ledger but does not dispatch, wait, or archive. `save-context` is the only automatic audit dispatch owner; when save is omitted, an explicit audit follow-up may dispatch instead. The later settlement caller archives only the receipt-bound ledger; the helper verifies first and moves a legacy feedback sidecar only when its exact path exists.
+- `engineering-exit` verifies and hands off the exact ledger but does not dispatch, wait, or archive. An explicit audit request may dispatch. The later settlement caller archives only the receipt-bound ledger; the helper verifies first and moves a legacy feedback sidecar only when its exact path exists.
 - The independent audit reviews execution friction and prompt/contract fidelity. It does not revalidate implementation quality or gate the user-visible engineering exit; the ledger verifier remains the oracle for checkpoints, done conditions, feedback dispositions, scope, and effective exit state.

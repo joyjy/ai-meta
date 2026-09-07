@@ -105,7 +105,7 @@ repo 存放可版本管理、可复盘、可迁移的内容：
 - `docs/`：运行架构和个人 AI 系统地图。
 - `.agents/plugins/`、`plugins/`：Codex 本地 plugin marketplace 与 source。
 - `runtime/`：由 ai-meta 拥有、挂载到 GTD runtime manager 的本地 periodic job registration source。
-- `mcp/config.example.json`、`scripts/sync-mcp-config`：去敏配置样例与客户端同步入口；配置归属和同步边界见 [source-of-truth boundaries](docs/architecture/source-of-truth-boundaries.md)。
+- `mcp/config.example.json`：GTD 等独立 MCP client 的去敏配置样例；Codex 使用原生命令注册和授权。`scripts/sync-mcp-config` 仅用于旧配置的手工兼容迁移，具体边界见 [source-of-truth boundaries](docs/architecture/source-of-truth-boundaries.md)。
 
 以下内容只留在本机，不进入 git：
 

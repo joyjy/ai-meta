@@ -7,16 +7,16 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 
 ## Routing
 
-- 已有 `coding-conventions:begin <template-id>`：读取对应模板；冲突时以模板为准，unsupported ID 或缺失模板要报告。
+- 已有 `coding-conventions:begin <template-id>`：读取对应模板作为受控块事实源；用户明确指令与更高层执行边界优先。报告 unsupported ID 或缺失模板。
 - 无受控块但要实现、调试、验证或评审：按技术栈读模板；团队 / 外部项目不加载 `preferences/*`。
-- 实现、调试、验证或评审：按下方信号做 bounded Pattern Routes scan，只读命中条目并检查 forces，不预读或递归 Related。
-- 初始化、注入模板、配置 hook 或接入 `node-test-kit`：读取 `references/project-initialization.md`，扫描并展示候选，获得确认后才能写入。
+- 代码任务按 Pattern Routes 命中信号读取并检查 forces，不预读或递归 Related。
+- 初始化、注入模板、配置 hook 或接入 `node-test-kit`：读取 `references/project-initialization.md`，按已授权目标扫描；范围未定时展示候选并确认。
 - 校验工程约定和验证能力：读取 `references/project-audit.md`；默认只读。
 - 维护 pitfall：读 `references/pitfall-maintenance.md`；候选只读 `preferences/pitfall-watch.md` 的相关 signature；晋升同读 `../engineering-exit/references/evidence-classification.md`。
 - 维护 pattern：读 `references/pattern-maintenance.md`；晋升时同读 evidence classification，调整 label 时再读 `patterns/label.md`。
 - 目标 SQL 方言不明，或首次使用日期、字符串、行构造等方言特性：读 `preferences/temporary.md` 的对应未过期条目。
 - IDaaS 行为变更：读 `preferences/lintest-walkthrough.md`。
-- 更新普通模板：展示现状与拟写规则，确认后只改对应模板。
+- 更新普通模板：按明确目标与规则修改；未定时展示候选。
 
 ## Ownership Boundaries
 
@@ -52,10 +52,10 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 
 ## Safety Gates
 
-- 未经确认，不写项目 `AGENTS.md`、模板、preferences、pattern、hook 或构建配置。
+- 写入须有明确目标与范围；复用用户已有授权。新增未授权模板、hook 或构建集成时，先展示具体改动再确认。
 - 团队 / 外部项目不注入个人路径、私有 helper 或 `preferences/*`。
 - 不临场编写模板外 hook。已提供 partial 也要先在目标 repo 验证命令，再在候选清单披露并获确认。
-- 一次性事故不直接进入长期模板；pattern 与 pitfall 晋升必须保留可核验 evidence，并按各自 reference 的门禁处理。
+- pattern/pitfall 晋升按对应 reference 保留可核验 evidence；一次性事故不进长期模板。
 
 ## Completion Standard
 

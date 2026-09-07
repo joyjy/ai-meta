@@ -2,7 +2,7 @@
 
 Use this reference when preparing the review package after source and doc gates.
 
-## Minimum MR Fields
+## MR Description
 
 MR descriptions default to Chinese. Keep commands, paths, API names, conventional
 commit titles, and project-required section labels in their native form, but
@@ -12,6 +12,8 @@ section structure and fill the body in Chinese by default. On GitLab, the
 entire human-authored package belongs under the exact `## User Description`
 heading. The shared `gitlab-mr` helper adds or normalizes that heading and keeps
 Managed PR Agent PR Agent content outside the protected section.
+
+以下为无项目模板时的候选段落；只保留与本次变更相关的部分，GitLab 的保护 heading 始终保留。
 
 ```markdown
 ## User Description
@@ -61,20 +63,9 @@ together anyway.
 
 ## Confirmation
 
-Before executing commit / push / MR creation, ask with exact scope unless the
-current user request chose `engineering-exit` and did not narrow it to
-prepare-only / local-only:
+执行前核对 exact scope、flow 和用户已有授权。按全局 Git 规则判断 push 与 MR/PR 写入权限，调用 `engineering-exit` 本身不授予远端权限。先完成可审阅的 scope、验证证据和 MR 草稿；用户要求远端交付但缺少必要授权时，只询问该项动作，不重复请求已有授权。默认本地收尾时直接报告待推送状态。
 
-```text
-当前 scope 准备提交：...
-独立 concern 准备分别提交：...
-保留 dirty（原因 / 下一步）：...
-来源不明 dirty（缺少的决定）：...
-验证证据：...
-是否按这个 scope commit / push / open MR？
-```
-
-When privileged git exit applies, still include current scope, separately
+When executing authorized Git actions, include current scope, separately
 committed concerns, preserved / unknown dirty paths, verification evidence, and
 the `gitlab.flow` result in the closeout report before or alongside the action
 result.
@@ -99,4 +90,10 @@ MR/PR 创建或更新后，回读刚写入的 exact 对象一次，确认实际 
 
 随后，若项目存在适用 CI，查询一次绑定当前 HEAD 的 run/pipeline；无 CI 则记录 not applicable。若 run/pipeline 尚未物化，只允许一次短时 bounded retry 来确认 attachment，不得把该重试扩展成等待 terminal status。若仍不可见，报告 exact MR/PR、HEAD 和待确认事项后结束；若为 pending/running，记录 CI run/pipeline ID、URL 和状态后结束；若已是 terminal，直接报告观察到的 success、failed 或 canceled。
 
-默认 `engineering-exit` 到“MR/PR identity 正确且适用 CI 已绑定当前 HEAD”即完成，不等待 CI success 或重新检查 mergeable。只有用户明确要求“等 CI”“确认可合并”或 merge-ready，或当前项目 source of truth 明确把 CI success 定义为本次 exit oracle，才使用有界等待机制继续；状态无变化时不重复回读或叙述轮询。
+获授权执行 MR/PR 交付时，到“MR/PR identity 正确且适用 CI 已绑定当前 HEAD”即完成，不等待 CI success 或重新检查 mergeable。首次 terminal-status poll / wait 前，从本次任务仍有效的用户请求与项目事实源确定 `wait_authority`：
+
+- `explicit_user_request`：用户明确要求本次任务“等 CI”“确认可合并”或 merge-ready。
+- `source_owned_acceptance`：项目 source of truth 明确把 CI success 定义为本次 exit oracle。
+- `none`：其他情况；禁止继续等待，只报告 exact MR/PR、HEAD、run/pipeline ID、URL、当前状态和后续 oracle。
+
+已绑定 terminal oracle、`pending / running` 状态或“最好最终绿”的推断不提供等待授权；旧请求仅在仍覆盖同一任务与 exact revision、且未撤回或被替代时有效。前两种 authority 只允许有界等待；状态无变化时不重复回读或叙述轮询。

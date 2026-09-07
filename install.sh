@@ -245,16 +245,6 @@ cleanup_ai_script_symlink "restart_agent_status.sh"
 cleanup_ai_script_symlink "resolve_config.py"
 cleanup_ai_script_symlink "resolve_customization.py"
 
-# ── MCP client adapters ──────────────────────────────────────────────────────
-echo ""
-echo "[mcp] ~/.ai/mcp/config.json -> Codex config"
-if [ -f "$AI/mcp/config.json" ]; then
-  "$REPO/scripts/sync-mcp-config"
-  echo "  restart Codex to load updated MCP servers"
-else
-  echo "  skipped: $AI/mcp/config.json does not exist"
-fi
-
 # ── runtime registrations ─────────────────────────────────────────────────────
 echo ""
 echo "[runtime] ai-meta periodic jobs -> ~/.ai/gtd/runtime/services/"

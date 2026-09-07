@@ -33,18 +33,28 @@ Read `references/layer-rules.md` only for project entries, README, source maps, 
 
 Size triggers inspection, not deletion. Prove compressed content has a better owner or move it first.
 
+## Behavioral Gates
+
+Check effects on the task, not just document size:
+
+- Authority: distinguish source material from instructions; find defaults that override an explicit request, invent permission, or repeat an already-satisfied approval gate. Preserve platform hierarchy and real safety boundaries.
+- Triggers and stops: find unconditional questions, output templates, delegation, verification expansion, or terminal polling where the task needs a conditional choice. Require a clear trigger and completion boundary, not a universal ban.
+- Host overlap: compare with visible platform guidance; remove conflicting or redundant local rules only when the host covers the same need. Retain necessary cross-client rules; unknown host behavior is not evidence of duplication.
+
+Use the finding buckets below and keep fixes model-independent; do not copy a model guide into the skill.
+
 ## Workflow
 
 1. State mode, target root, candidate scope, evidence set, and uncovered set.
 2. Measure each in-scope main skill and map its ordinary loading closure.
-3. Diagnose correct placement, weight, duplication, staleness, late loading, and broad routing.
+3. Diagnose placement, weight, duplication, staleness, loading breadth, and behavioral gates.
 4. Classify findings:
    - `Must Fix`: repeated or clearly impactful friction with a small durable fix, plus every hard loading-path violation above.
    - `Watch`: plausible risk or one recent correction without enough evidence for a rule change.
    - `Do Not Change`: cleanup that would overfit, duplicate a source of truth, or add more weight than it removes.
 5. Plan only `Must Fix`. When authorized, slim hot entries, deduplicate, then move conditional detail.
-6. Verify searchability, paths/links, source-of-truth pointers, loading closure/depth, and preserved recovery state.
-7. Report files changed, content moved and intentionally retained, all three finding buckets, every reviewed skill's five loading metrics, evidence set, and uncovered set.
+6. Verify searchability, paths/links, source-of-truth pointers, loading closure/depth, and preserved recovery state. For changed behavioral rules, compare before/after decisions on a few relevant real requests (e.g. explicit edit, discussion only, context load), including action/read scope and stopping point. Label a static walkthrough as such; fewer bytes or a walkthrough alone does not prove runtime improvement. Do not build a test framework just for wording changes.
+7. Report files changed, content moved and intentionally retained, all three finding buckets, every reviewed skill's five loading metrics, behavioral evidence and its limits, evidence set, and uncovered set.
 
 ## Boundaries
 

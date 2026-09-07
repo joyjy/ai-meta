@@ -63,7 +63,7 @@ Record friction in `~/.ai/agent-frictions.md` only when it is likely to recur
 and could be fixed by a script, skill, tool description, install step, approval
 prefix, thin wrapper, or routing rule.
 
-Before adding an Open entry, compare its normalized mechanism Signature with existing Open entries. A match updates the existing entry and increments its `复现` counter by one per independent session/project occurrence; it never creates a second title or copies the full incident narrative. Missing `复现` means `+0`.
+Before adding an Open entry, compare its normalized mechanism Signature with existing Open entries. A match never creates a second title or copies the full incident narrative. For a settled global friction, use `agent-frictions record-occurrence` so the receipt-derived `thread_id + project_cwd` identity is idempotently recorded and `复现` is computed as distinct occurrences minus one; use `--initialize` only immediately after creating a new entry. A legacy entry without Occurrence identities requires exact-evidence migration and must not infer `+0` from a missing counter.
 
 Do not record ordinary coding pitfalls, project progress, active Doing /
 Blocked / Next Steps, raw transcripts, or one-off failures with no plausible
@@ -198,12 +198,11 @@ Commit-likely signals:
 Procedure:
 
 1. Run `git status` and `git diff --stat`.
-2. If the save-context result includes current-session source artifacts, the
-   save request authorizes committing only those relevant files after scope
-   inspection. Exclude unrelated changes and report hash/message.
-3. For non-source or unrelated durable changes, ask with a proposed message.
-4. The source-artifact exception never authorizes `git push`.
-5. If commit is deferred, do not make committing the default Next Step.
+2. Apply the global local-commit boundary to complete, verified changes within
+   the current session's authorized scope; inspect the staged diff and report
+   hash/message. Preserve unrelated changes and unfinished work.
+3. Saving context does not grant push or MR/PR permissions.
+4. If commit is deferred, do not make committing the default Next Step.
 
 Commit message format:
 

@@ -33,13 +33,10 @@ In Codex, use the same entry as a single checkpoint orchestrator:
 ~/.ai/scripts/save-context --orchestrate <abbr> \
   --admission-file <save-context.admission.v1.json> \
   --context-file <context-file> \
-  --next-route <none|mainline|existing-workstream> \
-  --timeline "[HH:MM-HH:MM] <timeline text>" \
-  --audit-thread-id <exact-thread-id> \
-  --audit-cwd <exact-project-cwd>
+  --timeline "[HH:MM-HH:MM] <timeline text>"
 ```
 
-Use `--audit-rollout <exact-rollout>` instead of `--audit-thread-id` when the rollout is already known, and add `--audit-ll <exact-ll-path>` only when an effective loop-ledger is bound. Omit the audit source when audit is intentionally skipped. Task title refresh is not a shell stage; after a successful context stage, use the client-native rename capability defined in `timeline-title-output.md`.
+Task title refresh is not a shell stage; after a successful context stage, use the client-native rename capability defined in `timeline-title-output.md`.
 
 Before creating any output artifact, write a short admission file from current source-owner readback:
 
@@ -55,15 +52,15 @@ Before creating any output artifact, write a short admission file from current s
 }
 ```
 
-Use `decision=continue_work` with at least one `actionable` item when a newly discovered failure, stale runtime, unfinished side effect, or other in-scope work can still be handled in the current task. The orchestrator then returns exit code 3 and `status=continue_work` without calling audit, context/timeline, or title helpers. `--pause-override` is valid only after the user sees that blocker and explicitly asks to pause/save anyway; the receipt records the admission as `overridden`.
+Use `decision=continue_work` with at least one `actionable` item when a newly discovered failure, stale runtime, unfinished side effect, or other in-scope work can still be handled in the current task. The orchestrator then returns exit code 3 and `status=continue_work` without calling context/timeline or title helpers. `--pause-override` is valid only after the user sees that blocker and explicitly asks to pause/save anyway; the receipt records the admission as `overridden`.
 
 The admission envelope is bounded to 16 KiB, at most 20 `checked` and 20 `actionable` entries, and 500 characters per entry. Store only source references and compact readback; never copy tokens, raw logs, or full artifacts into it.
 
-The command emits one `save-context.checkpoint.v1` JSON receipt. Admission runs first, then a read-only context compile/validation preflight, audit, and context/timeline. Preflight failure preserves the helper's nonzero exit and skips audit plus every write stage, so malformed control fields cannot create duplicate audit receipts. Formal context failure preserves the helper's nonzero exit. Audit failure returns exit code 0 with receipt status `degraded` and does not roll back a valid context checkpoint. Native title rename happens only after the receipt proves the context stage succeeded. Repeated invocation keeps audit and timeline idempotency in their owning helpers.
+The command emits one `save-context.checkpoint.v1` JSON receipt. Admission runs first, then a read-only context compile/validation preflight and context/timeline. Preflight failure preserves the helper's nonzero exit and skips every write stage. Formal context failure preserves the helper's nonzero exit. Native title rename happens only after the receipt proves the context stage succeeded. Repeated invocation keeps timeline idempotency in its owning helper.
 
 Script rules:
 
-- For `<abbr>`, the agent generates the complete context markdown and passes the human-selected `--next-route <none|mainline|existing-workstream>`. The helper treats that one value as authoritative and compiles both YAML `next_route` and the route-index `next=` field; do not author those two control fields independently. If the correct route is not evidenced, stop at the human checkpoint instead of guessing from cwd, recent context, or an available workstream.
+- For `<abbr>`, the agent generates the complete context markdown. The helper validates that YAML `next_route` and the route-index `next=` field agree, then writes them as supplied. Preserve the existing recommendation unless the user explicitly changes the project summary; do not derive it from cwd, recent context, or an available workstream.
 - For `<abbr>:<workstream>`, the agent passes a `context.workstream.v1`
   YAML/JSON payload. The script merges that route into the existing context and
   preserves mainline and unrelated workstreams.
