@@ -98,81 +98,11 @@ Rules:
   `title refresh: 当前标题未变化（已符合规则）`.
 - If the native capability is missing or fails, report the exact skip/failure reason under `待确认`; do not fall back to local database writes.
 
-## Self-Check
+## Self-Check And Output
 
-Before final output, confirm:
+Check the receipt and changed surfaces: route identity, preserved unrelated workstreams and recovery anchors, thin YAML/Markdown, correct owner for durable facts, deterministic timeline dates, Git decision when relevant, and native title outcome. Do not rescan unchanged layers or turn advisory gaps into new Next Steps.
 
-- Mentioned paths, symlinks, commands, and entrypoints exist.
-- `index.md` backlog matches completed/current work.
-- Context starts with standard YAML frontmatter; its second-line route index exists and matches YAML.
-- Context route is explicit and does not leave completed work in Doing.
-- Context has no invented fallback Next Step when no concrete action exists.
-- Context does not repeat durable rules, architecture, backlog history, or skill
-  instructions.
-- Recovery-critical paths, commands, URLs, tool names, and "use this next" notes
-  are preserved.
-- YAML is thin; Markdown detail is only for active unfinished recovery state.
-- Context was not rewritten when only Daily Note or durable sync was needed.
-- Daily Note includes only substantive human-facing progress.
-- Daily Note boundaries came from `save-context-timeline`; they describe
-  checkpoint coverage rather than net work time.
-- Active workstreams were not silently promoted, closed, or deleted.
-- Closure candidates were confirmed before deletion.
-- Commit decision was handled, and deferred commits are not default Next Steps.
-- Context uses absolute dates.
-- `instructions.md` did not receive project-specific content.
-- Agent frictions were recorded or intentionally skipped as one-off/noise.
-- Team/external `AGENTS.md` did not receive private/local/personal content.
-- ADRs and convention-level decisions were written to the correct layer.
-- Codex native task title refresh ran or skip/failure is reported.
-
-## Output
-
-After saving, summarize:
-
-```markdown
-## 同步完成
-
-### 全局偏好层（instructions.md）
-- 无变更 / <具体改动>
-
-### 项目架构层（AGENTS.md）
-- 无变更 / <具体改动>
-
-### 默认工具入口层
-- 无变更 / recorded: <route title> / updated: <route title>
-
-### Agent 运行摩擦层
-- 无变更 / recorded: <friction title> / updated: <friction title> / skipped: <原因>
-- 摩擦结算：promoted <N> / resolved <N> / ignored <N> / deferred <N> / 无
-- 产物 / 补证条件：<promoted 对应 durable entry 或 final-form；deferred 对应缺失证据与重试条件；无则省略>
-
-### 任务文档层
-- index.md：<具体改动>
-- ADR：<追加 ADR-00N 标题 / 无> 或 decisions.md：<追加标题 / 无>
-
-### 临时状态层
-- route: mainline `contexts/<abbr>.md` / workstream `<abbr>:<workstream>` in `contexts/<abbr>.md` / closed `<abbr>:<workstream>` / skipped（timeline-only，未改动 context）
-- Doing: <内容>
-- Blocked: <内容 / （无）>
-- Next Steps: <第一条 / （无）>
-- closure: 无 / 已询问并保留 / 已确认收束并删除快照
-
-### Daily Note
-- appended: <一句话摘要> / 跳过（无实质内容）
-
-### Git Commit 决策
-- 无需 commit / 已 commit：`<message>` / 用户确认暂缓：<原因> / 未处理：建议 `<message>`
-
-### Codex Task
-- title refresh: `<old> -> <new>` / 当前标题未变化（已符合规则）
-- title refresh: 跳过：<原因>
-- title refresh: 失败：<原因>
-
-### 待确认
-- <建议新建 decision 但未创建的，列在这里>
-- <其他需要用户决定的事项>
-```
+Lead with saved / partially saved / blocked and the exact output paths. Report only changed layers, unresolved blockers, and the immediate recovery entry. Omit unchanged-layer headings and empty checklists. Always report title refresh as changed, unchanged, skipped (reason), or failed (reason); report Git actions only when applicable. For friction settlement, include counts and the durable destination or missing evidence. Do not describe `continue_work` as saved.
 
 When `save-context` completes and returns the final report, the last
 user-facing sentence must be:

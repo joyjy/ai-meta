@@ -36,7 +36,7 @@ In Codex, use the same entry as a single checkpoint orchestrator:
   --timeline "[HH:MM-HH:MM] <timeline text>"
 ```
 
-Task title refresh is not a shell stage; after a successful context stage, use the client-native rename capability defined in `timeline-title-output.md`.
+Task title refresh is a client action selected by the main skill after a successful context stage, not a shell stage.
 
 Before creating any output artifact, write a short admission file from current source-owner readback:
 
@@ -52,7 +52,7 @@ Before creating any output artifact, write a short admission file from current s
 }
 ```
 
-Use `decision=continue_work` with at least one `actionable` item when a newly discovered failure, stale runtime, unfinished side effect, or other in-scope work can still be handled in the current task. The orchestrator then returns exit code 3 and `status=continue_work` without calling context/timeline or title helpers. `--pause-override` is valid only after the user sees that blocker and explicitly asks to pause/save anyway; the receipt records the admission as `overridden`.
+Use `decision=continue_work` with at least one `actionable` item when a newly discovered failure, stale runtime, unfinished side effect, or other in-scope work can still be handled in the current task. The orchestrator then returns exit code 3 and `status=continue_work` without calling context/timeline or title helpers. Use `--pause-override` when the user explicitly asks to pause, switch tasks, or save unfinished recovery state, including in the initial request; do not require a repeated request. Preserve the actionable work in Doing/Blocked and report that recovery was saved, not that delivery completed. An ordinary save request without that intent does not itself override newly discovered actionable failures. The override changes only checkpoint admission, not identity, input validation, or authorization for other actions; the receipt records it as `overridden`.
 
 The admission envelope is bounded to 16 KiB, at most 20 `checked` and 20 `actionable` entries, and 500 characters per entry. Store only source references and compact readback; never copy tokens, raw logs, or full artifacts into it.
 
@@ -60,7 +60,7 @@ The command emits one `save-context.checkpoint.v1` JSON receipt. Admission runs 
 
 Script rules:
 
-- For `<abbr>`, the agent generates the complete context markdown. The helper validates that YAML `next_route` and the route-index `next=` field agree, then writes them as supplied. Preserve the existing recommendation unless the user explicitly changes the project summary; do not derive it from cwd, recent context, or an available workstream.
+- For `<abbr>`, the agent generates the complete context markdown. The helper validates the route index and YAML identity/state structure, then writes them as supplied.
 - For `<abbr>:<workstream>`, the agent passes a `context.workstream.v1`
   YAML/JSON payload. The script merges that route into the existing context and
   preserves mainline and unrelated workstreams.
@@ -83,7 +83,7 @@ Script rules:
   date, without writing context or Daily Note files; direct checkpoint calls
   normally omit it.
 - Non-empty input is validated before writing. Full context input must pass the
-  context.v2 route-index/frontmatter/project checks; workstream input must pass
+  context.v3 route-index/frontmatter/project checks; workstream input must pass
   the `context.workstream.v1` schema and field checks. The script writes by
   atomic replacement only after validation succeeds.
 - Use `--context-file -` only for a client that can pipe stdin but cannot pass
@@ -91,7 +91,7 @@ Script rules:
 - Passing `<abbr>:<workstream>` performs a structural route merge. The payload
   must include `schema: context.workstream.v1`, `state`, `summary`, `doing`,
   `blocked`, `next_step`, and non-empty Markdown `details`. The script also
-  updates `next_route`, `updated`, and the route index.
+  updates `updated` and the route index.
 - Use `--date YYYY-MM-DD` when the deterministic timeline checkpoint belongs to
   a non-current local date.
 - Use `--skip-timeline` or omit `--timeline` when there is no substantive Daily
@@ -100,7 +100,7 @@ Script rules:
   appending a Daily Note entry.
 - For confirmed workstream closure, rewrite `~/.ai/contexts/<abbr>.md` without
   that workstream after durable sync. Do not use `--delete-context` for one
-  workstream in context.v2.
+  workstream in context.v3.
 
 Workstream payload example:
 
@@ -132,17 +132,6 @@ Write it with:
 ~/.ai/scripts/save-context amt:forum \
   --context-file /private/tmp/forum.yaml --skip-timeline
 ```
-
-Offline recovery:
-
-- If the source Codex thread is too long, stuck, or already interrupted before
-  `save-context` can complete, do not resume that same thread just to save.
-- In a fresh thread, run
-  `~/.ai/scripts/save-context-recover
-  --thread-id <id>` or `--rollout <jsonl>` to extract a compact recovery packet
-  from `~/.codex/sessions` / `~/.codex/archived_sessions`.
-- Treat the packet as evidence, not as the context itself. The agent still
-  writes a clean context.v2 snapshot with the fixed `save-context` script.
 
 ## Route Mainline Vs Workstream
 
@@ -222,12 +211,12 @@ Closure:
   detail for ordinary workstreams. The exact completed-final-form exception above does
   not require a second closure confirmation.
 
-## Context.v2 Template
+## Context.v3 Template
 
 ```markdown
 ---
-# context: project=<abbr>; mainline=<idle|active|blocked>; workstreams=<count>(<state:name, state:name>); next=<mainline|workstream-name|none>
-schema: context.v2
+# context: project=<abbr>; mainline=<idle|active|blocked>; workstreams=<count>(<state:name, state:name>)
+schema: context.v3
 project: <abbr>
 goal: <one-sentence project goal>
 mainline:
@@ -243,7 +232,6 @@ workstreams:
     doing: []
     blocked: []
     next_step: <first concrete next action, or null>
-next_route: <mainline|workstream-name|null>
 updated: <YYYY-MM-DD>
 ---
 
@@ -271,66 +259,13 @@ Route section schema:
   cleanup state, worktrees, and commit deferrals.
 - `Relevant Files`: short list of files to open first, with why.
 
-## ff Next Steps
-
-Use an `ff` work order in Next Steps only when the user explicitly requested or confirmed a final-form, asked for a dispatchable work order / WorkItem, or an existing confirmed final-form must be preserved across sessions. Ordinary recovery notes remain plain-text Next Steps or `null`; do not promote unfinished Doing, candidate follow-ups, recurring automation, or a merely agent-executable action into final-form.
-
-This is a compact v0 recovery contract, not a fully versioned final-form schema.
-Keep machine-facing fields in context for dispatch, but do not require
-human-facing load summaries to print them verbatim.
-
-Use this compact object inside YAML `next_steps` or Markdown `Next Steps`:
-
-```yaml
-- ff:
-    output_target: context
-    goal: <one-sentence outcome>
-    cwd: <absolute path, or null when not file-backed>
-    scope:
-      include: []
-    acceptance: []
-    blocking_questions: []
-    ready_for_dispatch: true
-    dispatch_target: symphony # codex | symphony | manual | unknown
-```
-
-Rules:
-
-- `output_target: context` is required for new machine-facing `ff` blocks saved
-  into context.
-- The presence of enough detail to fill final-form fields is not authorization to create one. Without an explicit final-form / dispatch / WorkItem request or an existing confirmed final-form, save ordinary recovery state instead.
-- When a user asks to save an `ff` into a named context abbr, existing and
-  missing abbr paths are both valid:
-  - Existing `~/.ai/contexts/<abbr>.md`: read it first, preserve unrelated
-    mainline/workstream state, and update only the explicit route's next
-    executable `ff`. Use `~/.ai/scripts/context-ff-merge` for this write.
-  - Missing `~/.ai/contexts/<abbr>.md`: create a minimal `context.v2` snapshot
-    with `next_route: mainline`, `mainline.state: active`, empty
-    workstreams, and the generated `ff` in `mainline.next_steps`; use
-    `~/.ai/scripts/context-ff-merge` for this write.
-  - Invalid abbr names or a requested replacement of an unrelated active next
-    step are blocking questions.
-- `ready_for_dispatch: true` requires empty `blocking_questions`.
-- `ready_for_dispatch: false` requires at least one blocking question.
-- Omit empty `scope.exclude`, `checks`, `constraints`, `defaults`, `existing_capability_inventory`, `verification_loop`, and default `main_agent` parallelization. Preserve a non-default parallelization block when final-form produced one; absent means `main_agent`.
-- Preserve a populated `automation_candidate` emitted by final-form, but never synthesize one during save or turn it into a separate context Next Step, dispatch authorization, or GTD task intent.
-- Use `dispatch_target: symphony` only when `cwd`, `scope.include`,
-  `acceptance`, and safety constraints are concrete enough for autonomous
-  execution.
-- Put non-blocking assumptions in `defaults`, not in `blocking_questions`.
-- Do not move broad backlog themes into `ff`; narrow them to one inspectable
-  action first.
-
 Snapshot rules:
 
-- First line is mandatory and must reveal project, mainline state, workstream
-  count/status, and recommended next route.
+- The first line is `---`; the second is the route-index comment revealing project, mainline state, and workstream count/status. It must match the YAML fields.
 - YAML stays thin and parseable; long analysis belongs nowhere in context unless
   it is unfinished investigation state that cannot be reconstructed.
 - YAML `workstreams` is the authoritative list of active / parked / blocked /
   closure-candidate workstreams.
-- `next_route` is a recommendation for project summaries and route indexes, not
-  routing authority; explicit user input always wins.
 - Move completed Doing and resolved Blocked out of recovery snapshots.
 - If there are no blockers, write exactly `- （无）` under `Blocked`.
 - Keep Constraints, Key Decisions, Critical Context, and Relevant Files short.

@@ -65,8 +65,8 @@ CONTINUE_ADMISSION = {
     "actionable": ["diagnose pipeline 792714 before checkpoint"],
 }
 MAINLINE_CONTEXT = """---
-# context: project=amt; mainline=active; workstreams=0(); next=mainline
-schema: context.v2
+# context: project=amt; mainline=active; workstreams=0()
+schema: context.v3
 project: amt
 goal: Test context.
 mainline:
@@ -76,7 +76,6 @@ mainline:
   blocked: []
   next_steps: []
 workstreams: {}
-next_route: mainline
 updated: 2026-09-04
 ---
 
@@ -281,7 +280,7 @@ class OrchestratorWorkflowTest(unittest.TestCase):
                 daily_notes[0].read_text(encoding="utf-8").count("orchestrator smoke"),
             )
 
-    def test_real_entry_accepts_mainline_without_next_route_option(self) -> None:
+    def test_real_entry_accepts_mainline_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()
             env["HOME"] = tmp

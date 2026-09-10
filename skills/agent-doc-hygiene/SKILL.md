@@ -62,4 +62,4 @@ Use the finding buckets below and keep fixes model-independent; do not copy a mo
 - Do not turn product or architecture docs into primary slimming targets; use `doc-arch-review` for semantic architecture or source-map accuracy.
 - Do not upgrade project preferences into global rules without repeated cross-project evidence.
 - Do not delete unfinished work, blockers, decisions, or history without a clear destination and required approval.
-- If context risk becomes high, pause and ask whether to run `save-context`.
+- If context capacity prevents a reliable audit, report the exact completed and uncovered scope and offer `save-context`; do not interrupt useful authorized work merely because the inventory is large.

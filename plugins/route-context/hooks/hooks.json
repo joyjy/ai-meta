@@ -12,6 +12,19 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/context-stop.js\"",
+            "commandWindows": "if (Get-Command node -ErrorAction SilentlyContinue) { node \"$env:CLAUDE_PLUGIN_ROOT\\hooks\\context-stop.js\" }",
+            "timeout": 5,
+            "statusMessage": "Checking MR links..."
+          }
+        ]
+      }
     ]
   }
 }

@@ -19,17 +19,18 @@ tags: [ai-meta, architecture, source-of-truth]
 - 可版本管理源文件留在各自 owner repo；`<maintenance-checkout>/` 拥有全局底座、ai-meta 自有 workflow 和跨客户端发布注册。
 - `~/.ai/` 是本机运行态 aggregation 点，不是长期事实源。
 - 能进 git 的内容应该回到对应 owner repo 维护；项目能力 skill 不复制进 ai-meta。
-- `~/.ai/contexts/`、`~/.ai/work-items/` 和 token 类本机私有状态不进 git。
+- `~/.ai/contexts/`、`~/.ai/work-items/`、`~/.ai/skill-verification/` 和 token 类本机私有状态不进 git。
+- skill verification 的规则、schema 和 CLI 归 ai-meta；逐次改动的加载回执与行为样本属于本机运行证据，只写入 `~/.ai/skill-verification/changes/`。
 - Codex plugin 的 marketplace 描述、manifest、hook adapter 和 helper 脚本进 repo；
   `~/.codex` 里的 marketplace 注册、安装缓存、启用状态和 hook trust 是本机运行态。
 
 ### Context Protocol
 
-context 文件位于 `~/.ai/contexts/<abbr>.md`，采用 v2 单文件格式：
+context 文件位于 `~/.ai/contexts/<abbr>.md`，采用 v3 单文件格式：
 
 - YAML frontmatter 从第一行 `---` 开始，确保通用 Markdown renderer 正确识别。
-- frontmatter 第二行短索引注释：project、mainline 状态、workstream 状态、推荐 next route。
-- YAML 字段：goal、mainline、workstreams、next_route、updated 等结构化状态。
+- frontmatter 第二行短索引注释：project、mainline 状态和 workstream 状态。
+- YAML 字段：goal、mainline、workstreams、updated 等结构化状态。
 - Markdown body：Constraints & Preferences、Doing、Blocked、Key Decisions、Next Steps、Critical Context、Relevant Files。
 
 context 只保存恢复索引，不保存完整过程分析；长期事实应回写到 `ai-meta`、`gtd`、
@@ -68,6 +69,7 @@ context 只保存恢复索引，不保存完整过程分析；长期事实应回
 - [Vertical agent ll](./vertical-agent-ll.md)
 - [Project source map contract](./source-map-contract.md)
 - [ai-meta source map](./source-map.md)
+- [Skill verification trace](./skill-verification.md)
 
 ## Decisions / Invariants
 

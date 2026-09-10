@@ -4,6 +4,12 @@
 
 ## 2026-09
 
+- [x] (2026-09-10) 将 route-context 扩为 Context 套件，补齐标准 hooks 发现入口与单次 MR 漏链补正；真实 Codex 样本通过。审查 15 个自维护技能入口，收敛全局/项目规则归属、暂停保存授权、条件加载与停止门槛；静态验收通过，技能行为仍按版本采样。
+
+- [x] (2026-09-10) 恢复显式 engineering-exit 的当前 scope commit、push、MR/PR 交付授权，保留普通实现仅自主 commit、local-only/prepare-only 限制及 merge/force push 单独授权；全局规则、技能入口与 MR reference 同步对齐。
+
+- [x] (2026-09-09) 收束 context.v3、按项目展示仓库维护提醒、final-form 验收约束与 skill verification 台账；补齐加载时全部 artifact 指纹校验，Java formatter hook 在工作区有未暂存改动时提前停止。静态验证通过，skill 行为效果继续由匹配版本的真实样本验证。
+- [x] (2026-09-09) 明确已授权纠错连续执行、缺授权时主动询问具体下一步；补齐 GitLab snippet 的 CLI 读取路由。取消独立 audit Subscription 改造和旧 MCP 迁移工具扩展，完成 LL 预算待办；按用户决定完成 freshness 待办，后续问题由每日分析跟进。
 - [x] (2026-09-02) 将 save-context 标题刷新从 Codex 本地 SQLite/index 旁路写入迁移到客户端原生 task rename capability；脚本 receipt 不再伪报标题阶段，旧 `codex_session_titles.py` 写模式 fail closed，仅保留 dry-run inventory
 
 ## 2026-08

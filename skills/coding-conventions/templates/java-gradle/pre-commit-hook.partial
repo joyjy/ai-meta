@@ -1,6 +1,12 @@
 # coding-conventions:begin java-gradle
 java_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.java')
 if [ -n "$java_files" ]; then
+  # spotlessApply formats the project, so reject dirty tracked files first.
+  if ! git diff --quiet; then
+    echo "pre-commit: unstaged changes exist; stage or stash them before spotlessApply" >&2
+    exit 1
+  fi
+
   if command -v asdf >/dev/null 2>&1 && asdf where java >/dev/null 2>&1; then
     JAVA_HOME=$(asdf where java)
     export JAVA_HOME

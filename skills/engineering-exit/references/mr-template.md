@@ -63,7 +63,7 @@ together anyway.
 
 ## Confirmation
 
-执行前核对 exact scope、flow 和用户已有授权。按全局 Git 规则判断 push 与 MR/PR 写入权限，调用 `engineering-exit` 本身不授予远端权限。先完成可审阅的 scope、验证证据和 MR 草稿；用户要求远端交付但缺少必要授权时，只询问该项动作，不重复请求已有授权。默认本地收尾时直接报告待推送状态。
+执行前核对 exact scope、flow 和用户已有授权。按入口的 Git Exit Authority 判断 push 与 MR/PR 写入权限及用户限制。先完成可审阅的 scope、验证证据和 MR 草稿，再执行已授权动作，不重复请求已有授权。用户限制为本地收尾时报告待推送状态。
 
 When executing authorized Git actions, include current scope, separately
 committed concerns, preserved / unknown dirty paths, verification evidence, and

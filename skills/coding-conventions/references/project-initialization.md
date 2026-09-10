@@ -30,7 +30,7 @@
 
 - 模板目录可提供 `pre-commit-hook.partial` 或 `pre-push-hook.partial`；实现只维护在 partial，不复制进模板正文。
 - 注入前必须在目标 repo 实际运行并证明 partial 调用的命令、Gradle task 或脚本存在且通过。formatter hook 的 probe 至少覆盖 staged 修改、staged 删除，以及同一文件同时存在 staged / unstaged hunks：删除路径不得传给 formatter，原有删除仍保持 staged；hook 必须拒绝或保留未暂存 hunks，不能把它们带入 index。失败时报告，由用户决定调整或放弃。
-- 候选清单必须提前披露 partial、目标 hook、行为和验证结果；确认推荐组合即确认已列出的 partial，未列出的不得写入。
+- 写入前披露 partial、目标 hook、行为和验证结果。用户已明确选择该 partial/目标/行为时直接执行；确认推荐组合也覆盖已列出的 partial，未授权的新增 hook 需确认。
 - 只注入模板提供的 partial，不临场编写。用 `git rev-parse --git-path hooks/<hook-name>` 定位当前 clone / worktree 的统一 hook。
 - Partial 使用受控 block；有同名 block 时与当前 partial 比较并原位更新，没有时追加，保留 marker 外内容。无 marker 的 hook 若能与已知旧版 partial signature 精确对应，先披露迁移 diff 并在获得确认后替换该旧 block，不要与当前 partial 叠加执行；无法可靠归属的 markerless 内容保持不动并报告。目标 hook 不存在时才创建最小 `#!/bin/sh`、`set -e` 入口，并确保可执行。
 - 同一 hook 中多个 block 串行执行；partial 不得用顶层 `exit 0` 跳过后续 block，无相关变更时用条件块跳过自身逻辑。

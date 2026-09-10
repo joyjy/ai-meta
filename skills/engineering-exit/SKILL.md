@@ -6,17 +6,17 @@ disable-model-invocation: true
 
 # engineering-exit
 
-收束实现后的源码、文档、验证和 MR package；不用于设计、context 保存或简单修复。
+收束已实现 scope 的源码、文档、验证和 MR package；设计与 context 保存归各自入口。
 
 ## Git Exit Authority
 
-用户选择 `ee` / `engineering-exit`，默认在 gates 通过后按全局 Git 规则和 `gitlab.flow` 对当前 scope 完成本地 commit；push 和创建/更新 MR/PR 需要用户对本次交付的明确授权。`prepare-only`、`no commit` 等措辞收窄本地提交权限，`local-only` 表示仅本地收尾。不因收尾扩入 `separate-ready` concern：仅对用户已授权、可归因且独立验证的 concern 单独提交并点名；来源不明或无关修改保留。收尾不授权破坏性清理、issue/label/release 状态变更或 force push。gate 失败不得执行受影响的 Git 写入。
+用户显式选择 `ee` / `engineering-exit`，即按全局 Git 规则授权 gates 通过后依 `gitlab.flow` 对当前 scope 完成 commit、push 和创建/更新 MR/PR，无需再次询问远端授权。`prepare-only` 表示只准备、不执行 Git 写入，`local-only` 表示仅本地收尾，`no commit/push/MR` 等明确限制收窄对应动作。不因收尾扩入 `separate-ready` concern：仅对用户已授权、可归因且独立验证的 concern 单独提交并点名；来源不明或无关修改保留。收尾不授权破坏性清理、issue/label/release 状态变更、merge、force push 或改写远端历史。gate 失败不得执行受影响的 Git 写入。
 
 在上述授权范围内，按项目 `index.md` 的 `gitlab.flow` 执行：
 
 - `l1`：仅在非 default topic branch commit/push/open MR；release-impact unknown 阻止远端写入，纯 post-merge unknown 留 exact action。
 - `l2`：同样使用非 default topic branch；非关键 release unknown 需用户接受风险。
-- `l3`：gates 通过后可 commit 当前分支；获远端授权后可 push，非 default branch 按授权开 MR，default branch 不适用 MR。默认免 review-router/GitLab settings lint；用户或项目指定评审仍执行，其他工程 gates 不减。
+- `l3`：gates 通过后按上述授权 commit/push 当前分支；非 default branch 创建/更新 MR，default branch 不适用 MR。默认免 review-router/GitLab settings lint；用户或项目指定评审仍执行，其他工程 gates 不减。
 - missing/unknown：本地 commit 遵循全局分支限制；远端 package 只准备，待 flow 明确后执行远端动作。
 
 ## Conditional References
@@ -58,4 +58,4 @@ disable-model-invocation: true
 
 ## Output
 
-中文先给终态，再报告 scope、checks、dirty、gates、MR、风险和动作；仅按需展开模板。
+先给终态，仅展开影响交付的 checks、dirty、gates、MR、风险与动作。

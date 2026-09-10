@@ -1,23 +1,23 @@
 {
   "name": "ai-meta-route-context",
-  "version": "0.1.0+codex.20260728005136",
-  "description": "Resolve personal tool-route and path shorthand into route context before agent execution, so high-frequency tool-routes can move from lookup docs into prompt-time facts.",
+  "version": "0.1.0+codex.20260910013410",
+  "description": "Context suite for prompt-time route facts and bounded end-of-turn MR link checks.",
   "author": {
     "name": "joyjy"
   },
   "homepage": "https://github.com/joyjy/ai-meta",
   "license": "UNLICENSED",
   "interface": {
-    "displayName": "AI Meta Route Context",
-    "shortDescription": "Injects resolved personal tool-route and path context.",
-    "longDescription": "Adds deterministic route-context facts for personal shorthand such as gtd plan, draft, snippet, writing.md, $46, and llm-council. Ordinary keyword, path, host, and injected-route rules are loaded live from ~/.ai/route-context.json, so data-only changes do not require plugin reinstall. GitLab URLs also provide parsed hostname, repository, and MR IID when available. It does not execute writes or change the user prompt.",
+    "displayName": "AI Meta Context",
+    "shortDescription": "输入路由注入与输出 MR 链接检查。",
+    "longDescription": "Context 套件：UserPromptSubmit 注入确定性的项目路径和工具路由；Stop 从当前会话已出现的 MR URL 检查输出中的裸引用，最多要求补正一次。保留现有 route-context 安装身份；不执行业务操作，不保证首次展示即正确。",
     "developerName": "joyjy",
     "category": "Productivity",
     "capabilities": [
       "Lifecycle hooks"
     ],
     "defaultPrompt": [
-      "Resolve route context for this prompt."
+      "Resolve context routes and check MR links."
     ]
   }
 }

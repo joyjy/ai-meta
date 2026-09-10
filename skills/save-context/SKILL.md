@@ -12,9 +12,11 @@ disable-model-invocation: true
 
 先确定 route 和实际输出面，只读取命中的一层 direct reference：
 
-- `references/context-routing.md`：route、closure、context.v2、fixed writer、offline recovery。
+- `references/context-routing.md`：route、closure、context.v3 和 fixed writer（含 timeline-only admission）。
 - `references/durable-sync.md`：layer ownership、durable edit、friction/tool route、commit boundary。
 - `references/timeline-title-output.md`：timeline、Daily Note、native task title 和 final output。
+- `references/final-form-state.md`：仅保存已确认或明确要求的 final-form。
+- `references/offline-recovery.md`：仅恢复 stuck/interrupted task。
 
 ## Safety Gates
 
@@ -27,17 +29,17 @@ disable-model-invocation: true
 
 ## Workflow
 
-1. **Resolve route**：使用显式 abbr，否则读当前 project `index.md`；仍未知时询问。区分 mainline、existing/new workstream 和 completed small task；歧义会改变写入目标时只问一个问题。仅在 route 未知/歧义、需要写 context 或判断 closure 时读取 `context-routing.md`；显式 route 的 timeline-only checkpoint 不加载它。
+1. **Resolve route**：使用显式 abbr，否则读当前 project `index.md`；仍未知时询问。区分 mainline、existing/new workstream 和 completed small task；歧义会改变写入目标时只问一个问题。仅在 route 未知/歧义、需要写 context 或判断 closure 时读取 `context-routing.md`；仅查询 route 且无需 checkpoint 时不加载 writer。
 2. **Classify facts**：区分 global preference、tool route、agent friction、project docs 和 temporary recovery state。durable facts 写回 owner，context 只留恢复入口；无安全 owner 时标记 `pending durable home`。需要 durable edit 时读取 `durable-sync.md`。
-3. **Admit checkpoint before writes**：回读当前任务已涉及的 source owner（如 MR/Pipeline、runtime revision、未完成副作用和 blocker），不横扫无关项目。生成 `save-context.admission.v1`；存在可继续处理的 failure 或 stale runtime 时用 `continue_work`，在所有写入前 fail closed。仅当用户看见 blocker 后仍要求暂停，才用 `--pause-override`。
+3. **Admit checkpoint before writes**：回读当前任务已涉及的 source owner（如 MR/Pipeline、runtime revision、未完成副作用和 blocker），不横扫无关项目。生成 `save-context.admission.v1`；存在当前可继续处理的 failure、stale runtime、未完成副作用或其他 scope 内工作时，如实记录 `continue_work` 和 actionable；外部阻塞留在 Blocked，不伪造可执行项。用户明确要求暂停、切换任务或保存未完成现场时，直接使用 `--pause-override` 保存 Doing/Blocked，无需再次确认；仅要求普通保存且发现新的可处理 failure/stale runtime 时，先继续处理。override 不绕过身份、输入校验或其他操作授权，也不表示交付完成。
 4. **Settle authorized outputs**：只处理本 session 新增且已授权的 durable facts；cleanup deletion 始终独立授权。
-5. **Checkpoint once**：仅在 recovery/route/critical facts 变化或用户要求 refresh 时写。Codex 用 `context-routing.md` 的 fixed orchestrator 一次完成 admission、context/timeline；只有 work-log 价值时 timeline-only，均无价值则 skip。
+5. **Checkpoint once**：仅在 recovery/route/critical facts 变化或用户要求 refresh 时写。Codex 写 checkpoint（含 timeline-only）时直接读取 `context-routing.md`，用 fixed orchestrator 一次完成 admission、context/timeline；只有 work-log 价值时 timeline-only，均无价值则 skip。
 6. **Refresh native task title**：receipt 的 context stage 成功后，按 `timeline-title-output.md` 原生更新 exact current task；禁止写 Codex SQLite/index。失败不回滚 checkpoint，但必须报告。
 7. **Report**：有实质进展时读取 `timeline-title-output.md`，按 receipt 报告保存结果并单列 title 结果。`continue_work` 不得报告为已保存。
 
 ## Offline Recovery
 
-旧 Codex thread 太长、stuck 或已中断时，不要求原 thread 自救。在新 thread 按 `context-routing.md` 生成 bounded recovery packet，再重建 clean context；只有特定 span 证据不足时才回读原始 rollout 行。
+旧 Codex thread 太长、stuck 或已中断时，不要求原 thread 自救。在新 thread 按 `references/offline-recovery.md` 生成 bounded recovery packet，再重建 clean context；只有特定 span 证据不足时才回读原始 rollout 行。
 
 ## Completion Standard
 

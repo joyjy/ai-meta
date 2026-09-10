@@ -92,7 +92,7 @@ class ContextFFMergeTest(unittest.TestCase):
             self.assertEqual(0, proc.returncode, proc.stderr)
             context = (context_dir / "amt.md").read_text(encoding="utf-8")
             self.assertTrue(context.startswith("---\n# context: project=amt;"))
-            self.assertIn("schema: context.v2", context)
+            self.assertIn("schema: context.v3", context)
             self.assertIn("project: amt", context)
             self.assertIn("next_steps:", context)
             self.assertIn("goal: Ship the narrow change", context)
@@ -132,8 +132,8 @@ class ContextFFMergeTest(unittest.TestCase):
             context_dir.mkdir()
             (context_dir / "amt.md").write_text(
                 """---
-# context: project=amt; mainline=active; workstreams=1(active:other); next=mainline
-schema: context.v2
+# context: project=amt; mainline=active; workstreams=1(active:other)
+schema: context.v3
 project: amt
 goal: Existing context.
 mainline:
@@ -155,7 +155,6 @@ workstreams:
     doing: []
     blocked: []
     next_step: keep this
-next_route: mainline
 updated: 2026-07-01
 ---
 
@@ -174,7 +173,7 @@ updated: 2026-07-01
             self.assertIn("next_step: keep this", context)
             self.assertIn("  doing:\n    - keep doing", context)
 
-    def test_existing_context_rejects_removed_route_keys(self) -> None:
+    def test_existing_context_rejects_unknown_top_level_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             context_dir = root / "contexts"
@@ -183,17 +182,17 @@ updated: 2026-07-01
                 self.run_script(context_dir, self.write_ff(root)).returncode,
             )
             context_path = context_dir / "amt.md"
-            legacy = context_path.read_text(encoding="utf-8").replace(
-                "next_route: mainline",
-                "selected_route: mainline\nactive_route: mainline",
+            invalid = context_path.read_text(encoding="utf-8").replace(
+                "updated:",
+                "unexpected_route: mainline\nupdated:",
             )
-            context_path.write_text(legacy, encoding="utf-8")
+            context_path.write_text(invalid, encoding="utf-8")
 
             proc = self.run_script(context_dir, self.write_ff(root))
 
             self.assertEqual(1, proc.returncode)
-            self.assertIn("removed route key(s)", proc.stderr)
-            self.assertEqual(legacy, context_path.read_text(encoding="utf-8"))
+            self.assertIn("unknown key(s)", proc.stderr)
+            self.assertEqual(invalid, context_path.read_text(encoding="utf-8"))
 
     def test_long_ff_scalars_are_not_folded_for_lightweight_consumers(
             self) -> None:
@@ -218,7 +217,7 @@ updated: 2026-07-01
             context_dir = root / "contexts"
             context_dir.mkdir()
             context_path = context_dir / "amt.md"
-            original = "---\n# context: project=amt; mainline=active; workstreams=0(); next=mainline\n"
+            original = "---\n# context: project=amt; mainline=active; workstreams=0()\n"
             context_path.write_text(original, encoding="utf-8")
 
             proc = self.run_script(context_dir, self.write_ff(root))
@@ -235,8 +234,8 @@ updated: 2026-07-01
             context_path = context_dir / "amt.md"
             context_path.write_text(
                 """---
-# context: project=amt; mainline=active; workstreams=0(); next=mainline
-schema: context.v2
+# context: project=amt; mainline=active; workstreams=0()
+schema: context.v3
 project: amt
 mainline:
   state: active
@@ -247,7 +246,6 @@ mainline:
       goal: Completed goal
   - note: preserve me
 workstreams: {}
-next_route: mainline
 updated: 2026-07-10
 ---
 
@@ -270,8 +268,8 @@ updated: 2026-07-10
             context_path = context_dir / "amt.md"
             context_path.write_text(
                 """---
-# context: project=amt; mainline=idle; workstreams=1(active:forum); next=forum
-schema: context.v2
+# context: project=amt; mainline=idle; workstreams=1(active:forum)
+schema: context.v3
 project: amt
 mainline:
   state: idle
@@ -286,7 +284,6 @@ workstreams:
     next_step:
       ff:
         goal: Completed forum goal
-next_route: forum
 updated: 2026-07-10
 ---
 
@@ -312,9 +309,7 @@ Completed recovery details.
             self.assertNotIn("forum:", context)
             self.assertNotIn("## Workstreams", context)
             self.assertIn("## Mainline\n\nKeep this.", context)
-            self.assertNotIn("selected_route:", context)
-            self.assertIn("next_route: null", context)
-            self.assertIn("workstreams=0(); next=none", context)
+            self.assertIn("workstreams=0()", context)
 
     def test_clear_completed_workstream_ff_preserves_nonempty_route(
             self) -> None:
@@ -323,8 +318,8 @@ Completed recovery details.
             context_path = context_dir / "amt.md"
             context_path.write_text(
                 """---
-# context: project=amt; mainline=idle; workstreams=1(active:forum); next=forum
-schema: context.v2
+# context: project=amt; mainline=idle; workstreams=1(active:forum)
+schema: context.v3
 project: amt
 mainline:
   state: idle
@@ -340,7 +335,6 @@ workstreams:
     next_step:
       ff:
         goal: Completed forum goal
-next_route: forum
 updated: 2026-07-10
 ---
 
@@ -362,7 +356,6 @@ Preserve these details.
             self.assertIn("- Preserve this work", context)
             self.assertIn("next_step: null", context)
             self.assertIn("### forum", context)
-            self.assertIn("next_route: forum", context)
 
     def test_clear_completed_workstream_ff_preserves_other_detail_section(
             self) -> None:
@@ -371,8 +364,8 @@ Preserve these details.
             context_path = context_dir / "amt.md"
             context_path.write_text(
                 """---
-# context: project=amt; mainline=idle; workstreams=2(active:forum, parked:other); next=forum
-schema: context.v2
+# context: project=amt; mainline=idle; workstreams=2(active:forum, parked:other)
+schema: context.v3
 project: amt
 mainline:
   state: idle
@@ -392,7 +385,6 @@ workstreams:
     doing: []
     blocked: []
     next_step: null
-next_route: forum
 updated: 2026-07-10
 ---
 
@@ -422,7 +414,7 @@ Preserve unrelated details.
             self.assertNotIn("Remove target details.", context)
             self.assertIn("### other", context)
             self.assertIn("Preserve unrelated details.", context)
-            self.assertIn("workstreams=1(parked:other); next=none", context)
+            self.assertIn("workstreams=1(parked:other)", context)
 
     def test_clear_completed_ff_refuses_goal_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
