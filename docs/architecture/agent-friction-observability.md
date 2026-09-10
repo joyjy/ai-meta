@@ -51,7 +51,7 @@ v0 产生 `task_aborted`、`patch_failure` 和 `repeated_file_edit_candidate`。
 - 长会话可能包含多个任务，`checkpoint` 必须传 exact event IDs。`collect` 不自动把全部
   unclaimed events 归到当前任务。
 - `/save-context` 负责 checkpoint 和 semantic settlement；context route identity 本身就是查询键，
-  不扩展 `context.v2` 或复制 event body。选择 `promoted` 时必须同步形成 durable entry 或已确认 final-form。
+  不扩展 `context.v3` 或复制 event body。选择 `promoted` 时必须同步形成 durable entry 或已确认 final-form。
 - loop-ledger 写入并验证 exact session file 后才可 claim 同 route events。objective events 与单文件 loop-ledger 中仅用于当前任务 correction 的 feedback 是不同 schema 和 ownership；legacy future-loop feedback 与 `<session>.feedback.jsonl` 只作为迁移输入保留。
 - `save-context` 在会话证据仍可用时结算当前 scope 的 objective events，但不成为 event owner。独立 audit 的结果由显式 follow-up 结算；promoted `global_friction` settlement 必须写入 normalized signature，helper 从可信 receipt 派生唯一的 `thread_id + project_cwd` occurrence，同一 settlement 内指向相同 `signature + durable_ref` 的多 lane item 共享该 identity，但只有主 Agent 的显式 `record-occurrence` 调用能修改 `agent-frictions.md`。`promoted` 必须同时形成该 durable entry 或用户确认的 follow-up final-form，`resolved` 必须关联已有 durable fix 或验证锚点。
 

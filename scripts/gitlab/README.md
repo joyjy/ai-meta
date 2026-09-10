@@ -69,6 +69,12 @@
 
 ### Snippet
 
+- 读取 GitLab snippet 优先使用 `glab api`；本机 `glab snippet` 没有读取子命令不表示缺少读取能力。所有读取命令显式传 `--hostname <URL中的host>`，不从 cwd 推断实例或项目；联网仍遵守本文件的权限边界。
+- 从 URL 区分个人 snippet（`/snippets/<id>` 或 `/-/snippets/<id>`）与项目 snippet（`/<project-path>/-/snippets/<id>`，旧链接可能省略 `/-`）。项目路径须完整 URL 编码（包括 `/`），或使用已核实的 project ID；不能仅凭 snippet 数字 ID 猜项目。
+- 个人 snippet：先用 `glab api --hostname <host> --method GET 'snippets/<id>'` 读取元数据，核对身份，再用同样参数读取 `'snippets/<id>/raw'` 的正文。
+- 项目 snippet：先用 `glab api --hostname <host> --method GET 'projects/<encoded-project-path-or-id>/snippets/<snippet-id>'` 读取元数据，核对身份，再用同样参数读取该 endpoint 加 `/raw` 的正文。
+- 多文件 snippet 按已核实的 ref 与文件路径，读取上述元数据 endpoint 加 `/files/<encoded-ref>/<encoded-file-path>/raw`；不要把单次 `/raw` 响应当作全部文件。ref 与文件清单从元数据或仓库信息取证，不猜 `main` / `master`。
+- 只有 API 无法满足需求或用户明确要求查看页面时才使用浏览器，并说明具体缺口；认证、网络失败先按既有权限流程处理，不静默改走网页。API 参考：[个人 snippet](https://docs.gitlab.com/api/snippets/)、[项目 snippet](https://docs.gitlab.com/api/project_snippets/)。
 - 公司 GitLab 单文件 snippet 使用 `glab api --method POST snippets` 的 `file_name` + `content`；多行 Markdown 通过临时文件和 `--field content=@<file>` 传入。
 - 内部分享显式传 `visibility=internal`，创建后 readback `web_url` 和 visibility。
 - 当前实例不接受新版 `files[0][file_path]` / `files[0][content]` payload，未验证升级前不使用。

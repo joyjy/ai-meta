@@ -20,8 +20,8 @@ class ContextInputTest(unittest.TestCase):
 
     def valid_context(self, project: str = "amt") -> str:
         return f"""---
-# context: project={project}; mainline=active; workstreams=0(); next=mainline
-schema: context.v2
+# context: project={project}; mainline=active; workstreams=0()
+schema: context.v3
 project: {project}
 goal: Test context.
 mainline:
@@ -31,7 +31,6 @@ mainline:
   blocked: []
   next_steps: []
 workstreams: {{}}
-next_route: mainline
 updated: 2026-07-02
 ---
 
@@ -92,8 +91,8 @@ updated: 2026-07-02
             context_path.parent.mkdir(parents=True)
             context_path.write_text(self.valid_context(), encoding="utf-8")
             malformed = """---
-# context: project=amt; mainline=active; workstreams=0(); next=mainline
-schema: context.v2
+# context: project=amt; mainline=active; workstreams=0()
+schema: context.v3
 project: amt
 mainline:
   state: active
@@ -125,45 +124,11 @@ mainline:
             self.assertFalse((home / ".ai" / "contexts" /
                               "gtd.md").exists())
 
-    def test_route_index_next_must_match_next_route(self) -> None:
+    def test_route_index_rejects_extra_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            inconsistent = self.valid_context().replace("next=mainline",
-                                                        "next=none")
-
-            proc = self.run_script(home,
-                                   "amt",
-                                   "--context-stdin",
-                                   "--skip-timeline",
-                                   input_text=inconsistent)
-
-            self.assertEqual(2, proc.returncode)
-            self.assertIn("index next does not match", proc.stderr)
-
-    def test_removed_route_keys_are_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            legacy = self.valid_context().replace(
-                "next_route: mainline",
-                "selected_route: mainline\nactive_route: mainline",
-            )
-
-            proc = self.run_script(home,
-                                   "amt",
-                                   "--context-stdin",
-                                   "--skip-timeline",
-                                   input_text=legacy)
-
-            self.assertEqual(2, proc.returncode)
-            self.assertIn("removed route key(s)", proc.stderr)
-            self.assertFalse((home / ".ai" / "contexts" /
-                              "amt.md").exists())
-
-    def test_next_route_must_name_a_known_route(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            invalid = self.valid_context().replace("next_route: mainline",
-                                                   "next_route: [forum]")
+            invalid = self.valid_context().replace(
+                "workstreams=0()", "workstreams=0(); recommendation=mainline")
 
             proc = self.run_script(home,
                                    "amt",
@@ -172,25 +137,26 @@ mainline:
                                    input_text=invalid)
 
             self.assertEqual(2, proc.returncode)
-            self.assertIn("next_route ['forum'] does not exist", proc.stderr)
+            self.assertIn("must contain exactly", proc.stderr)
 
-    def test_removed_next_route_option_is_rejected_without_writing(self) -> None:
+    def test_unknown_top_level_keys_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-
-            proc = self.run_script(
-                home,
-                "amt",
-                "--context-stdin",
-                "--next-route", "none",
-                "--skip-timeline",
-                input_text=self.valid_context(),
+            invalid = self.valid_context().replace(
+                "updated: 2026-07-02",
+                "unexpected_route: mainline\nupdated: 2026-07-02",
             )
 
+            proc = self.run_script(home,
+                                   "amt",
+                                   "--context-stdin",
+                                   "--skip-timeline",
+                                   input_text=invalid)
+
             self.assertEqual(2, proc.returncode)
-            self.assertIn("unrecognized arguments", proc.stderr)
-            self.assertIn("--next-route", proc.stderr)
-            self.assertFalse((home / ".ai" / "contexts" / "amt.md").exists())
+            self.assertIn("unknown key(s)", proc.stderr)
+            self.assertFalse((home / ".ai" / "contexts" /
+                              "amt.md").exists())
 
     def test_validate_only_checks_context_and_timeline_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -217,7 +183,7 @@ mainline:
 
         parsed = save_context.fallback_parse_frontmatter(frontmatter)
 
-        self.assertEqual("context.v2", parsed["schema"])
+        self.assertEqual("context.v3", parsed["schema"])
         self.assertEqual({}, parsed["workstreams"])
 
     def test_empty_context_stdin_refuses_to_overwrite(self) -> None:

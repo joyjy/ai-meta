@@ -45,8 +45,8 @@ References are direct and do not route onward.
 
 ## Workflow
 
-1. Gather request, decisions, paths, capability evidence, dirty boundary, and exact antecedents.
-2. Write one observable goal, narrow include/exclude scope, and 2–4 observable acceptance conditions; cover every antecedent before grouping.
+1. Gather request, confirmed decisions and constraints, paths, capability evidence, dirty boundary, and exact antecedents.
+2. Write one goal, narrow scope, and 2–4 acceptance conditions. Preserve confirmed responsibility, business conditions, and effect boundaries when compressing; bind material constraints to actual consumers or readback evidence. Cover every antecedent; do not replace these checks with feature or test success.
 3. Load the machine contract only when gated. Add inventory for restore/absorb/migrate/rewrite/replace/extend, continuation for an existing session/client, verification loops when results drive revision, and parallelization only for real parallel slices.
 4. Ask only the first blocker. Mark Ready only when scope is complete and the receiver can start without reinterpretation.
 5. Show the single action using the Routing gates above. Corrections update machine fields/revision identity; recheck only the changed authority boundary, accounting for authorization already supplied by the user's correction.

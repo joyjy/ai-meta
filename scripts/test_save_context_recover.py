@@ -114,7 +114,7 @@ class SaveContextRecoverTest(unittest.TestCase):
                         "type":
                         "output_text",
                         "text":
-                        "---\n# context: project=amt; mainline=active; workstreams=0(); next=mainline\nproject: amt\n---\n",
+                        "---\n# context: project=amt; mainline=active; workstreams=0()\nproject: amt\n---\n",
                     }],
                 },
             },
@@ -274,7 +274,7 @@ class SaveContextRecoverTest(unittest.TestCase):
                         "role": "assistant",
                         "content": [{
                             "type": "output_text",
-                            "text": "<!-- context: project=old; mainline=active; workstreams=0(); next=mainline -->\n\n---\nproject: old\n---\n",
+                            "text": "<!-- context: project=old; mainline=active; workstreams=0() -->\n\n---\nproject: old\n---\n",
                         }],
                     },
                 }) + "\n",

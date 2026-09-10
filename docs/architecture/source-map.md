@@ -42,8 +42,9 @@ ai-meta/
 - `tool-routes.md`：任务意图到稳定工具入口的事实源。
 - `docs/project-map.md`：个人 AI 系统模块、工作域和 context abbr 的归属。
 - `~/.ai/agent-frictions.md`：本机可行动摩擦 inbox，不进入 Git；`agent-frictions-archive.md`：已结算历史。
+- `scripts/skill_verification.py`：skill 改动验证账本的 schema、fingerprint、事件写入和 verdict 计算；`scripts/skill-verification` 是薄入口。
 - `changelog.md`：已完成项目历史。
-- `route-context.json`：route-context plugin 的可版本管理路由配置。
+- `route-context.json`：context 套件输入侧的可版本管理路由配置；`plugins/route-context/` 保留既存插件身份，包装输入路由和独立的 MR 链接 Stop 检查。
 - `install.sh`：ai-meta source 与已登记 owner-repo skill 到 `~/.ai`、`~/.agents/skills` 和各客户端最后一跳的发布关系。
 - `.ai-meta-repo-role.json` 与 `scripts/private-release`：checkout source identity、私有发行生成和脱敏校验入口。
 - `sync-conventions.sh`：coding-conventions 模板到个人工程入口的受控同步关系。
@@ -53,7 +54,7 @@ ai-meta/
 - `~/.ai/` ← ai-meta instructions、commands、skills、scripts、config adapter，以及已登记 owner-repo skill 的发现软链；它是本机 aggregation/runtime 层，不是长期事实源。
 - `~/.agents/skills/` ← ai-meta `skills/` 与已登记 owner-repo skill 的 Codex 发现软链。
 - 客户端配置目录 ← `install.sh` 发布的最后一跳适配；手工运行态和缓存不得反向成为 repo 事实源。
-- `~/.ai/agent-frictions.md`、`~/.ai/frictions/`、`~/.ai/audits/`、`~/.ai/contexts/`、`~/.ai/work-items/`、`~/.ai/loop/` 和含 token 的 MCP 配置是本机私有状态，不进 git。
+- `~/.ai/agent-frictions.md`、`~/.ai/frictions/`、`~/.ai/audits/`、`~/.ai/contexts/`、`~/.ai/work-items/`、`~/.ai/loop/`、`~/.ai/skill-verification/` 和含 token 的 MCP 配置是本机私有状态，不进 git。
 
 ## Validation
 
@@ -61,8 +62,10 @@ ai-meta/
 - `scripts/validate-skill <skill-dir>`：上游 skill schema 与 ai-meta invocation / command 集成 gate 的统一入口。
 - `scripts/check-codex-command-entries`：发布 command 是否有 Codex 可发现入口。
 - `scripts/check-skill-invocation-policies`：skill canonical identity、展示元数据和 explicit-only 策略。
+- `python3 -m unittest scripts.test_skill_verification`：revision-bound ledger、加载 fingerprint 和 verdict 状态机回归。
 - `scripts/private-release check <distribution-root>`：私有发行副本的本机路径、内网标识、身份信息和凭据形态 gate。
-- `python3 plugins/route-context/scripts/test_route_context_resolve.py` 与 `python3 plugins/route-context/scripts/test_route_context_hook.py`：route-context 配置解析和 prompt-time 注入回归。
+- `python3 plugins/route-context/scripts/test_route_context_resolve.py` 与 `python3 plugins/route-context/scripts/test_route_context_hook.py`：context 套件输入侧配置解析和 prompt-time 注入回归。
+- `node --test plugins/route-context/scripts/test_context_stop.js`：context 套件输出侧 MR 漏链、来源边界及单次续轮回归。
 - `bash install.sh`：发布前预检与本机软链/适配同步。
 - `git diff --check`：文档和脚本改动的基础格式检查。
 
@@ -70,6 +73,7 @@ ai-meta/
 
 - `skills/`、`commands/`、`plugins/`：[Horizontal client consistency](./horizontal-client-consistency.md)。
 - `docs/`、`mcp/`、`runtime/`：[Source-of-truth boundaries](./source-of-truth-boundaries.md)。
+- skill verification runtime：[Skill Verification Trace](./skill-verification.md)。
 - 所有主要 root：[Architecture index](./index.md) 与 [Project map](../project-map.md)。
 
 ## Change Guidance

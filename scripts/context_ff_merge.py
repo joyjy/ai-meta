@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge one final-form work order into a context.v2 snapshot."""
+"""Merge one final-form work order into a context.v3 snapshot."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 CONTEXT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-REMOVED_ROUTE_KEYS = {"selected_route", "active_route"}
+ALLOWED_CONTEXT_KEYS = {
+    "schema", "project", "goal", "mainline", "workstreams", "updated"
+}
 
 
 def load_yaml_module() -> Any:
@@ -104,14 +106,12 @@ def load_context(path: Path, abbr: str) -> tuple[dict[str, Any], str]:
     data = yaml.safe_load(frontmatter)
     if not isinstance(data, dict):
         raise ValueError("context YAML frontmatter must be a mapping")
-    if data.get("schema") != "context.v2":
-        raise ValueError("context YAML schema must be context.v2")
-    removed = sorted(REMOVED_ROUTE_KEYS.intersection(data))
-    if removed:
-        raise ValueError("context YAML contains removed route key(s): " +
-                         ", ".join(removed))
-    if "next_route" not in data:
-        raise ValueError("context YAML missing required key: next_route")
+    if data.get("schema") != "context.v3":
+        raise ValueError("context YAML schema must be context.v3")
+    unknown = sorted(set(data).difference(ALLOWED_CONTEXT_KEYS))
+    if unknown:
+        raise ValueError("context YAML contains unknown key(s): " +
+                         ", ".join(unknown))
     if data.get("project") != abbr:
         raise ValueError(
             f"context project {data.get('project')!r} does not match {abbr!r}")
@@ -119,17 +119,12 @@ def load_context(path: Path, abbr: str) -> tuple[dict[str, Any], str]:
         raise ValueError("context mainline must be a mapping")
     if not isinstance(data.get("workstreams"), dict):
         raise ValueError("context workstreams must be a mapping")
-    next_route = data.get("next_route")
-    if (next_route is not None and next_route != "mainline" and
-            (not isinstance(next_route, str)
-             or next_route not in data["workstreams"])):
-        raise ValueError(f"context next_route {next_route!r} does not exist")
     return data, body
 
 
 def minimal_context(abbr: str) -> dict[str, Any]:
     return {
-        "schema": "context.v2",
+        "schema": "context.v3",
         "project": abbr,
         "goal": None,
         "mainline": {
@@ -140,14 +135,12 @@ def minimal_context(abbr: str) -> dict[str, Any]:
             "next_steps": [],
         },
         "workstreams": {},
-        "next_route": "mainline",
         "updated": date.today().isoformat(),
     }
 
 
 def merge_ff(data: dict[str, Any], route: str, ff: dict[str, Any],
              updated: str) -> None:
-    data["next_route"] = route
     data["updated"] = updated
     if route == "mainline":
         mainline = data.setdefault("mainline", {})
@@ -210,8 +203,6 @@ def clear_completed_ff(data: dict[str, Any], route: str, expected_goal: str,
         mainline["next_steps"] = next_steps
         if not mainline_has_recovery(mainline):
             mainline["state"] = "idle"
-            if data.get("next_route") == "mainline":
-                data["next_route"] = None
     else:
         workstreams = data.get("workstreams")
         if not isinstance(workstreams, dict):
@@ -228,12 +219,6 @@ def clear_completed_ff(data: dict[str, Any], route: str, expected_goal: str,
         workstream["next_step"] = None
         if not workstream.get("doing") and not workstream.get("blocked"):
             del workstreams[route]
-            if data.get("next_route") == route:
-                mainline = data.get("mainline")
-                if not isinstance(mainline, dict):
-                    raise ValueError("context mainline must be a mapping")
-                data["next_route"] = (
-                    "mainline" if mainline_has_recovery(mainline) else None)
             data["updated"] = updated
             return True
 
@@ -279,11 +264,9 @@ def route_index(data: dict[str, Any]) -> str:
     mainline = data.get("mainline") if isinstance(data.get("mainline"),
                                                   dict) else {}
     mainline_state = mainline.get("state", "idle")
-    next_route = data.get("next_route") or "none"
     return (f"# context: project={data.get('project')}; "
             f"mainline={mainline_state}; "
-            f"workstreams={len(workstreams)}({', '.join(states)}); "
-            f"next={next_route}")
+            f"workstreams={len(workstreams)}({', '.join(states)})")
 
 
 def render_context(data: dict[str, Any], body: str) -> str:
@@ -319,7 +302,7 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Merge a final-form ff block into a context.v2 file.")
+        description="Merge a final-form ff block into a context.v3 file.")
     parser.add_argument("abbr",
                         help="Context abbr, optionally abbr:workstream")
     action = parser.add_mutually_exclusive_group(required=True)

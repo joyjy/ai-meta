@@ -20,7 +20,7 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 
 ## Ownership Boundaries
 
-- 本 skill 管工程规则；任务归 `gtd`，工具 / 权限 / sandbox / skill 路线摩擦归 `~/.ai/agent-frictions.md`。
+- 工程规则归本 skill，任务归 `gtd`，工具路线摩擦归 `~/.ai/agent-frictions.md`。
 - `templates/` 可注入项目；`preferences/` 只进个人层；`patterns/` 只在 forces 命中时使用。
 - UI 方向归 `design-direction`；只从已解析的个人 project root 读 `DESIGN.md`。GitLab flow 和 MR baseline 归 tool routes、context / exit skills 与项目 `index.md`。
 
@@ -32,7 +32,7 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 
 ## Pattern Routes
 
-用任务意图与 repo 证据匹配 signal；命中只触发读取和 forces 判断，不强制采用。
+按任务与 repo 证据匹配 signal；读取后判断 forces，不强制采用。
 
 - 后台 consumer、Executor / Scheduler / 线程池、subscription / listener、`ApplicationReadyEvent`、Disposable、`@PreDestroy`、shutdown、滚动发布、重启或扩缩容 → `patterns/graceful-shutdown-anti-leak.md`
 - 共享 topic 上单个 consumer 需要独立 retry / replay / backfill，broker 无法隔离补发，或代码出现私有 Inbox、ACK durability、attempt ledger → `patterns/consumer-owned-retryable-execution-unit.md`
@@ -54,7 +54,7 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 
 - 写入须有明确目标与范围；复用用户已有授权。新增未授权模板、hook 或构建集成时，先展示具体改动再确认。
 - 团队 / 外部项目不注入个人路径、私有 helper 或 `preferences/*`。
-- 不临场编写模板外 hook。已提供 partial 也要先在目标 repo 验证命令，再在候选清单披露并获确认。
+- 不临场编写模板外 hook。已提供 partial 也要先在目标 repo 验证命令并披露目标与行为；复用已明确的 hook 授权，只有范围未定时才确认。
 - pattern/pitfall 晋升按对应 reference 保留可核验 evidence；一次性事故不进长期模板。
 
 ## Completion Standard

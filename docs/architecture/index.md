@@ -27,6 +27,8 @@ ai-meta architecture 分为这些稳定 scope：
 - [vertical-agent-ll](./vertical-agent-ll.md)：启动加载、工程约定注入、context 恢复、`final-form`、主 skill、`engineering-exit`、`save-context` 的闭环。
 - [Agent Loop Topology](./agent-loop-topology.md)：turn-based、goal、time 与 proactive loop 的分层、组合、ownership 和成熟度边界。
 - [Agent Friction Observability](./agent-friction-observability.md)：Codex 客观事件采集、context / LL ownership、`save-context` 结算和 retention 边界。
+- [Context Suite](./context-suite.md)：route-context 输入注入、MR 链接 Stop 检查与插件加载验收。
+- [Skill Verification Trace](./skill-verification.md)：skill 改动的 revision identity、静态检查、客户端加载回执、行为样本和 verdict 状态机。
 - [Source-of-Truth Boundaries](./source-of-truth-boundaries.md)：repo、`~/.ai`、context、MCP、install 脚本和私有运行态边界。
 - [Project Source Map Contract](./source-map-contract.md)：每个项目独立 source map 的内容、准确性、review ownership 和变更触发条件。
 - [ai-meta Source Map](./source-map.md)：本 repo 的 source roots、共享 contract、生成关系和验证入口。

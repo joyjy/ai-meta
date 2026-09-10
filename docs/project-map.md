@@ -32,6 +32,7 @@
 | `steelman` | 在取证后、裁决前恢复争议观点的最强可行版本，完成有界挑战、分水岭识别与明确裁决 | `skills/steelman/SKILL.md` |
 | `review-router` | 为代码变更选择 simple、challenge、two-axis、quality、prune 或 evolution review；通过显式 `design` strategy 评审方案语义与可实施性 | `skills/review-router/SKILL.md` |
 | `loop-ledger` | 从 intent、context、`ff` 编译路径显式绑定的可恢复执行契约，并用验证和人工检查点控制推进 | `skills/loop-ledger/SKILL.md`, `commands/ll.md`, `scripts/verify-ll-contract` |
+| `context` | prompt-time 路由注入与 Stop 输出检查；共享插件包装，输入、输出逻辑分离 | `plugins/route-context/`, `docs/architecture/context-suite.md` |
 | `save/load-context` | 跨 session context 保存与加载、恢复索引格式、Codex skill 包装 | `skills/save-context/SKILL.md`, `skills/load-context/SKILL.md` |
 | `agent-doc-hygiene` | agent-facing 文档治理、加载路径瘦身、context/memory 有效性巡检 | `skills/agent-doc-hygiene/SKILL.md` |
 | `doc-arch-review` | 架构文档、ADR、OKF、doc-root taxonomy 和 durable docs 的质量评审 | `skills/doc-arch-review/SKILL.md` |

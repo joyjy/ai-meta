@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write project context and optionally append a Daily Note timeline entry.
 
-Mainline saves accept a complete context.v2 document. Workstream saves accept a
+Mainline saves accept a complete context.v3 document. Workstream saves accept a
 context.workstream.v1 payload and merge only that route into the project file.
 """
 
@@ -30,9 +30,9 @@ REQUIRED_FRONTMATTER_KEYS = {
     "project",
     "mainline",
     "workstreams",
-    "next_route",
     "updated",
 }
+ALLOWED_FRONTMATTER_KEYS = REQUIRED_FRONTMATTER_KEYS | {"goal"}
 REQUIRED_WORKSTREAM_KEYS = {
     "schema",
     "state",
@@ -43,7 +43,6 @@ REQUIRED_WORKSTREAM_KEYS = {
     "details",
 }
 WORKSTREAM_STATES = {"active", "parked", "blocked", "closure-candidate"}
-REMOVED_ROUTE_KEYS = {"selected_route", "active_route"}
 
 
 def context_path(spec: str) -> tuple[Path, str]:
@@ -121,10 +120,14 @@ def split_context_frontmatter(context: str) -> tuple[str, str]:
     route_index = lines[1].strip()
     if not ROUTE_INDEX_RE.match(route_index):
         raise ValueError("context second line must be a route index comment")
-    if "project=" not in route_index or "mainline=" not in route_index:
-        raise ValueError("context route index is missing project/mainline")
-    if "workstreams=" not in route_index or "next=" not in route_index:
-        raise ValueError("context route index is missing workstreams/next")
+    route_fields = route_index.removeprefix("# context: ").split("; ")
+    expected_prefixes = ("project=", "mainline=", "workstreams=")
+    if (len(route_fields) != len(expected_prefixes)
+            or any(not field.startswith(prefix)
+                   for field, prefix in zip(route_fields, expected_prefixes))):
+        raise ValueError(
+            "context route index must contain exactly project, mainline, workstreams"
+        )
 
     delimiter_lines = [
         index for index, line in enumerate(lines[2:], start=2)
@@ -181,25 +184,20 @@ def parse_frontmatter(frontmatter: str) -> dict[str, Any]:
             raise ValueError("context YAML frontmatter must be a mapping")
         parsed = loaded
 
-    removed = sorted(REMOVED_ROUTE_KEYS.intersection(parsed))
-    if removed:
-        raise ValueError("context YAML contains removed route key(s): " +
-                         ", ".join(removed))
+    unknown = sorted(set(parsed).difference(ALLOWED_FRONTMATTER_KEYS))
+    if unknown:
+        raise ValueError("context YAML contains unknown key(s): " +
+                         ", ".join(unknown))
     missing = sorted(REQUIRED_FRONTMATTER_KEYS.difference(parsed))
     if missing:
         raise ValueError(
             "context YAML missing required key(s): " + ", ".join(missing))
-    if parsed.get("schema") != "context.v2":
-        raise ValueError("context YAML schema must be context.v2")
+    if parsed.get("schema") != "context.v3":
+        raise ValueError("context YAML schema must be context.v3")
     if not isinstance(parsed.get("mainline"), dict):
         raise ValueError("context YAML mainline must be a mapping")
     if not isinstance(parsed.get("workstreams"), dict):
         raise ValueError("context YAML workstreams must be a mapping")
-    next_route = parsed.get("next_route")
-    if (next_route is not None and next_route != "mainline" and
-            (not isinstance(next_route, str)
-             or next_route not in parsed["workstreams"])):
-        raise ValueError(f"context YAML next_route {next_route!r} does not exist")
     return parsed
 
 
@@ -219,10 +217,6 @@ def validate_context_structure(parser: argparse.ArgumentParser, context: str,
         )
     if f"project={project}" not in route_index:
         parser.error("context route index project does not match YAML project")
-    indexed_next_route = route_index.rsplit("next=", 1)[-1].strip()
-    expected_next_route = parsed.get("next_route") or "none"
-    if indexed_next_route != expected_next_route:
-        parser.error("context route index next does not match YAML next_route")
 
 
 def validate_context_input(parser: argparse.ArgumentParser, context: str,
@@ -317,7 +311,6 @@ def merge_workstream(path: Path, abbr: str, workstream: str, text: str) -> str:
     data, body = load_context(path, abbr)
     workstreams = data["workstreams"]
     workstreams[workstream] = route_data
-    data["next_route"] = workstream
     data["updated"] = datetime.now().date().isoformat()
     body = merge_workstream_details(body, workstream, details,
                                     set(workstreams))
@@ -454,7 +447,7 @@ def main() -> int:
     elif args.delete_context:
         if workstream:
             parser.error(
-                "--delete-context cannot delete a single workstream in context.v2; "
+                "--delete-context cannot delete a single workstream in context.v3; "
                 "rewrite the project context without that workstream")
         assert path is not None
         if path.exists():

@@ -69,6 +69,7 @@ ai-meta 不只管理启动 prompt，也维护 agent 完成一段工作的完整�
 
 仓库中的 skills 不是 prompt 收藏，而是带触发边界、输入输出和安全门的工作流：
 
+- [Context 套件](docs/architecture/context-suite.md)：在输入阶段注入项目与工具路由，结束阶段检查 MR 链接遗漏并有界补正；通过 Codex lifecycle hooks 工作。
 - `final-form`（用户调用 `ff`）：把模糊需求整理成可执行、可分发、可验收的 work order。
 - `grill`：连续压测 plan、设计或规则，直到关键结构性问题被说清楚。
 - `loop-ledger`（用户调用 `ll`）：把已确认工作单编译为准确的 Codex goal 与单文件运行契约，并管理恢复、验证和人工检查点。

@@ -7,7 +7,7 @@ Read this reference only after a persistence, dispatch, post-ready correction, v
 - Context output nests the sparse `ff` object under the selected route's `Next Steps` and sets `output_target: context`.
 - Do not write context from final-form alone. Use `~/.ai/scripts/context-ff-merge <abbr[:route]> --ff-file <file>` after persistence is requested.
 - Preserve unrelated routes. If a new final-form would replace an unrelated active next step, ask one blocking question.
-- A missing context may be initialized as context.v2 with an active mainline and no workstreams.
+- A missing context may be initialized as context.v3 with an active mainline and no workstreams.
 - Invalid abbr or route names stop before writing.
 - Ordinary recovery notes, unfinished Doing, candidate follow-ups, and recurring automation stay prose rather than becoming final-form.
 
