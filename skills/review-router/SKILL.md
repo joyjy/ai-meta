@@ -1,55 +1,63 @@
 ---
 name: review-router
-description: Route independent reviews of code changes and explicitly selected design artifacts through simple, design, challenge, two-axis, quality, prune, or evolution strategies. Use for rr, fresh review requests over code/diffs/branches/MRs/PRs/evidence, deletion or simplification review, engineering read-only review gates, and `rr design` over a plan, spec, solution proposal, or architecture design. Do not auto-route ordinary document requests to design review, or use this merely to triage existing feedback.
+description: Route rr code/MR/PR, module, whole-repository, simplification and explicit design reviews. Excludes ordinary document requests and feedback triage.
 ---
 
 # review-router
 
-Fix the target, select one strategy, and return findings, verdict, and one next-review decision. review-router is read-only: it never fixes, deletes, writes Git/remote state, owns release gates, or persists state.
+Fix scope and identity before strategy. Return findings, verdict and one next-review decision. Read-only: no fixes, deletion, Git/remote writes, release gates or persisted state. Use `review-router` in prose; `rr` is a user alias.
 
-Use `review-router` in prose and results; reserve `rr` and `rr ...` for user invocation.
+## Scope Before Strategy
+
+Infer the intended decision from the request and conversation, not the latest commit or convenient dirty diff. Explicit scope wins. Briefly state scope, target and comparison baseline (or current snapshot).
+
+| Scope | Intent | Boundary |
+| --- | --- | --- |
+| Incremental re-review | “刚修的再看下”, “这些反馈解决了吗” | Changes since the identified reviewed revision, unresolved findings and affected consumers. Resolve a missing baseline; never substitute `HEAD~1` silently. |
+| Complete delivery | “这个 MR / 任务能交了吗”, “最后收口” | All task-owned commits and dirty changes against the delivery baseline, with consumers and integration evidence. Bind MR/PR to actual base/head; distinguish unpublished local follow-up. |
+| Existing module | “这个模块是不是太复杂”, named subsystem review | Current implementation, responsibilities, dependencies, compatibility and relevant callers beyond the module. No diff required. |
+| Whole repository | “全仓扫一下”, “给项目做个体检” | The identified repository's current code, docs, dependencies/build configuration and validation entrypoints. No diff required; never silently narrow to recent changes or one module. |
+
+Follow concrete contract/consumer impacts beyond incremental hunks. Neither incremental nor complete-delivery review implies a repository audit.
+
+For module/repository scans, map structure and owners, then deepen by risk. Account for each top-level repository area as inspected, sampled or excluded with a reason; trace generated/vendor artifacts to their source owner. Separate existing debt from delivery-introduced issues. Sampling cannot prove exhaustive correctness; empty diffs do not stop snapshot reviews.
+
+Resolve facts before asking; ask only when remaining ambiguity changes the review scope. An empty change diff has no new code, but unresolved findings still need disposition; do not switch to a repository scan. Use a single commit or `HEAD~1` only when user-selected.
 
 ## Baseline
 
-For code reviews, resolve target/baseline, acceptance/spec, project standards, full relevant diff/context, and verification evidence before asking. Evolution also requires caller-owned revision, fingerprint, round, and prior findings.
+Bind acceptance/spec, standards, selected diff/snapshot, relevant context and verification evidence. Evolution additionally requires caller-owned revision, fingerprint, round and prior findings.
 
-For `design`, fix the exact artifact, its driving problem or outcome, material constraints and current-state anchors, and the decision or acceptance question. The artifact may be a file, named section, or explicit proposal in the conversation; it does not require a Git diff. Treat its rationale as claims, not evidence, and inspect only the referenced reality needed to judge a material claim.
+For explicit `design`, bind the file/section/proposal, problem, constraints, current anchors and decision question. No diff required. Verify rationale against reality; missing decisions can warrant `not-ready`.
 
-Resolve target and baseline from available evidence; ask one focused question only if ambiguity still changes the review scope. Stop code review for an empty diff; a thin but identifiable design artifact receives a `not-ready` verdict when missing decisions are themselves the finding. Bind MR/PR review to its actual head revision; use `HEAD~1` or a single commit only when that is the user-selected review scope.
+## Strategy Selection
 
-## Selection
+- Explicit strategy wins; run only that strategy, including `simple` or `design`.
+- Plain `rr` / `rr auto` never infer design from Markdown or a proposal.
+- Refactor, architecture governance, KISS/DRY, splitting or code health → `quality` over the selected scope and structural context.
+- Deletion, YAGNI, native/stdlib replacement or over-engineering → `prune`; broader architecture/security/performance risk → `quality`.
+- Otherwise plain `rr` / `rr auto`, and `caller=engineering-exit` → simple plus at most one evidence-backed escalation; caller owns disposition.
 
-- Explicit strategy wins.
-- `rr design` → design only; do not run `simple` first. Plain `rr` / `rr auto` never infer design review from a Markdown file or conversational proposal.
-- Refactor, architecture governance, KISS/DRY, file splitting, or code health → `quality` over the complete diff.
-- Deletion, YAGNI, dependency reduction, native/stdlib replacement, over-engineering, or rejected-scope residue → `prune`; broader architecture/security/performance uncertainty → `quality`.
-- `rr simple` → simple only. Plain `rr`/`rr auto` → simple, then at most its one recommended strategy.
-- `caller=engineering-exit` → simple plus at most one evidence-backed escalation; caller owns disposition.
-- `rr design|challenge|two-axis|quality|prune|evolution` → only that strategy.
-
-Choose `none` when no material question remains; otherwise select the one next strategy most likely to change readiness. Diff size or checklist availability is not evidence for escalation.
+Choose `none` when no material question remains. Size or checklist availability alone never justifies escalation.
 
 ## Strategy Routes
 
-- **Simple**: read `references/simple-review.md` for the default maintainer pass and next-strategy decision.
-- **Design**: read `references/design-review.md` for semantic review of an explicitly selected design artifact.
-- **Challenge**: read `references/challenge-review.md` to challenge real-consumer proof, not ordinary code quality.
-- **Evolution**: read `references/evolution-review.md` only with caller-owned revision/round state.
-- **Two-axis**: use `~/Documents/reference/matt-skills/skills/engineering/code-review/SKILL.md`; fix baseline and report independent Spec and Standards passes.
-- **Quality**: use `~/Documents/reference/addy-agent-skills/skills/code-review-and-quality/SKILL.md`; read only `The Five-Axis Review`, `Review Process`, and `Verification`, then select material axes.
-- **Prune**: use `~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md`; tag cuts `delete|stdlib|native|yagni|shrink`, identify replacements, sort by reduction, and end with `net: -<N> lines possible.` or `Lean already. Ship.` Flag rejected-scope residue for removal unless independent safety, compatibility, or contract evidence requires it. Never label accessibility, data-loss prevention, or a minimal runnable check as bloat.
+- **Simple**: `references/simple-review.md` — maintainer pass and next-strategy decision.
+- **Design**: `references/design-review.md` — explicit proposal semantics and feasibility.
+- **Challenge**: `references/challenge-review.md` — real-consumer proof.
+- **Evolution**: `references/evolution-review.md` — requires caller-owned round state.
+- **Two-axis**: `~/Documents/reference/matt-skills/skills/engineering/code-review/SKILL.md` — bind baseline; independent Spec and Standards passes.
+- **Quality**: `~/Documents/reference/addy-agent-skills/skills/code-review-and-quality/SKILL.md` — read only `The Five-Axis Review`, `Review Process`, `Verification`; select material axes.
+- **Prune**: `~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md` — tag `delete|stdlib|native|yagni|shrink`, identify replacements, sort by reduction; end `net: -<N> lines possible.` or `Lean already. Ship.` Flag rejected-scope residue unless real safety, compatibility or contract evidence requires it. Accessibility, data-loss prevention and a minimal runnable check are not bloat.
 
-External lenses are direct and narrow; do not inherit tracker/client workflow. If missing, apply the local bullet contract without searching or installing substitutes.
+External lenses are direct and narrow; do not inherit tracker/client workflows. If absent, use the bullet contract above without searching or installing substitutes.
 
-## Evidence
+## Evidence And Results
 
-For mixed observation, computation, inference, framework assumptions, or guesses, read `../engineering-exit/references/evidence-classification.md`. Only direct/computed evidence proves a claim; support inference and keep framework claims conditional.
-
-## Results And Boundaries
-
-- Preserve each strategy's verdict, vocabulary, and required sections; do not flatten design/challenge/evolution into simple.
-- Findings come first at the narrowest file/line, artifact section/claim, or evidence anchor with impact and correction/decision. Say `no material findings` instead of inventing one.
-- End with `next_review.strategy: none|two-axis|quality|prune|challenge`, one evidence-backed reason, and an unresolved question unless `none`.
-- Do not append inventories, tool narration, or generic walkthroughs.
-- A recommendation never authorizes fixes or scope expansion. Domain architecture, UI, release, and security gates remain with their owners.
-- `design` judges whether a proposed solution is sound and implementable; it does not copy-edit prose or replace `doc-arch-review` for durable-document ownership and source-of-truth structure. It stays one-shot and read-only rather than turning into `grill` or `steelman`.
+- For mixed observations, calculations, inference or framework assumptions, read `../engineering-exit/references/evidence-classification.md`. Only direct/computed evidence proves claims; support inference and qualify framework claims.
+- Preserve the strategy's verdict, vocabulary and required sections; do not flatten it into simple.
+- Findings first, at the narrowest file/line or artifact/evidence anchor, with impact and correction/decision. Say `no material findings` when appropriate.
+- Report actual coverage and omissions, including area accounting for snapshot scans. Avoid raw file inventories or tool narration; a pass applies only to stated coverage.
+- End with `next_review.strategy: none|two-axis|quality|prune|challenge`, an evidence-backed reason and an unresolved question unless `none`.
+- Review recommendations grant no fix or scope-expansion authority. Domain/release/security gates remain with their owners.
+- Design stays one-shot/read-only; it does not replace doc-arch-review's durable-document ownership review or become grill/steelman.

@@ -19,10 +19,26 @@ const source = items.map(([name, iid]) => `[team/iam-${name}!${iid}](${url(name,
 test('the eight-MR incident detects bare table and recommendation references from linked source', () => {
   const message = items.map(([name, iid]) => `| 环节 | ${name} !${iid} |`).join('\n') + '\n建议 !254 → !1602 + !201';
   const missing = missingMrLinks(message, [source]);
-  assert.equal(missing.length, 11);
+  assert.equal(missing.length, 8);
   assert.equal(missing[0].url, url('arch-hub', '254'));
-  assert.equal(missing.at(-1).url, url('common', '201'));
+  assert.equal(missing.at(-1).url, url('integration', '1927'));
   assert.deepEqual(missingMrLinks(source, [source]), []);
+});
+
+test('one link per MR covers repeated table and prose mentions throughout the response', () => {
+  const first = url('endpoint', '19');
+  const second = url('endpoint', '20');
+  const sources = [first, second];
+  const message = `| [endpoint !19](${first}) | 待 approve |\n| [endpoint !20](${second}) | 叠在 !19 上 |\n建议先查 !19，再看 !20；endpoint !20 已完成基础。`;
+  assert.deepEqual(missingMrLinks(message, sources), []);
+  assert.deepEqual(missingMrLinks(`先查 !19，再看 !20。\n${message}`, sources), []);
+  assert.deepEqual(missingMrLinks(`[endpoint !19](${first})，建议先看 !19。\n随后处理 endpoint !20，再回看 !20。`, sources), [{ label: 'endpoint !20', url: second }]);
+  assert.deepEqual(missingMrLinks(`!19、endpoint !19；!20、endpoint !20\n[!19](${first})`, sources), [{ label: '!20', url: second }]);
+  assert.deepEqual(missingMrLinks(`!19\n[来源][mr]\n[mr]: ${first}`, sources), []);
+  // A code example or a different repository's same IID is not this MR's link.
+  for (const link of [`\`${first}\``, `\`\`\`text\n${first}\n\`\`\``, `[other !19](${url('other', '19')})`]) {
+    assert.deepEqual(missingMrLinks(`endpoint !19\n${link}`, sources), [{ label: 'endpoint !19', url: first }]);
+  }
 });
 
 test('links, code, unknown repositories, ordinary numbers and ambiguous IDs do not trigger', () => {
@@ -61,6 +77,7 @@ test('real Stop adapter requests one correction, then warns without another cont
     assert.equal(decision.decision, 'block');
     assert.ok(decision.reason.includes(`[arch-hub !254](${url('arch-hub', '254')})`));
     assert.deepEqual(checkStop({ ...input, last_assistant_message: `[arch-hub !254](${url('arch-hub', '254')})` }), {});
+    assert.deepEqual(checkStop({ ...input, last_assistant_message: `[arch-hub !254](${url('arch-hub', '254')})\n建议先看 !254。` }), {});
     assert.equal(checkStop({ ...input, stop_hook_active: true }).decision, undefined);
     assert.ok(checkStop({ ...input, stop_hook_active: true }).systemMessage);
     assert.deepEqual(checkStop({ ...input, turn_id: null }), {});

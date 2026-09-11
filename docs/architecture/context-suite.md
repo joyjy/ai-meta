@@ -14,11 +14,13 @@
 
 输入路由与输出检查共享插件包装和安装过程，不互相调用；MR 检查不进入 GTD helper，也不扩成通用指令检查器。套件不会创建业务任务、联网查询 MR、发送评论或改写会话文件。
 
+项目入口 `index.md` 声明的 `abbr` 与控制目录覆盖内置项目路径，`amt` 同样遵循该规则；插件安装缓存不是项目控制目录。没有对应项目入口时才保留内置路径作为发现 fallback，后续源码修改仍须核对 checkout role 和 source identity。
+
 ## MR 链接检查契约
 
 Stop 仅在 Codex 提供 `turn_id`、`transcript_path` 和 `last_assistant_message` 时工作。它从给定 transcript 最后最多 2 MiB 中读取可完整解析的 Codex `response_item`，只接受 user message 及 function/custom tool output 中的文本，不把 assistant 自己生成的链接当作来源。首次读取不扫描其他会话、数据库或项目文件，不持久化会话副本。
 
-URL 必须是已出现的 HTTP(S) `/<group>/<repo>/-/merge_requests/<iid>`，不带账号密码、query 或 fragment。完整仓库名、basename、basename 的连字符后缀或裸 `!iid` 只有在对应唯一 URL 时才可提示；跨仓库/host 同号造成歧义时跳过。普通数字、未知引用、已存在的 Markdown 链接和代码片段不触发。单次输出最多提示 12 个引用；超过 128 KiB 的回复跳过检查。
+URL 必须是已出现的 HTTP(S) `/<group>/<repo>/-/merge_requests/<iid>`，不带账号密码、query 或 fragment。完整仓库名、basename、basename 的连字符后缀或裸 `!iid` 只有在对应唯一 URL 时才可提示；跨仓库/host 同号造成歧义时跳过。以本条回复为检查边界：同一 MR 的 URL 在非代码内容中出现一次即满足要求，其余裸引用不再补正；回复中的 URL 只用于判断已覆盖，不作为新的会话来源。普通数字、未知引用、已存在的 Markdown 链接和代码片段不触发。遗漏按唯一 MR URL 去重，单次输出最多提示 12 个 MR；超过 128 KiB 的回复跳过检查。
 
 首次发现遗漏时返回 `decision: block` 与精确 Markdown 链接，要求仅修正回复格式，不执行工具或业务动作。`stop_hook_active=true` 时不再请求续轮；若仍漏链，仅显示 warning。已有其他 Stop hook 触发续轮时，这个检查同样不追加第二轮。文件不可读、格式不支持或尾部证据不足时放行，不能因为找不到来源而编造链接。
 

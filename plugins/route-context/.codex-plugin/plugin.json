@@ -1,6 +1,6 @@
 {
   "name": "ai-meta-route-context",
-  "version": "0.1.0+codex.20260910013410",
+  "version": "0.1.0+codex.20260911061001",
   "description": "Context suite for prompt-time route facts and bounded end-of-turn MR link checks.",
   "author": {
     "name": "joyjy"
