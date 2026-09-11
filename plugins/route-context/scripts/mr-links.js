@@ -50,7 +50,7 @@ function mrUrls(texts) {
   const urls = new Map();
   for (const text of texts) {
     // JSON tool output occasionally escapes URL slashes.
-    for (const match of text.replace(/\\\//g, '/').matchAll(/https?:\/\/[^\s<>"'`\\]+/g)) {
+    for (const match of text.replace(/\\\//g, '/').matchAll(/https?:\/\/[^\s<>"'`\\()[\]，。；]+/g)) {
       let parsed;
       try { parsed = new URL(match[0].replace(/[).,;，。；]+$/, '')); } catch { continue; }
       if (parsed.username || parsed.password) continue;
@@ -63,11 +63,15 @@ function mrUrls(texts) {
   return [...urls.values()];
 }
 
+function proseWithoutCode(text) {
+  return text
+    .replace(/^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\s*\1\s*$/gm, ' ')
+    .replace(/`+[^`\n]*`+/g, ' ');
+}
+
 function proseWithoutLinks(text) {
   // Preserve whitespace boundaries so removing markup cannot join references.
   return text
-    .replace(/^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\s*\1\s*$/gm, ' ')
-    .replace(/`+[^`\n]*`+/g, ' ')
     .replace(/\[[^\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, ' ')
     .replace(/\[([^\]\n]+)\]\[([^\]\n]*)\]/g, (match, label, id) => {
       const key = (id || label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -80,7 +84,9 @@ function missingMrLinks(message, sources) {
   if (typeof message !== 'string' || message.length > RESPONSE_CHARS) return [];
   const known = mrUrls(sources);
   const missing = new Map();
-  const prose = proseWithoutLinks(message);
+  const visible = proseWithoutCode(message);
+  const linked = new Set(mrUrls([visible]).map(item => item.url));
+  const prose = proseWithoutLinks(visible);
   for (const match of prose.matchAll(/(?<![\w/!])(?:([A-Za-z0-9_.~-]+(?:\/[A-Za-z0-9_.~-]+)*)\s*)?!([1-9]\d*)\b/g)) {
     const name = match[1] && !/^(?:MR|PR)$/i.test(match[1]) ? match[1] : null;
     const candidates = known.filter(item => {
@@ -90,8 +96,10 @@ function missingMrLinks(message, sources) {
       return item.repo === name || basename === name || (!name.includes('/') && basename.endsWith(`-${name}`));
     });
     if (candidates.length !== 1) continue;
+    const url = candidates[0].url;
+    if (linked.has(url) || missing.has(url)) continue;
     const label = match[0].trim();
-    missing.set(label, { label, url: candidates[0].url });
+    missing.set(url, { label, url });
   }
   return [...missing.values()].slice(0, 12);
 }

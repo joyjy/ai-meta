@@ -43,6 +43,7 @@ ai-meta/
 - `docs/project-map.md`：个人 AI 系统模块、工作域和 context abbr 的归属。
 - `~/.ai/agent-frictions.md`：本机可行动摩擦 inbox，不进入 Git；`agent-frictions-archive.md`：已结算历史。
 - `scripts/skill_verification.py`：skill 改动验证账本的 schema、fingerprint、事件写入和 verdict 计算；`scripts/skill-verification` 是薄入口。
+- `scripts/save_context_audit_rs.py`：save-context 审计的派发、回读、结算与清理编排；`save_context_audit_archive.py` 拥有归档白名单、打包、完整性校验及 Run 归档状态查询，`save_context_audit_io.py` 提供两者共用的进程调用、JSON 解析和原子写入。
 - `changelog.md`：已完成项目历史。
 - `route-context.json`：context 套件输入侧的可版本管理路由配置；`plugins/route-context/` 保留既存插件身份，包装输入路由和独立的 MR 链接 Stop 检查。
 - `install.sh`：ai-meta source 与已登记 owner-repo skill 到 `~/.ai`、`~/.agents/skills` 和各客户端最后一跳的发布关系。

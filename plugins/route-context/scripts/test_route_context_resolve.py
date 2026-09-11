@@ -36,16 +36,19 @@ class PortableRouteContextResolveTest(unittest.TestCase):
         self.env_patcher.stop()
         self.local_route_tmp.cleanup()
 
-    def test_amt_resolves_to_current_checkout(self) -> None:
+    def test_amt_prefers_declared_project_with_checkout_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             me_root = Path(tmp)
+            with patch.object(resolver, "ME_ROOT", me_root):
+                fallback = resolver.resolve_route_context("处理 amt", REPO_ROOT)
+            self.assertEqual(str(REPO_ROOT), fallback["primary_project"]["root"])
             other_root = me_root / "Projects/other-ai-meta"
             other_root.mkdir(parents=True)
             (other_root / "index.md").write_text("abbr: amt\n", encoding="utf-8")
             with patch.object(resolver, "ME_ROOT", me_root):
                 result = resolver.resolve_route_context("处理 amt", REPO_ROOT)
 
-        self.assertEqual(str(REPO_ROOT), result["primary_project"]["root"])
+        self.assertEqual(str(other_root), result["primary_project"]["root"])
 
     def test_portable_base_routes_are_available(self) -> None:
         cases = {

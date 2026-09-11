@@ -4,6 +4,11 @@
 
 ## 2026-09
 
+- [x] (2026-09-11) review-router 明确区分增量复审、完整交付、模块整体与全仓审查；范围先于策略，无 diff 可审现有实现，结论须说明覆盖和遗漏。静态 gate 通过，实际行为按最终指纹采样。
+
+- [x] (2026-09-10) 修复 Context Stop 同一 MR 重复裸引用误报：本条回复中已有一次链接即可，遗漏按 MR URL 去重；补齐链接后紧接中文标点的提取边界和回归。
+- [x] (2026-09-10) 将 e3e1505 脱敏同步到 GitHub 发行仓库；检查账号下 18 个仓库的各分支作者历史，为发行 checkout 单独配置 GitHub noreply 身份并重写其 7 条提交，远端 author/committer 均关联 joyjy。发行仓库保留私有中转用途。
+
 - [x] (2026-09-10) 将 route-context 扩为 Context 套件，补齐标准 hooks 发现入口与单次 MR 漏链补正；真实 Codex 样本通过。审查 15 个自维护技能入口，收敛全局/项目规则归属、暂停保存授权、条件加载与停止门槛；静态验收通过，技能行为仍按版本采样。
 
 - [x] (2026-09-10) 恢复显式 engineering-exit 的当前 scope commit、push、MR/PR 交付授权，保留普通实现仅自主 commit、local-only/prepare-only 限制及 merge/force push 单独授权；全局规则、技能入口与 MR reference 同步对齐。

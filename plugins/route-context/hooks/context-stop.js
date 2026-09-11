@@ -15,7 +15,7 @@ function checkStop(input) {
   return {
     decision: 'block',
     reason: [
-      'Context 套件检测到回复中的 MR 引用遗漏了会话来源中已有的链接。请只补齐这些引用的 Markdown 链接，并保留其余结论；不要执行命令、修改文件、查询远端或操作 MR。',
+      'Context 套件检测到以下 MR 在本条回复中尚无会话来源中已有的链接。每个 MR 只需补一处 Markdown 链接，其余重复引用可保留原样。请保留其余结论；不要执行命令、修改文件、查询远端或操作 MR。',
       ...missing.map(item => `- [${item.label}](${item.url})`),
       '这是一次输出格式补正，不是新的业务任务。',
     ].join('\n'),

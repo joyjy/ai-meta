@@ -211,6 +211,8 @@ symlink "$REPO/scripts/save_context_orchestrator.py" "$AI/scripts/save_context_o
 symlink "$REPO/scripts/save_context.py" "$AI/scripts/save_context.py"
 symlink "$REPO/scripts/save-context-audit-rs" "$AI/scripts/save-context-audit-rs"
 symlink "$REPO/scripts/save_context_audit_rs.py" "$AI/scripts/save_context_audit_rs.py"
+symlink "$REPO/scripts/save_context_audit_archive.py" "$AI/scripts/save_context_audit_archive.py"
+symlink "$REPO/scripts/save_context_audit_io.py" "$AI/scripts/save_context_audit_io.py"
 symlink "$REPO/scripts/save-context-recover" "$AI/scripts/save-context-recover"
 symlink "$REPO/scripts/save_context_recover.py" "$AI/scripts/save_context_recover.py"
 symlink "$REPO/scripts/save-context-timeline" "$AI/scripts/save-context-timeline"

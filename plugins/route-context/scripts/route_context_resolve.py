@@ -414,8 +414,6 @@ def _available_projects() -> dict[str, dict[str, Any]]:
             continue
 
         abbr = match.group(1)
-        if abbr == "amt":
-            continue
         root = index_path.parent
         existing = projects.get(abbr, {})
         aliases = tuple(dict.fromkeys((
