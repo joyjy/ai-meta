@@ -1,26 +1,9 @@
 # Simple Review
 
-Run one low-cost maintainer pass over the fixed target, behavior, context, and evidence.
+对固定 target、behavior、context、evidence 做 maintainer pass。
 
-## Review
+- 优先 correctness bug、regression、缺失 acceptance/test 和高风险边界；只读足以判断 material concern 的 context。
+- Finding 锚定最窄 file/line、hunk、test 或 evidence；报告 P0/P1 和 material P2，含 impact、evidence 与 correction/decision，省略偏好、低影响整理、checklist narration 和臆造问题。
+- Next strategy 只选最可能改变 readiness 的一个：spec/scope/standards 未决用 `two-axis`；架构/安全/性能/依赖/data-contract 风险用 `quality`；可删除、native/stdlib 替代、投机抽象或显著 shrink 用 `prune`；真实 invocation/artifact/permission/deployment/lifecycle/consumer 未被证明用 `challenge`；目标与行为一致、checks 覆盖主路径且无 material uncertainty 用 `none`。不要因 size/checklist 升级。
 
-- Prioritize correctness bugs, regressions, missing acceptance behavior/tests, and high-risk boundaries.
-- Read only enough context to prove or dismiss a material concern; anchor findings to the narrowest file, line, diff hunk, test, or evidence.
-- Report P0/P1 and only material P2 findings. State impact, evidence, and required correction/decision.
-- Omit preferences, low-impact rearrangement, checklist narration, and invented findings.
-
-## Next Review
-
-Choose exactly one strategy most likely to change readiness:
-
-- `two-axis`: originating-spec fidelity, scope creep, partial requirements, or standards tension remains unresolved.
-- `quality`: material readability, architecture, security, performance, dependency, shared-module, or data-contract risk remains.
-- `prune`: correctness appears adequate but removable code/dependency, native/stdlib replacement, speculative abstraction, or material shrinkage is likely; use `quality` for broader architecture/security/performance risk.
-- `challenge`: current checks do not prove the real invocation, artifact, permissions, deployment, lifecycle, or consumer outcome.
-- `none`: goal and behavior align, relevant checks cover the changed path, and no material uncertainty remains.
-
-Do not escalate for diff size or checklist availability.
-
-## Result
-
-Return `strategy: simple`, `verdict: pass|findings`, severity-ordered findings or `no material findings`, and `next_review.strategy: none|two-axis|quality|prune|challenge` with one evidence-backed reason plus the exact unresolved question unless `none`. P0/P1 blocks readiness; the caller owns P2 disposition and fixes.
+输出 `strategy: simple`、`verdict: pass|findings`、findings 或 `no material findings`，以及 `next_review.strategy: none|two-axis|quality|prune|challenge`、reason 和非 `none` 时的 exact unresolved question。P0/P1 阻止 readiness；P2 与 fixes 归 caller。

@@ -51,7 +51,7 @@ Health findings are advisory, never authorize changes, and block recovery only w
 
 1. Resolve the route as above. If the project context is missing, say `~/.ai/contexts/<abbr>.md 不存在，请先运行 /save-context <abbr>`. If the requested workstream is absent from v3 and legacy fallback, report its exact route and ask the user to confirm its name or load mainline.
 2. Select before emitting tool output: inspect the route index and section boundaries, then extract common YAML identity/goal fields, the selected route's YAML record, and its Markdown section. Parsing may read the file; output must omit unselected recovery details. Mainline may also include workstream names, states, and one-line summaries; a workstream load omits other routes. Expand only for missing Goal/Doing/Blocked/Next Steps/Critical Context.
-3. Internalize Goal, unfinished Doing, Blocked, first Next Step, and critical anchors as background. Later mutations need current-turn exact identity evidence; ask if ambiguous. Do not execute or ask whether to continue; wait for the user's next request.
+3. Internalize Goal, unfinished Doing, Blocked, first Next Step, and critical anchors. For registered temporary outputs, check only path existence; later read the original file instead of regenerating it, and treat a missing path as a health trigger. Later mutations need current-turn exact identity evidence; ask if ambiguous. Do not execute or ask whether to continue.
 4. Run count-only `~/.ai/scripts/agent-frictions status --owner context:<abbr>:<selected-route>`. Do not load, interpret, or settle events; only surface nonzero `actionable_count`.
 5. Apply the repo-maintenance reminder rule using the selected route’s parent project abbr.
 6. Run the conditional health branch only when triggered. Do not investigate unrelated files from a health finding.
@@ -70,7 +70,7 @@ Health findings are advisory, never authorize changes, and block recovery only w
 
 阻塞问题：<仅 context 明确记录时>
 活跃分线：<仅主线且存在时>
-临时文件：<仅 context 记录 stale exact paths 时>
+临时产物：<仅选中 route 登记时；给出 exact path 和 purpose，缺失时标记 stale>
 健康提示：<仅触发 health branch 且有问题时，最多 1-3 条>
 摩擦候选：<仅 actionable_count > 0 时写 N 条待下次 save-context 结算>
 仓库维护提示：<按 Repo Maintenance Reminder；零问题省略>

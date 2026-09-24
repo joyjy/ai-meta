@@ -1,5 +1,5 @@
 ---
-description: 编译 runtime-neutral ll contract 并分发到目标执行入口
+description: 启动或恢复由单个 loop-ledger 文件支撑的 Codex goal
 disable-model-invocation: true
 ---
 

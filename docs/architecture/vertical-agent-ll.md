@@ -23,6 +23,7 @@ load-context
   -> final-form
   -> ll contract gate when controlled execution or recovery is needed
   -> 当前任务主 skill
+  -> agent-assignment 执行分流（维护版默认；发行版显式调用）
   -> 实现、诊断或评审
   -> engineering-exit
   -> save-context
@@ -30,14 +31,15 @@ load-context
 
 环节职责：
 
-- `coding-conventions` 在项目入口加载阶段注入工程执行偏好，例如代码风格、验证标准、
-  Git flow 和 `gitlab.flow`；它不写入恢复 context。
+- `coding-conventions` 在项目入口加载阶段注入代码、测试、Git 和验证等工程执行偏好；
+  `gitlab.flow` 仍由项目 `index.md`、context / exit skills 与 tool routes 持有，它不写入恢复 context。
 - `load-context` 只恢复当前项目 / 分线的最小上下文和健康信号。
 - `final-form` 把模糊需求收束成 sparse work order；默认只保留 Goal、Scope、Acceptance，其他字段按 gate 出现。
 - `loop-ledger` 从显式用户请求或已确认 final-form 编译单个 session 文件。显式 `/ll <task>`、`/loop <task>` 或携带任务的 `loop-ledger` skill invocation 本身就是 dispatch authorization；若无结构性阻塞，agent 在同一轮内部编译 sparse final-form 并直接启动，不展示第二次确认。文件前 8 行保留初始化 hot，随后嵌入 `ll.contract.v0`，尾部追加 checkpoint、evidence、feedback、focus、结构化 reply 和 exit 事件。普通 turn 通过 `ll-hot-block` 读取事件投影后的当前 8 行 Focus，并用通用 `ll-turn` 编译结构化结果和下一 Focus；`ll-workitem` 只负责把 WorkItem final-form 初始化为同一种 loop-ledger 文件。恢复、人工 gate、状态迁移和最终审计才由 agent 读取完整文件和相关尾部事件。Codex goal adapter 从 verified exact path 生成准确 objective；Symphony 复用同一 contract/ledger 语义管理 WorkItem session，不改变 `/ll` 的交互行为。
 - `loop-ledger` 普通启动和普通 turn 只加载薄主 skill 并调用确定性 helper；架构文档只在修改 `ll.contract.v0`、compiler、verifier、session format 或 adapter 时读取，`runtime-control` 只处理 fast path 被拒、恢复、人工 / 安全 gate 和非普通状态迁移，checkpoint、feedback、terminal audit 与 archive 只在收尾时加载 `closeout` reference。
 - 当前任务主 skill 负责本轮实际执行，例如 `coding-conventions`、`agent-doc-hygiene`、
   `doc-arch-review` 或项目外部 skill。
+- `agent-assignment` 在维护版的非简单任务首次实质工具调用前选择 direct、RS 或 explicit-model internal；发行版仅在用户显式调用时执行该分流。
 - `engineering-exit` 是实现后的总装线，收束源码、验证、文档生命周期、浅 gate、release
   preflight 和 MR 材料。
 - `save-context` 保存恢复索引和必要锚点，并在会话证据仍可用时结算当前 scope 的 objective
@@ -63,6 +65,7 @@ load-context
 ## Decisions / Invariants
 
 - `coding-conventions` 注入工程执行偏好，不写入恢复 context。
+- `agent-assignment` 是执行分流 source of truth，不由 `coding-conventions` 的偏好目录加载或持有。
 - context 只保存恢复索引；durable facts 必须回写到对应 source of truth。
 - `final-form` 是模糊需求与可执行任务之间的 sparse 中间层；空 optional groups 不进入默认输出。
 - `ll.contract.v0` 仍是运行控制契约；固定控制字段从 base contract 模板复用。新 run 将它嵌入一个 `ll.segmented.v1` session 文件，前块固定、后部只追加，不再为 brief、state 和 evidence 建立多份 loop-ledger 文件。
@@ -80,7 +83,7 @@ load-context
 
 改垂直 ll 时，先检查：
 
-- 新规则属于 ll 的哪个环节：加载、工程约定注入、context 恢复、`final-form` 收束、主 skill、
+- 新规则属于 ll 的哪个环节：加载、工程约定注入、context 恢复、`final-form` 收束、主 skill、执行分流、
   `engineering-exit`、`save-context`，还是 specialist gate。
 - 是否会拉长 skill 链条；如果需要第二层以上 specialist，优先改成 follow-up work order。
 - 是否把 durable facts 误写进 context，或把执行记录误写进 architecture docs。

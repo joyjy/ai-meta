@@ -1,6 +1,6 @@
 # ai-meta
 
-本仓库负责维护 `~/.ai/` 工具链配置，让 Claude Code、OpenCode、Codex 在各自能力边界内
+本仓库负责维护 `~/.ai/` 工具链配置，让 Claude Code、OpenCode、Codex、Kimi Code、Pi 在各自能力边界内
 共享长期规则和稳定工具入口。这里的一致性是能力边界对齐，不是把所有客户端强行做成同
 一种入口。
 

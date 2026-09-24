@@ -1,0 +1,4 @@
+interface:
+  display_name: "browser-buddy"
+  short_description: "Coordinate guarded browser collaboration workflows"
+  default_prompt: "Use $browser-buddy to choose and run a guarded browser collaboration mode."

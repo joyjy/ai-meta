@@ -1,0 +1,4 @@
+interface:
+  display_name: "jev-evaluation"
+  short_description: "Evaluate text or structured state with TypeSafe Jev"
+  default_prompt: "Use $jev-evaluation to evaluate this content with structured questions and preserve the raw answer distribution."

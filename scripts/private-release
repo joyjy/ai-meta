@@ -167,7 +167,37 @@ def sanitize_text(root: Path) -> None:
             path.write_text(updated, encoding="utf-8")
 
 
+def replace_required(path: Path, old: str, new: str) -> None:
+    content = path.read_text(encoding="utf-8")
+    if content.count(old) != 1:
+        raise RuntimeError(f"expected one release policy anchor: {path}")
+    path.write_text(content.replace(old, new), encoding="utf-8")
+
+
+def apply_agent_assignment_policy(root: Path) -> None:
+    skill = root / "skills/agent-assignment/SKILL.md"
+    replace_required(
+        skill,
+        "name: agent-assignment\n",
+        "name: agent-assignment\ndisable-model-invocation: true\n",
+    )
+    interface = root / "skills/agent-assignment/agents/openai.yaml"
+    content = interface.read_text(encoding="utf-8")
+    if "allow_implicit_invocation" in content:
+        raise RuntimeError(f"unexpected release policy in source: {interface}")
+    interface.write_text(
+        content.rstrip("\n") + "\npolicy:\n  allow_implicit_invocation: false\n",
+        encoding="utf-8",
+    )
+    replace_required(
+        root / "instructions.md",
+        "- 除短问答、单次确定性命令和无需广泛取证的单点小改外，在首次实质工具调用前使用 `agent-assignment` 完成 direct、RS 或 internal 准入；完整分流规则只由该 skill 持有，不由工程约定复制。",
+        "- `agent-assignment` 默认不自动调用；用户显式调用 `/aa` 或点名该 skill 时，按其规则完成 direct、RS 或 internal 准入。未调用时，由主 agent 直接判断执行方式。",
+    )
+
+
 def apply_overlay(root: Path) -> None:
+    apply_agent_assignment_policy(root)
     shutil.copy2(OVERLAY / "route-context.json", root / "route-context.json")
     shutil.copy2(
         OVERLAY / "route-context.local.example.json",
@@ -220,6 +250,15 @@ def check_release(root: Path) -> dict[str, object]:
         raise RuntimeError(f"not a distribution checkout: {root}")
 
     findings: list[str] = []
+    skill = (root / "skills/agent-assignment/SKILL.md").read_text(encoding="utf-8")
+    interface = (root / "skills/agent-assignment/agents/openai.yaml").read_text(encoding="utf-8")
+    instructions = (root / "instructions.md").read_text(encoding="utf-8")
+    if "disable-model-invocation: true" not in skill.split("---", 2)[1]:
+        findings.append("agent-assignment is not explicit-only for Claude")
+    if "allow_implicit_invocation: false" not in interface:
+        findings.append("agent-assignment is not explicit-only for Codex")
+    if "`agent-assignment` 默认不自动调用" not in instructions:
+        findings.append("agent-assignment instruction does not match distribution policy")
     files = 0
     total_bytes = 0
     for path in root.rglob("*"):

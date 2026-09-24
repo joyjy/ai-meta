@@ -10,7 +10,7 @@ tags: [frontend, form]
 
 人类开始操作 UI 后，系统应持续让他感知“操作是否被接受、正在发生什么、结果是什么、还能做什么”。后台同步可以继续获取新数据，但不能悄悄覆盖提交反馈、提前移除 Undo、重置输入、移动当前焦点，或让较旧响应回写成新的页面状态。
 
-这个 pattern 把一次人类操作视为有明确生命周期的 interaction transaction，并在后台 snapshot 与可见 UI 之间设置 render commit barrier。Debounce、throttle、single-flight、idempotency 和 polling 分别解决不同问题，不能互相替代。
+本 pattern 按实际并发风险选择机制。提交回调、状态来源与领域边界的基本约束由 frontend 模板维护；这里负责多阶段交互、重试与后台更新的协调。Debounce、throttle、single-flight、idempotency 和 polling 分别解决不同问题，不能互相替代。
 
 ## Context
 
@@ -20,7 +20,17 @@ tags: [frontend, form]
 - 后台 snapshot 可能与本地 pending state 同时修改同一实体或同一片 DOM。
 - MVP 实现倾向于在事件回调里直接 fetch，再用整页或整块 render 覆盖当前 UI。
 
-如果页面只有只读内容、没有持续后台同步，或者重新加载本身就是明确且可接受的交互结果，不必引入完整协调层。
+## 适用范围
+
+按当前用例选择所需部分，不把完整协调层当成所有控件的基线：
+
+- 简单提交：一次请求、没有相互覆盖的后台写入时，使用可等待的提交链、pending / 结果反馈与重复触发保护即可；不要求 reducer、状态机库、幂等键或渲染屏障。
+- 多阶段流程：校验、协商、二次提交等阶段存在互斥条件时，明确合法状态与转换；只保留真实业务阶段，不预设 queued、Undo 等状态。
+- 并发与后台同步：多个响应可能回写同一状态时检查请求代际；后台 snapshot 会覆盖输入或操作反馈时，再使用下文的冲突范围与提交协调。
+- 重试与不可重复副作用：依据实际服务端契约选择幂等键、条件写入或结果查询。接口不支持安全重放且结果未知时，提供核查或业务恢复路径，不由前端自行承诺副作用只执行一次。
+- Undo 与乐观更新：仅在产品需要且有明确补偿或回滚语义时采用。
+
+纯展示、普通导航或明确接受整页重新加载的用例，不需要完整协调层。
 
 ## Problem
 
@@ -43,12 +53,12 @@ tags: [frontend, form]
 先定义 interaction perception contract：
 
 - 操作被接受后立即进入可见状态，不让用户猜按钮是否生效。
-- Pending、成功、失败、可重试和 Undo 必须有稳定、连续的表现。
+- 当前用例存在的 pending、成功、失败、可重试或 Undo 状态应有稳定、连续的表现。
 - 后台更新不得无提示地清除输入、焦点、错误信息、进度或尚未到期的 Undo。
 - 操作失败时保留恢复路径；不能只恢复按钮而丢掉用户输入或上下文。
-- 同一个业务意图无论因双击、超时重试还是传输重放再次到达，都不会重复产生副作用。
+- 明确同一业务意图再次到达时的服务端行为；对不可重复的副作用，在已具备的幂等契约内重试，或在结果未知时停止重放并进入恢复路径。
 
-然后把人类操作建模为显式状态机，而不是几个互不相关的 boolean：
+多阶段流程用显式状态表达互斥关系，避免多个 boolean 产生非法组合。以下是含排队和 Undo 的示例，仅选择当前用例需要的阶段，不要求状态机库：
 
 ```text
 idle
@@ -62,7 +72,7 @@ submitting → failed → retrying | idle
 undoable   → undoing → idle
 ```
 
-后台同步使用独立生命周期：
+存在冲突的后台同步使用独立生命周期：
 
 ```text
 scheduled
@@ -73,7 +83,7 @@ scheduled
   → render
 ```
 
-两条生命周期通过 render commit barrier 协调：后台 fetch 可以继续执行，但在提交 UI 前必须检查目标 conflict scope 是否有 active interaction transaction。存在冲突时只保留最新 snapshot，等待操作 settled 后再 reconcile；不存在冲突时才提交渲染。
+后台 snapshot 会覆盖 active interaction 时，两条生命周期通过 render commit barrier 协调：后台 fetch 可以继续执行，但在提交 UI 前必须检查目标 conflict scope 是否有 active interaction transaction。存在冲突时只保留最新 snapshot，等待操作 settled 后再 reconcile；不存在冲突时才提交渲染。
 
 ```text
 Human intent ─→ Interaction transaction ─→ Local feedback overlay
@@ -90,8 +100,8 @@ Background sync ─→ Latest snapshot ─→ Commit barrier ─→ Reconcile �
 - `debounce`：把连续输入压缩为一次意图，适合搜索、校验和草稿保存；不作为提交防重放机制。
 - `throttle`：限制滚动、resize、drag 或高频 refresh 的执行频率；不保证最终业务写入只发生一次。
 - `single-flight` / pending guard：阻止当前 client 对同一意图并发执行，并提供即时 loading 反馈。
-- `idempotency key` / 条件写入：让服务端识别同一业务意图的重放；retry 必须复用原 key，不能每次生成新 key。
-- `generation`、resource version 或 `AbortController`：阻止较旧响应覆盖较新请求结果；取消请求只是优化，提交前仍要校验代际。
+- `idempotency key` / 条件写入：依赖服务端契约识别同一业务意图的重放；使用幂等键的 retry 复用原 key，不能每次生成新 key。
+- `generation`、resource version 或失效请求标记：阻止较旧响应覆盖较新请求结果；`AbortController` 可取消无用请求，但仍需保证失效结果不会提交。
 - `polling` / push：获取新事实，不自动获得覆盖本地 interaction state 的权限。
 - local feedback overlay：保存 pending、optimistic、error 和 undo deadline；snapshot reconcile 时显式合并，而不是被整块替换。
 
@@ -114,25 +124,29 @@ Polling 还应避免制造新的感知问题：内容未变化时不重渲染；
 
 ## Implementation Checklist
 
+只检查已命中的适用范围；不为勾齐清单新增机制。
+
 - 列出人类可触发的离散操作、连续输入和纯导航，分别选择 debounce、throttle、single-flight 或直接执行。
-- 为有副作用的操作定义稳定 business intent / idempotency key，并明确 retry 是否复用。
-- 用一个状态机表达 queued、submitting、success、failed、undoable 和 settled，避免多个 boolean 产生非法组合。
-- 定义 background sync 的 generation / version gate，保证旧响应不能提交为新状态。
+- 对可能重试的写操作核对服务端重放契约；明确已知失败、结果未知和恢复入口，使用幂等键时才检查 key 的复用。
+- 多阶段流程只建模实际阶段与合法转换；简单提交不引入整套状态机。
+- 并发响应会写入同一状态时设置 generation / version 或失效检查，保证旧响应不能提交为新状态。
 - 明确 conflict scope；优先按 entity key 协调，不默认锁住整页。
 - 在 render commit 前检查 active interaction；冲突时保存最新 deferred snapshot，并在 settled 后立即 reconcile。
 - 把 pending、optimistic、error、focus 和 undo deadline 作为 local overlay 保留，不让 snapshot 隐式抹除。
 - 内容未变化时不重渲染；刷新失败时保留 last known good view，并提供合适的 freshness / retry 反馈。
-- 确保 finally、timeout、abort 和组件销毁路径都会释放 pending state、timer 和 listener。
+- 在 finally、timeout、abort 和组件销毁路径处理所属 timer、listener 和请求结果；解除本地 pending 不代表服务端已取消或可安全重试。
 - 对按钮、状态消息和错误反馈保留键盘焦点与可访问名称；重要状态变化按项目门槛使用可感知但不过度打扰的 live feedback。
 
 ## Verification
+
+选择主路径及最大真实风险对应的场景；没有 debounce、后台同步、Undo 或幂等契约时跳过相应条目。
 
 - 连续双击按钮或同时按 Enter，验证只产生一个业务操作，且 pending 反馈立即出现。
 - 在 debounce 窗口内继续输入，验证只压缩连续输入，不吞掉离散提交意图。
 - 让 poll 在用户点击前发出、点击后返回，验证 active transaction 和反馈不会被旧 snapshot 覆盖。
 - 让提交请求与两个 poll 响应乱序返回，验证只有最新合法 generation 能提交。
 - 在 Undo 窗口内到达新 snapshot，验证 Undo 保持到明确过期或用户执行，不会提前消失。
-- 注入超时后使用同一 idempotency key retry，验证服务端副作用只生效一次，UI 能恢复最终结果。
+- 注入响应丢失或超时：支持幂等重试时复用原 key 并验证副作用只生效一次；不支持时验证 UI 保留结果未知与恢复入口，不误导用户立即重复提交。
 - 让后台同步失败后恢复，验证 last known good view 保留、错误可感知，并在恢复后自动清除。
 - 对两个不同 entity 并发操作，验证一个实体的 pending 不会阻塞无关实体更新。
 - 在 pending、failed 和 undoable 状态下检查键盘焦点、移动视口和组件卸载，验证没有焦点丢失、悬空 timer 或重复 listener。

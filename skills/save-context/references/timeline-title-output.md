@@ -80,33 +80,11 @@ dates, preserve each date's latest checkpoint instead of collapsing everything
 to the newest date. This is a deterministic calendar partition, not an activity
 range; do not apply the previous 09:00 cutoff or invent overnight clusters.
 
-## Codex Task Title Refresh
+## Historical Title Maintenance
 
-After `save-context.checkpoint.v1` reports a successful context stage, refresh the current task through the client's native task-title or rename capability. In Codex Desktop, call the native `set_thread_title` tool with the exact current task ID. Do not edit `~/.codex/state_5.sqlite`, `session_index.jsonl`, or other client databases/indexes directly, and do not run `codex_session_titles.py` as a write path.
+普通 current-task title refresh 与最终输出由主 skill 自包含。本节只在用户明确要求历史/批量维护时使用：
 
-Rules:
-
-- Non-blocking.
-- Refresh only the exact current task; never select it by newest timestamp.
-- Preserve the established `[abbr][MMdd] <summary>` shape. Use the explicit save-context route for `abbr` and the checkpoint's local date for `MMdd`.
-- Derive `<summary>` from the primary substantive user goal. Ignore control-only `load-context`, `engineering-exit`, and `save-context` invocations plus injected skill/environment blocks; do not reduce the title to a workflow stage.
-- A Daily Note entry may supply concise wording, but it does not override the substantive goal when it only describes a checkpoint or handoff.
-- Keep an already specific and accurate title when observable; otherwise prefer the user's language and a distinctive outcome-oriented summary.
-- Historical maintenance is explicit-only. Inventory tasks through native list/read capabilities, exclude automation from source identity and execution context, then rename exact task IDs one at a time through the native tool. Do not infer automation solely from a short title.
-- If the native tool cannot rename an archived task, temporarily unarchive that exact task, rename it, restore its archived state, and verify both fields. Never leave archival state changed as a title-maintenance side effect.
-- Capture output and include `title refresh: <old> -> <new>` or
-  `title refresh: 当前标题未变化（已符合规则）`.
-- If the native capability is missing or fails, report the exact skip/failure reason under `待确认`; do not fall back to local database writes.
-
-## Self-Check And Output
-
-Check the receipt and changed surfaces: route identity, preserved unrelated workstreams and recovery anchors, thin YAML/Markdown, correct owner for durable facts, deterministic timeline dates, Git decision when relevant, and native title outcome. Do not rescan unchanged layers or turn advisory gaps into new Next Steps.
-
-Lead with saved / partially saved / blocked and the exact output paths. Report only changed layers, unresolved blockers, and the immediate recovery entry. Omit unchanged-layer headings and empty checklists. Always report title refresh as changed, unchanged, skipped (reason), or failed (reason); report Git actions only when applicable. For friction settlement, include counts and the durable destination or missing evidence. Do not describe `continue_work` as saved.
-
-When `save-context` completes and returns the final report, the last
-user-facing sentence must be:
-
-```markdown
-保存完成了，站起来活动一下身体，上个厕所喝点水。
-```
+- 通过原生 list/read 解析 exact task IDs，并逐个用原生 rename；不要按最新时间选择，也不要直接写 Codex SQLite/index 或运行 `codex_session_titles.py`。
+- 从 source identity 与 execution context 排除 automation，不因短标题推断。
+- 原生能力无法重命名 archived task 时，可临时 unarchive exact task、rename、恢复 archived state，并回读两项；不得遗留 archive side effect。
+- 缺少能力或失败时报告 exact skip/failure，不回退到本地数据库写入。

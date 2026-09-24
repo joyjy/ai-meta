@@ -2,6 +2,8 @@
 
 Verify the rendered surface, preferably in a browser, at representative sizes supported by the target; for responsive web UI include desktop and mobile. Cover only relevant dimensions: hierarchy, density, layout, color and typography roles, component language, interaction states, responsive behavior, accessibility, and the direction's named anti-patterns.
 
+When feedback includes a screenshot or a visual defect, inventory all visible material defects before choosing the edit. Treat an explicitly reported or recurring defect as a named acceptance condition: verify it after the edit in the same relevant viewport and interaction state using the rendered result, computed style, or geometry as appropriate. A matching source declaration such as `padding`, `gap`, or `width` is not evidence that the browser applied it.
+
 Check:
 
 - The first viewport shows the actual product, tool, or experience rather than an unrelated generic landing page.

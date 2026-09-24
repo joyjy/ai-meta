@@ -14,6 +14,17 @@ symlink() {
   echo "  linked: $dst -> $src"
 }
 
+link_if_unclaimed() {
+  local src="$1" dst="$2"
+  if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
+    echo "  ok (exists): $dst"
+  elif [ -e "$dst" ] || [ -L "$dst" ]; then
+    echo "  [WARN] not replacing existing client resource: $dst"
+  else
+    symlink "$src" "$dst"
+  fi
+}
+
 cleanup_ai_only_command_skill() {
   local name="$1"
   local dst="$AI/skills/$name"
@@ -152,6 +163,10 @@ echo ""
 echo "[project skills] owner repos -> shared discovery"
 larkbot_project_root="${AI_META_LARKBOT_PROJECT_ROOT:-$HOME/Documents/me/Projects/larkbot}"
 publish_project_skill "larkbot" "$larkbot_project_root/skills/larkbot"
+snippet_lab_project_root="${AI_META_SNIPPET_LAB_PROJECT_ROOT:-$HOME/Documents/reference/snippet-lab}"
+publish_project_skill "vikunja-snippets" "$snippet_lab_project_root/skills/vikunja-snippets"
+i18n_resource_project_root="${AI_META_I18N_RESOURCE_PROJECT_ROOT:-$HOME/Documents/projects/iam-idaas-i18n-resource}"
+publish_project_skill "mms-ui-client" "$i18n_resource_project_root/skills/mms-ui-client"
 
 for name in \
   bmad-brainstorming \
@@ -192,6 +207,12 @@ for dst in "${!TOOL_DIRS[@]}"; do
     symlink "$src" "$dst"
   fi
 done
+
+echo ""
+echo "[kimi/pi] shared instructions and skills"
+link_if_unclaimed "$AI/instructions.md" "$HOME/.agents/AGENTS.md"
+link_if_unclaimed "$AI/instructions.md" "$HOME/.pi/agent/AGENTS.md"
+link_if_unclaimed "$AGENTS_SKILLS" "$HOME/.pi/agent/skills"
 
 # ── scripts ───────────────────────────────────────────────────────────────────
 echo ""

@@ -25,6 +25,8 @@
 
 | 子模块 | 职责 | 入口 |
 | --- | --- | --- |
+| `agent-assignment` | 为非简单任务选择 direct、RS 或 internal，显式路由子模型并收敛失败接续与验收 | `skills/agent-assignment/SKILL.md` |
+| `browser-buddy` | 在 Draft Fill、Live Copilot 与 Distill CLI 之间路由浏览器人机协作，并持有登录、提交、会话与证据边界 | `skills/browser-buddy/SKILL.md` |
 | `coding-conventions` | 编码规范模板、个人偏好、可复用工程 pattern、模板同步脚本和项目级 `AGENTS.md` 注入规则 | `skills/coding-conventions/SKILL.md`, `skills/coding-conventions/patterns/`, `sync-conventions.sh` |
 | `design-direction` | UI 设计方向初始化、现有视觉基线恢复和 specialist design lens 路由 | `skills/design-direction/SKILL.md` |
 | `final-form` | 把模糊需求收束为可执行 work order，明确 scope、验收、阻塞问题和分发目标 | `skills/final-form/SKILL.md` |
@@ -37,12 +39,14 @@
 | `agent-doc-hygiene` | agent-facing 文档治理、加载路径瘦身、context/memory 有效性巡检 | `skills/agent-doc-hygiene/SKILL.md` |
 | `doc-arch-review` | 架构文档、ADR、OKF、doc-root taxonomy 和 durable docs 的质量评审 | `skills/doc-arch-review/SKILL.md` |
 | `engineering-exit` | 实现完成后的源码、验证、文档生命周期、浅 gate、release preflight 和 MR 提审收束 | `skills/engineering-exit/SKILL.md` |
+| `jev-evaluation` | 通用 Jev 结构化判断 skill 与固定 TypeSafe API CLI；业务分类目录和执行策略归调用方 | `skills/jev-evaluation/SKILL.md`, `skills/jev-evaluation/scripts/jev-evaluate` |
 
 ## snippet-lab 子模块
 
 | 子模块 | 职责 | 入口 |
 | --- | --- | --- |
 | `lark-ticket-insights` | 示例用户值班周期的工单分析方法与输出契约 | `reference/snippet-lab/skills/lark-ticket-insights/SKILL.md` |
+| `vikunja-snippets` | Vikunja snippets 工作区的 agent 发现、读写边界与回读流程 | `reference/snippet-lab/skills/vikunja-snippets/SKILL.md` |
 
 ## rollerskate 子模块
 
@@ -60,6 +64,8 @@ Rollerskate 的部署和身份不变量：一个用户账号可以登录多台�
 | Claude Code | `~/.claude/CLAUDE.md`, `~/.claude/commands/`, `~/.claude/skills/` | 最后一跳适配层；长期规则和入口源文件仍在对应 owner repo，`~/.ai` 只做聚合 |
 | OpenCode | `~/.config/opencode/AGENTS.md`, `~/.config/opencode/commands/`, `~/.config/opencode/skills/` | 最后一跳适配层；通过软链共享全局指令、commands 和 skills |
 | Codex | `~/.codex/AGENTS.md`, 可发现 skills / MCP tools | 没有本地 slash command / subagent 目录概念；需要用户可见入口时必须提供 `skills/<name>/SKILL.md` 或 MCP / 脚本桥接，不能只发布 `~/.ai/commands/<name>.md` |
+| Kimi Code | `~/.agents/AGENTS.md`, `~/.agents/skills/` | 原生读取共享全局规则与技能发现目录，RS ACP adapter 保留独立权限控制 |
+| Pi | `~/.pi/agent/AGENTS.md`, `~/.pi/agent/skills/` | 原生读取共享全局规则与技能发现目录，RS RPC adapter 负责工具白名单与扩展装配 |
 | `~/.ai` 聚合层 | `~/.ai/instructions.md`, `~/.ai/tool-routes.md`, `~/.ai/commands/`, `~/.ai/scripts/` | 本机运行态聚合点，不是长期事实源；能进 git 的内容回到对应 owner repo |
 | repo 源文件层 | `<maintenance-checkout>` 与能力 owner repos | 版本管理的 source of truth；ai-meta 维护全局底座、自有 skills 和发布注册，项目能力 skill 留在 owner repo |
 
