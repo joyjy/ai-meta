@@ -5,6 +5,8 @@ repo="$(cd "$(dirname "$0")/.." && pwd)"
 
 codex_skill_for_command() {
   case "$1" in
+    aa) printf '%s\n' "agent-assignment" ;;
+    bb) printf '%s\n' "browser-buddy" ;;
     cc) printf '%s\n' "coding-conventions" ;;
     ee) printf '%s\n' "engineering-exit" ;;
     ff) printf '%s\n' "final-form" ;;

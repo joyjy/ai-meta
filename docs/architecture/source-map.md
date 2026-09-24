@@ -32,7 +32,7 @@ ai-meta/
 - `commands/` 不复制 skill 工作流；ai-meta 自有 workflow 留在 `skills/`，项目能力的 canonical skill 留在 owner repo。Codex 可发现性由 skill、MCP tool 或脚本桥接承担。
 - `plugins/` 拥有 bundle 源码，`.agents/plugins/marketplace.json` 拥有 marketplace 注册；`~/.codex` 的缓存、启用状态和 trust 是本机运行态。
 - `mcp/` 和 `runtime/` 只保存可版本管理的结构；真实 endpoint、token、状态和运行结果位于本机运行态。
-- `scripts/private-release` 只允许从 `maintenance` checkout 生成脱敏 `distribution` checkout；发行副本不是第二个维护事实源，也不得反向覆盖工作源。
+- `scripts/private-release` 只允许从 `maintenance` checkout 生成脱敏 `distribution` checkout，并将 `agent-assignment` 调整为仅显式调用；发行副本不是第二个维护事实源，也不得反向覆盖工作源。
 
 ## Shared Contracts
 
@@ -53,7 +53,8 @@ ai-meta/
 ## Generated And Runtime Mapping
 
 - `~/.ai/` ← ai-meta instructions、commands、skills、scripts、config adapter，以及已登记 owner-repo skill 的发现软链；它是本机 aggregation/runtime 层，不是长期事实源。
-- `~/.agents/skills/` ← ai-meta `skills/` 与已登记 owner-repo skill 的 Codex 发现软链。
+- `~/.agents/skills/` ← ai-meta `skills/` 与已登记 owner-repo skill 的共享发现软链，供 Codex、Kimi Code 及 Pi 的薄适配入口使用。
+- `~/.agents/AGENTS.md`、`~/.pi/agent/AGENTS.md` ← `~/.ai/instructions.md`；`~/.pi/agent/skills/` ← `~/.agents/skills/`。
 - 客户端配置目录 ← `install.sh` 发布的最后一跳适配；手工运行态和缓存不得反向成为 repo 事实源。
 - `~/.ai/agent-frictions.md`、`~/.ai/frictions/`、`~/.ai/audits/`、`~/.ai/contexts/`、`~/.ai/work-items/`、`~/.ai/loop/`、`~/.ai/skill-verification/` 和含 token 的 MCP 配置是本机私有状态，不进 git。
 

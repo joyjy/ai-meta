@@ -1,98 +1,86 @@
 ---
 type: Pattern
 title: Consumer 自有的可重试执行单元
-description: 在公共消息基础设施无法按 consumer 独立补发时，通过私有持久化边界和独立执行单元实现受控 retry 与 replay。
+description: 将 consumer 的业务动作暴露为可按关键业务标识独立调用的执行单元，让消息消费与人工重试复用同一业务入口。
 resource:
 tags: [mq, recovery]
 ---
 
 # Consumer 自有的可重试执行单元
 
-当公共消息基础设施不能按 consumer 独立补发，而某个 consumer 又需要独立失败恢复、人工重放或批量 backfill 时，由 consumer 建立自己的持久化交接边界，并让 retry / replay 作用于可独立记录执行结果的 execution unit，而不是重新投递公共 topic。
+Consumer 将业务动作暴露为独立执行单元，消息消费与人工重试调用同一入口。调用者只需提供动作必需的业务标识，例如 Partner `user_id`；不需要寻找原 Kafka 消息、offset 或事件账本记录。
 
 ## Context
 
-- 服务消费公共或共享 topic，同一消息还会分发给其他 consumer。
-- Broker 不开放补发权限，或补发只能作用于整个 topic，无法只影响当前 consumer。
-- 当前 consumer 需要独立恢复失败任务、人工重放或受控 backfill。
-- Handler 会产生数据库、缓存、外部 API 或其他需要幂等保护的副作用。
-
-如果 broker 已提供隔离 subscription，且其 replay、retention、权限和可观测性足以满足当前 consumer，应优先使用现有基础设施，不额外建设本模式。
+- Consumer 执行账号开通、资料同步、状态同步或权限清理等业务动作，需要按业务对象独立补做。
+- 排障时已知用户 ID 等业务标识，但原始消息难以取得，或重新发布公共 topic 会影响其他 consumer。
+- 一个 consumer 可包含多个独立业务动作，各动作应能单独调用和判断结果。
+- 当前状态足以重建动作输入；确实依赖历史事实的动作需要额外明确其最小必要参数。
 
 ## Problem
 
-Broker 的 delivery / replay 粒度与业务执行恢复粒度不一致。直接补发公共 topic 会重复触发其他 consumer；只把 consumer 注册成 handler 并重复调用，又缺少可确认的持久化边界、执行状态和副作用保护，无法可靠 ACK，也无法解释某次执行为什么再次发生。
+业务动作与消息 envelope、事件分发或监听器生命周期耦合后，恢复操作被迫先找原消息或补发 topic。仅暴露通用事件 handler 又会让操作者了解消息类型和内部路由，无法直接补做目标业务动作。
 
 ## Forces
 
-- 公共 topic 只适合承担共享事件的首次交付，不能成为单 consumer 的私有重试控制面。
-- ACK 必须对应一个明确的 durability boundary：业务已经完成，或消息已经可靠移交给当前 consumer 自己控制的持久化队列。
-- Broker 常见的 at-least-once delivery 会让同一原始消息重复到达。
-- Retry 需要独立控制 attempt、退避、终止、并发和人工重放。
-- 业务副作用是否安全，不能只依赖消息接收层去重。
+- 重试入口应使用操作者掌握的业务标识，尽量少传参数。
+- 执行哪个动作必须明确；动作由专用 API / CLI / 方法入口选择，不能仅凭用户 ID 猜测。
+- 消息消费和人工调用应复用同一业务实现，避免形成两套行为。
+- 重试通常读取当前状态并重新执行动作，不承诺还原事件发生时的历史快照。
+- 重复执行和部分成功必须可处理，不能因参数简单而忽略真实副作用。
 
 ## Pattern
 
 ```text
-公共 Topic
-  → Ingress Consumer
-  → 私有 Inbox / Work Queue
-  → Handler Runner
-  → Retryable Execution Unit
-  → Result / Attempt Ledger
+Kafka Consumer → 事件分发 ─┐
+                          ├→ 业务执行单元(user_id, 必要参数) → 明确结果
+人工 API / CLI → 指定动作 ─┘
 ```
 
 职责边界：
 
-- `Ingress Consumer` 校验消息、生成或读取稳定的原始消息标识、完成接收去重，并把消息可靠写入私有 Inbox / Work Queue。
-- 私有 Inbox / Work Queue 保存原始 envelope 和来源位置，是当前 consumer 独立 retry / replay 的控制面。
-- `Handler Runner` 负责领取任务、控制并发、执行、退避、终止与人工重放。
-- `Retryable Execution Unit` 是最小可重复业务动作，必须能独立记录成功或失败，并对重复调用提供业务幂等或等价的副作用保护。
-- Result / Attempt Ledger 记录每次执行为何发生、使用哪个 handler 版本、结果是什么以及是否仍可重试。
+- Consumer 负责消息解析、校验、事件到业务动作的映射，以及消息确认和消费异常处理。
+- 执行单元负责一个内聚业务动作，接受业务参数，内部读取必要资料并完成业务处理；不依赖 Kafka record、HTTP request 或监听器实例。
+- 人工 API / CLI 负责选择动作、鉴权与参数校验，直接调用同一执行单元，不重新发布公共 topic。
+- 结果至少能区分成功、无需处理和失败，并关联动作及业务标识。可以用返回值、错误传播和结构化日志表达，不强制持久化执行账本。
 
-本模式默认在消息可靠写入私有 Inbox / Work Queue 后 ACK 公共消息；后续业务失败由当前 consumer 自己重试。如果业务要求只有最终副作用成功才能 ACK，可以延后 ACK，但仍需 Inbox 去重和幂等处理，避免 broker 重投与本地 retry 形成两套不一致的执行链。
+例如一个 Partner consumer 有五个执行单元，每个动作都只需要 `user_id`，可以分别暴露 `openAccount(user_id)`、`bindActivatedIdentity(user_id)`、`syncProfile(user_id)`、`syncStatus(user_id)`、`unregisterAccount(user_id)`。对应重试入口由路径或子命令选择动作，操作者只传 `user_id`；无需再传原事件、execution ID 或 offset。这些名称仅说明入口形态，不规定业务必须拆成五份，也不要求增加一个依次执行所有动作的聚合入口。
 
-至少区分这些身份和状态：
+动作参数按业务契约确定：状态同步若以当前源状态为准，只需用户 ID；若要重试某个指定目标状态，则还需要该状态或由入口明确它。注销可能发生在源对象已删除后，执行单元应使用仍可查询的绑定关系等证据；确实无法恢复的必要事实才作为额外参数，不能静默猜测。重试入口不能绕过原动作的业务前置条件。
 
-- `source_message_id`，或稳定的 topic / partition / offset 组合：识别原始交付并建立接收唯一约束。
-- `execution_id`：识别一次独立执行，不把人工重放伪装成新消息。
-- `trigger`：区分 initial delivery、automatic retry、manual replay 和 backfill。
-- `attempt`、`max_attempts`、`not_before`、`status`：表达重试控制和终止状态。
-- `handler_version`：解释旧消息使用新代码重放时可能产生的语义变化。
+### 按需增强
+
+Inbox、任务队列、自动退避、attempt ledger、handler version 和历史 payload 仅在需要崩溃后自动恢复、异步调度、审计追踪或精确历史重放时引入，不是本模式的准入条件。已有隔离的 broker 恢复能力足够时直接复用。
+
+ACK 的可靠性单独评估：若要求消息不能丢失，应在业务完成或可靠持久化交接后确认。提前 ACK 是交付可靠性风险，但不以是否建设 Inbox 或账本判断业务执行单元是否符合本模式。人工可重试也不能替代自动交付保证。
 
 ## Failure Modes
 
-- 为了恢复一个 consumer 而补发公共 topic，导致其他 consumer 被迫重复处理。
-- Consumer 失败后重新向同一公共 topic 发布自己，形成不可见的自循环和放大的消息风暴。
-- 把所有 consumer 注册成 handler，却没有 Inbox、execution identity、attempt ledger 或终止状态；框架虽然能再次调用，但系统无法证明是否安全。
-- 在消息尚未可靠落入本地控制面前 ACK，进程退出时造成不可恢复丢失。
-- 只做接收去重，不保护数据库写入、外部调用等业务副作用，重试时仍产生重复结果。
-- 同时依赖 broker retry 和本地 runner retry，却没有统一 ownership，造成并发执行、重试次数失真或提前进入终止态。
+- 重试必须提交完整原事件或先找到事件账本记录，虽然业务本身只需要用户 ID。
+- 只暴露通用 `handle(event)`，业务动作仍嵌在 consumer 中，没有可直接调用的动作边界。
+- 为人工重试复制一套业务流程，或向公共 topic 补发导致其他 consumer 重复处理。
+- 只给用户 ID 却没有明确动作，默认重跑全部动作，造成额外副作用。
+- 把当前状态补做称为历史事件精确重放，或重试时跳过业务前置条件。
+- 吞掉业务异常后报告成功，或部分步骤成功后无法安全再次执行。
+- 为简单同步动作默认引入 Inbox、执行账本和通用 runner，增加与实际恢复需求无关的状态与维护成本。
 
 ## Implementation Checklist
 
-- 明确 ACK 对应“业务完成”还是“可靠移交”，并对崩溃窗口做出书面说明。
-- 为原始消息建立稳定唯一键；重复 delivery 不应创建多份首次执行任务。
-- 明确 execution unit 的输入、成功、可重试失败、不可重试失败和终止状态。
-- 为副作用设计业务幂等键、条件更新、唯一约束或可验证的补偿策略。
-- 明确最大 attempt、退避策略、下一次执行时间、并发限制和人工重放权限。
-- 保留原始 payload 时，定义 retention、脱敏、schema 兼容和 handler version 策略。
-- 日志与指标能关联 `source_message_id`、`execution_id`、trigger 和 attempt。
+- 列出 consumer 对应的业务动作，为每个动作确定最小输入及成功、跳过、失败语义。
+- 消息分发和人工入口复用同一个执行单元；调用者能通过入口明确选择动作。
+- 确认仅用业务标识能否读取所需数据，说明使用当前状态还是明确的历史输入。
+- 为重复及部分成功设计必要的幂等、条件更新或补偿，尤其检查外部账号创建、迁移和删除。
+- 暴露人工入口时沿用权限边界；日志包含动作、业务标识和结果，失败可观察。
+- 分别判断消息确认可靠性、自动恢复和审计需求，仅按实际需求引入持久化与调度能力。
 
 ## Verification
 
-- 在 Inbox 持久化成功、ACK 之前终止进程；broker 重投后只能得到一份逻辑任务。
-- 在 ACK 之后、首次 handler 执行之前终止进程；任务仍能由 Runner 恢复。
-- 让 handler 连续失败，验证 attempt、退避、终止和告警符合配置。
-- 对同一原始消息并发 delivery 或人工重放，验证业务副作用不会重复生效。
-- 在 handler 升级后重放旧消息，验证版本差异可见，schema 不兼容时能安全停止。
-- 验证单个 consumer 的 replay 不会触发公共 topic 上的其他 consumer。
-
-## Related Patterns
-
-- Idempotent Handler：待提取。
-- Transactional Outbox：待提取。
-- Non-overlapping Scheduled Execution：待提取，重点是定时任务自碰撞、owner lease、续期和仅 owner 可释放。
+- 不提供 Kafka envelope、offset 或账本 ID，仅用动作入口及业务关键参数即可执行。
+- 消息消费与人工入口调用同一业务实现，返回结果与真实业务状态一致。
+- 多个执行单元可分别调用，不会隐式执行其他动作或重新发布公共 topic。
+- 对同一对象重复执行、在中间步骤失败后再执行，验证最大真实副作用风险。
+- 源状态变化或源对象删除后，验证重试按声明的当前状态语义处理或明确失败。
+- 若启用了持久化交接或自动重试，再验证其 ACK 崩溃窗口、去重、退避与终止状态。
 
 ## Relationships
 

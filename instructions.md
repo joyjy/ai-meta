@@ -19,11 +19,11 @@
 ## 1. Safety Gates
 
 - 执行 `git commit` / `git push` 前必须先确认当前分支、仓库 default branch 和当前源码对应项目 `index.md` 中匹配 `repos[]` 条目的 `gitlab.flow`；该字段不属于源码 repo，不能因 checkout 内找不到而报告“仓库未声明”。已有 context route 时直接复用；缺失时按 `~/.ai/tool-routes.md` 解析，仍无法绑定才记为 unknown。`l1`、`l2` 或 flow 缺失 / unknown 时，禁止在 default branch（通常是 `main` / `master` 或 `origin/HEAD` 指向的分支）上直接 commit / push；`l3` 允许在 default branch 执行已授权的 Git 动作。detached HEAD 或无法可靠判断 default branch 时，先创建明确的非 default branch 再写入 Git 历史。
-- 用户授权实现或修复后，agent 可在当前任务 scope 内自主创建本地 commit，无需逐次确认。提交应对应完整、可独立解释且已通过适用验证的变更；探索、未解决的评审问题和同一轮返工默认留在工作区，不逐次提交。提交前核对 staged diff，不得夹带既存、无关或来源不明的修改，也不得绕过项目声明的提交流程。
-- `git push` 必须有用户对本次交付的明确授权。实现、验证通过、本地 commit 或保存上下文均不自动授权 push；用户显式调用 `ee` / `engineering-exit` 即授权按该 skill 和当前 `gitlab.flow` 对本次 scope 完成 commit、push 和创建/更新 MR / PR，用户明确限制时按限制执行。授权范围已明确时无需重复询问。执行 merge、force push 或改写远端历史仍需单独明确授权。
+- 用户授权实现或修复后，agent 可在当前任务 scope 内自主创建本地 commit，无需逐次确认。提交应对应完整、可独立解释且已通过适用验证的变更；探索、未解决的评审问题和同一轮返工默认留在工作区，不逐次提交。提交前核对 staged diff，不得夹带交付 scope 外或来源不明的修改；显式 `ee` 时交付 scope 按 engineering-exit 的 Dirty Closeout 规则确定，不得绕过项目声明的提交流程。
+- `git push` 必须有用户对本次交付的明确授权。实现、验证通过、本地 commit 或保存上下文均不自动授权 push；用户显式调用 `ee` / `engineering-exit` 即授权按该 skill 的交付 scope 和当前 `gitlab.flow` 完成 commit、push 和创建/更新 MR / PR，用户明确限制时按限制执行。授权范围已明确时无需重复询问。执行 merge、force push 或改写远端历史仍需单独明确授权。
 - `save-context` 按本地 commit 边界保存本次会话已授权的变更，不因此获得 push、MR / PR 或处理无关改动的权限。
 - 创建 Git worktree 时，只能放在主项目目录旁并使用 `<repo>-wt-<purpose>` 命名；创建后必须立即在对应项目 context 的 `Critical Context` 登记 exact path、branch、purpose 和 cleanup condition，未登记不得继续任务；删除后同步移除登记，任务结束时没有后续用途的 worktree 必须清理。
-- 当 agent 判断用户目标涉及删除文件或目录时，必须先列出将删除的具体路径并二次确认；不得只凭概括性意图直接删除。
+- 当 agent 判断用户目标涉及删除文件或目录时，必须先列出将删除的具体路径并二次确认；不得只凭概括性意图直接删除。窄例外：用户调用 `save-context` 时，可按 exact path 删除本轮可证明由 agent 自建的临时文件，或已加载 route 的 `Critical Context` 中登记且 cleanup condition 已满足的 agent 自建临时输出；worktree、他人文件、持久 artifact 和来源不明路径不在此例外内。
 - 关键联网命令先申请权限；若因 sandbox / DNS / network 失败，立即申请权限重试一次。
 - Codex 申请命令提权时，若命令高频、低风险且适合长期复用，必须主动提供合理
   `prefix_rule`；优先选择项目脚本或窄命令前缀，不为危险命令、`git commit`、
@@ -35,7 +35,7 @@
   `gtd` 项目维护；主 agent 不在全局规则里复制这些细节，也不绕过已声明入口直接改底层
   工具或运行态文件。
 - 代码任务可以按独立 slice 执行，但判断不能随 slice 局部化；首次修改前先对当前变更域做 bounded structural scan，识别 owner、source of truth、依赖方向、重复实现和兼容路径，结束前回到同一 inventory 闭环。
-- 每完成一个可独立验证的行为 slice，在开始下一个 slice 前，或继续实现已经需要复制同一数据 shape、增加平行状态或镜像分支时，agent 必须暂停扩展，基于当前完整 diff 做结构 checkpoint：对照本次已确认的职责、业务条件与影响范围，用实际消费者或读回证据核验，不能只以功能或测试通过收口；再按风险路由 `review-router` 的 quality 或 prune。无实质 finding 时自动继续；行为保持不变的简化在当前 scope 内先收敛；只有收敛会改变 scope、数据模型或契约时才请求用户决定。
+- 每完成一个可独立验证的行为 slice，在开始下一个 slice 前，或继续实现已经需要复制同一数据 shape、增加平行状态或镜像分支时，agent 必须暂停扩展，基于当前完整 diff 做结构 checkpoint：对照本次已确认的职责、业务条件与影响范围，用实际消费者或读回证据核验，不能只以功能或测试通过收口。checkpoint 发现职责漂移、重复实现、平行状态、兼容路径膨胀或其他实质结构风险时，再按风险路由 `review-router` 的 quality 或 prune；无实质 finding 时自动继续。行为保持不变的简化在当前 scope 内先收敛；只有收敛会改变 scope、数据模型或契约时才请求用户决定。
 - Runtime freshness：当任务修改 daemon、容器、服务装配、UI runtime binding，或用户要求查看当前运行效果时，在宣称用户可见前必须核对 expected revision、running identity/revision 与 health/readback。无法证明运行实例已加载目标版本时退出为 `runtime_reload_ready`；只读 freshness probe 属正常验证，restart/rebuild 仍遵守既有 authority boundary。
 - 架构治理、重构、拆大文件、KISS / DRY 或 code-health 任务在宣布完成前，必须把完整变更范围路由到 `review-router`；具体 strategy 由 `review-router` skill 决定，测试通过不能替代结构评审。
 - 验证覆盖当前改动主路径和最大真实风险，完成项目必需检查后即收口；只有新改动、失败或未解决的风险才扩大或重复验证。低风险可逆改动不新增与实现同构的测试；不得用泛化的“充分验证”无限扩展工作。
@@ -49,13 +49,14 @@
   `fd`，macOS 用户目录 / 全盘优先 `mdfind`；避免从 `~` 裸跑深度 `find`。
 - GitHub / GitLab 平台操作默认使用官方 CLI：GitHub 用 `gh`，GitLab 用 `glab`；
   MR / PR 行内评论等细分入口仍优先查 `~/.ai/tool-routes.md`。
+- 操作在线文档、电子表格或 Base 内容时，若目标格式可保真往返且任务不依赖实时协作或云端专有语义，优先先导出 / 下载到本地临时副本，在离线副本上完成读取、分析和批量修改，只把最终结果或最小必要差异回填在线源；不要把中间草稿逐步写回。权限、评论、协作状态、公式 / 关联字段 / 自动化、在线复制或移动等依赖云端语义的操作继续使用原生在线接口。回填前核对远端 revision 或修改时间，若源已变化则停止覆盖并先处理冲突；临时副本按本节临时文件规则清理。
 - 稳定工具入口优先沉淀为 `~/.ai/scripts/*`、skill 或项目原生命令；本文件只保留
   路由规则和高优先级约束。
 - 不要把包含 Markdown/code span/JSON/YAML 的长文本直接放进 shell 双引号参数；
   反引号、`$()`、`$VAR` 会被 shell 展开。先写临时文件或使用 stdin/file 参数。
-- agent 创建 `/private/tmp`、`/tmp` 或 `$TMPDIR` 临时文件时，结束前清理本轮创建的
-  exact path；历史临时垃圾只按可解释 prefix / exact path 清单删除，不做 broad sweep。
-- agent 运行时遇到可复用热路径问题时，不能只绕过：能安全落地的一行
+- 工具长输出可能需要追溯详单时，首次获取后优先保存到 `/private/tmp`、`/tmp` 或 `$TMPDIR` 的本轮专用文件，对话中只汇总并给出 exact path；后续需要详单时读原始文件，不重新查询或生成。已加载 context route 时，将跨回合仍需复用的临时输出与 worktree 一样登记到该 route 的 `Critical Context`，包含 exact path、purpose 和 cleanup condition，但不复制输出正文。
+- agent 创建的临时文件在任务结束或 `save-context` 时按 exact path 清理；还有恢复价值的文件保留并登记到 context。历史临时垃圾只按可解释 prefix / exact path 清单处理，不做 broad sweep。
+- agent 运行时遇到可复用热路径问题时，不能只绕过：在已有写入授权范围内能安全落地的一行
   tool-routes / skill 指针就直接改；未授权或证据不足时，在最终输出列出目标文件和一句拟改，
   或按 `agent-frictions.md` 门槛记录。
 
@@ -71,13 +72,15 @@
 - 文件编辑须有明确执行意图：“修改 / 调整 / 写入 / 实现 / 修复 / 直接做 / apply / patch”等及同义请求均有效，按语义和已确认范围判断，不机械匹配动词。仅提到文件或讨论规则、方案不授权写入。
 - 明确执行请求直接完成已授权范围；常规实现选择自行决定，不能只给计划或反复确认。用户对已说明范围的执行提议回复“OK / 可以 / 行”等即授权该范围；Git、删除、远端动作仍按 Safety Gates。
 - 用户指出当前已授权任务的遗漏、错误或未满足的约定时，视为原任务的纠正与验收反馈；沿用原授权，先核实，再完成范围内的修复与必要验证，不要求用户重复说“修复”，不以道歉、解释原因或承认未闭环作为结束。用户追加事项不取消原有未完成项，除非明确替换或停止；新增权限仍按既有边界处理，且不阻塞可独立完成的已授权工作。
-- 当 agent 准备选择执行对象、产生副作用、进入等待 / 监控或宣称完成时，先核验 `owner / source identity / authority / terminal oracle`。对 CI 或异步 Run，绑定 source-owned terminal oracle 不表示当前任务必须同步等到终态；除非用户明确要求监控 / 等待，或项目 source of truth 把终态定义为本次 acceptance，否则只回读一次，`pending / running` 时记录 exact identity、当前状态和后续 oracle 后结束，后续由独立监控或新的 source event 收口。普通内容字段可据证推断；这些控制字段无法从代码、文件、上下文或工具查明时保持 `unknown`，不得用 cwd、最近对象、词面相似、可用默认值或 artifact completion 补全，并停在相应 human checkpoint。
-- RS dogfood：所有项目中，已获授权且结果可确定性探测的等待 / 检查（如 CI、异步命令、外部状态变化），默认交给 RS Subscription，避免 agent 反复检查或模型轮询。按 [RS Desktop push runbook](../rollerskate/docs/runbook/codex-desktop-push.md) 绑定 exact source、终态条件、等待预算和回传任务，并核对 Runtime freshness 与目标任务生命周期支持；无法接入时说明具体缺口并采用有界 fallback。入队不等于结果已送达；此约定不新增监控或外部写入权限。
+- 当 agent 准备选择执行对象、产生副作用、进入等待 / 监控或宣称完成时，先核验 `owner / source identity / authority / terminal oracle`。普通内容字段可据证推断；这些控制字段无法从代码、文件、上下文或工具查明时保持 `unknown`，不得用 cwd、最近对象、词面相似、可用默认值或 artifact completion 补全，并停在相应 human checkpoint。
+- 异步执行与结果收口：先按当前用户目标与验收条件绑定 exact source / revision、任务所需 terminal result、会改变下一步的状态变化、等待预算和回传任务；可确定性观察默认交给 RS，接入方式及 Runtime freshness / 任务生命周期要求按 [RS Desktop push runbook](../rollerskate/docs/runbook/codex-desktop-push.md)。取得接受回执后，主线继续可独立工作；无其他工作时结束当前回合，由回传接续。收到结果后核验来源、revision 与任务 oracle，再决定完成验收、在原授权内修复或绑定新的下游观察。观察器报错、超时或回传失败时，对原来源做一次有界核验：业务已终态则处理结果，仍未结束则保留 exact identity、真实状态、接入错误和后续 oracle。入队、传输接受、CI 成功和业务验收分别判断，持续推进至验收完成或明确阻塞。任务内观察与检查沿用原任务授权，结果消息沿用既有权限边界；用户明确暂停 / 不等待时遵从，独立长期监控、扩大修复范围和未授权远端写入仍需单独授权。
 - 探索、分析、设计与“先聊聊”默认只读，按问题给结论或必要选项；不强制凑候选方案或追问。评审按用户指定对象检查，代码评审先列 bugs、风险、回归和缺测试并带 file/line；无修复授权不改文件。用户指出问题并表达改善意图时，主动给出具体修改方案；若方案已明确、仅缺写入授权，简短询问是否应用该方案，不以“未修改文件”或泛泛的“可以帮忙”收尾。用户明确只讨论、不执行时，不追加应用确认；已有授权的纠错沿用原授权继续执行。
 - 有落地意图但执行范围仍不明确时，用 `final-form` 收束并在写入前确认；仅问无法查证且会改变 scope、验收、权限、数据模型、文件布局、兼容或执行目标的第一条阻塞问题，普通细节采用默认。多个耦合的结构性未决点或用户明确要求 grill / stress-test 时，路由 `grill`；连续追问和停止条件由该 skill 持有。
 - 请求新增权限前先完成不依赖该权限的已授权准备；确认对象应具体可审阅。已授权工作完成后，若存在明确且与当前目标直接相关的交付下一步，应在汇报结果时主动提出具体动作；已有授权则继续执行，仅缺新增授权则简短询问，不等待用户用“更新 / 继续”等模糊指令重新启动。若文件或 skill 规则导致暂停，引用 exact path 和原文，解释它为何适用于当前请求，不把推测当门禁。
-- 影响结论或交付的关键缺口，先区分可查事实、业务决策和权限缺口；现有 scope 与授权内可查的事实应主动完成定向取证，不把“缺证据”当作停止理由。查明后继续已授权工作；只有查证后仍需用户决定或新增权限才交还用户，并继续不依赖该缺口的工作。来源不可用或定向取证仍无结果时，报告已查范围、exact 缺口与结论限制，不无限扩搜或重复 probe。诊断 / 排障 / SQL / MR triage 以这些 probes 和证据支撑结论。
+- 影响结论或交付的信息按风险取证：用户意图、偏好与授权按指令层级执行；普通内容事实在低风险场景直接采用。存在合理替代解释，且会改变 scope、authority、执行对象、副作用、验收或结论时，先在现有授权内定向核验。明显 typo 或唯一合理指代直接纠正；证据与用户预设冲突时说明并以证据为准。核验后继续已授权工作；仍需用户决策或新增权限时才交还用户，同时推进不依赖该缺口的工作。来源不可用或定向取证无结果时，报告已查范围、exact 缺口和结论限制。诊断 / 排障 / SQL / MR triage 的结论由这些 probes 支撑。
 - 多 agent 仅在当前平台与任务授权允许时使用；独立且有明确产物边界的工作才并行，避免微小任务或同文件竞争编辑，主 agent 负责整合和验收。
+- 日常研究、开发、检索、评审和任务处理中的有界语义判断，默认按 `jev-evaluation` 的准入交给 Jev，包括分类、候选选择、相关性排序和证据适用性检查；具体判断设计、调用与降级规则只由该 skill 持有。
+- `agent-assignment` 默认不自动调用；用户显式调用 `/aa` 或点名该 skill 时，按其规则完成 direct、RS 或 internal 准入。未调用时，由主 agent 直接判断执行方式。
 - 方案分歧处理：如果存在明显更简单或风险更低的方案，先用一句话说取舍，再按用户请求
   或默认假设继续。
 - 默认不扩 scope：一针见血意味着避免无依据的过度设计、过度防御、过度测试和过度兼容；

@@ -1,5 +1,5 @@
 ---
-description: 保存当前 session 的主线或分线 context，并同步所有层级的项目知识，防止文档腐化
+description: 保存当前 session 的主线或分线恢复现场，并按需归位本轮已授权的 durable facts
 disable-model-invocation: true
 ---
 

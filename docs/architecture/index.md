@@ -12,7 +12,7 @@ tags: [ai-meta, architecture, index]
 
 `ai-meta` 是个人 AI 工具链底座，维护两条正交架构维度：
 
-- 水平维度：让 Claude Code、OpenCode、Codex 在各自能力边界内共享长期规则、稳定工具入口和本机运行态桥接。
+- 水平维度：让 Claude Code、OpenCode、Codex、Kimi Code、Pi 在各自能力边界内共享长期规则、稳定工具入口和本机运行态桥接。
 - 垂直维度：让 agent 从启动加载、上下文恢复、任务收束、工程收尾到上下文保存形成可自动化的工作流闭环，并明确 turn-based、goal、time 与 proactive loop 的组合边界。
 
 本目录只记录当前有效架构事实、边界、不变量和变更指导。具体项目 / 工作域归属见
@@ -23,7 +23,7 @@ tags: [ai-meta, architecture, index]
 
 ai-meta architecture 分为这些稳定 scope：
 
-- [Horizontal Client Consistency](./horizontal-client-consistency.md)：三端一致性、源文件层、`~/.ai` 聚合层和客户端最后一跳适配。
+- [Horizontal Client Consistency](./horizontal-client-consistency.md)：多客户端一致性、源文件层、`~/.ai` 聚合层和客户端最后一跳适配。
 - [vertical-agent-ll](./vertical-agent-ll.md)：启动加载、工程约定注入、context 恢复、`final-form`、主 skill、`engineering-exit`、`save-context` 的闭环。
 - [Agent Loop Topology](./agent-loop-topology.md)：turn-based、goal、time 与 proactive loop 的分层、组合、ownership 和成熟度边界。
 - [Agent Friction Observability](./agent-friction-observability.md)：Codex 客观事件采集、context / LL ownership、`save-context` 结算和 retention 边界。

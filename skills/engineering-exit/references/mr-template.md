@@ -88,12 +88,6 @@ result.
 
 MR/PR 创建或更新后，回读刚写入的 exact 对象一次，确认实际 source branch、target branch、HEAD SHA 和 description 保护段。不要因附近存在旧 MR/PR 而重新分析或修改它；写后结果 ambiguous 时也不要盲目重试写操作。
 
-随后，若项目存在适用 CI，查询一次绑定当前 HEAD 的 run/pipeline；无 CI 则记录 not applicable。若 run/pipeline 尚未物化，只允许一次短时 bounded retry 来确认 attachment，不得把该重试扩展成等待 terminal status。若仍不可见，报告 exact MR/PR、HEAD 和待确认事项后结束；若为 pending/running，记录 CI run/pipeline ID、URL 和状态后结束；若已是 terminal，直接报告观察到的 success、failed 或 canceled。
+随后，若项目存在适用 CI，查询一次绑定当前 HEAD 的 run/pipeline；无 CI 则记录 not applicable。若 run/pipeline 尚未物化，只允许一次短时 bounded retry 来确认 attachment。仍不可见时保留 exact MR/PR、HEAD、attachment 缺口和后续 oracle，不将其记为交付验收通过。
 
-获授权执行 MR/PR 交付时，到“MR/PR identity 正确且适用 CI 已绑定当前 HEAD”即完成，不等待 CI success 或重新检查 mergeable。首次 terminal-status poll / wait 前，从本次任务仍有效的用户请求与项目事实源确定 `wait_authority`：
-
-- `explicit_user_request`：用户明确要求本次任务“等 CI”“确认可合并”或 merge-ready。
-- `source_owned_acceptance`：项目 source of truth 明确把 CI success 定义为本次 exit oracle。
-- `none`：其他情况；禁止继续等待，只报告 exact MR/PR、HEAD、run/pipeline ID、URL、当前状态和后续 oracle。
-
-已绑定 terminal oracle、`pending / running` 状态或“最好最终绿”的推断不提供等待授权；旧请求仅在仍覆盖同一任务与 exact revision、且未撤回或被替代时有效。前两种 authority 只允许有界等待；状态无变化时不重复回读或叙述轮询。
+当前任务的 CI 等待、异步结果接续与暂停边界统一遵循 `~/.ai/instructions.md` 的「异步执行与结果收口」。已绑定 run/pipeline 时保留 ID、URL、HEAD 和状态；pending/running 按该规则安排接续，terminal 结果核对 source/revision 后按本次 acceptance 收口。MR 写入成功、CI attachment 成功和交付验收通过分别判断；本 reference 不另设等待授权门槛。

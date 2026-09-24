@@ -53,6 +53,18 @@ class PrivateReleaseTest(unittest.TestCase):
             self.assertFalse((target / ".DS_Store").exists())
             self.assertTrue((target / "release/private/route-context.json").exists())
             self.assertTrue((target / "scripts/private-release").exists())
+            self.assertIn(
+                "disable-model-invocation: true",
+                (target / "skills/agent-assignment/SKILL.md").read_text(encoding="utf-8").split("---", 2)[1],
+            )
+            self.assertIn(
+                "allow_implicit_invocation: false",
+                (target / "skills/agent-assignment/agents/openai.yaml").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "`agent-assignment` 默认不自动调用",
+                (target / "instructions.md").read_text(encoding="utf-8"),
+            )
 
             checked = subprocess.run(
                 [str(COMMAND), "check", str(target)],

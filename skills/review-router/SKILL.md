@@ -5,59 +5,54 @@ description: Route rr code/MR/PR, module, whole-repository, simplification and e
 
 # review-router
 
-Fix scope and identity before strategy. Return findings, verdict and one next-review decision. Read-only: no fixes, deletion, Git/remote writes, release gates or persisted state. Use `review-router` in prose; `rr` is a user alias.
+先固定 scope、identity 和 baseline，再选 strategy。只读输出 findings、verdict 与一个 next-review decision；不修复、删除或写 Git/远端/持久状态，也不代替 release gate。`rr` 只是用户别名。
 
-## Scope Before Strategy
+## Scope
 
-Infer the intended decision from the request and conversation, not the latest commit or convenient dirty diff. Explicit scope wins. Briefly state scope, target and comparison baseline (or current snapshot).
+从用户请求和对话确定 decision，不用最近 commit 或方便的 dirty diff 代替。开头简述 scope、target、baseline（或 snapshot）：
 
-| Scope | Intent | Boundary |
-| --- | --- | --- |
-| Incremental re-review | “刚修的再看下”, “这些反馈解决了吗” | Changes since the identified reviewed revision, unresolved findings and affected consumers. Resolve a missing baseline; never substitute `HEAD~1` silently. |
-| Complete delivery | “这个 MR / 任务能交了吗”, “最后收口” | All task-owned commits and dirty changes against the delivery baseline, with consumers and integration evidence. Bind MR/PR to actual base/head; distinguish unpublished local follow-up. |
-| Existing module | “这个模块是不是太复杂”, named subsystem review | Current implementation, responsibilities, dependencies, compatibility and relevant callers beyond the module. No diff required. |
-| Whole repository | “全仓扫一下”, “给项目做个体检” | The identified repository's current code, docs, dependencies/build configuration and validation entrypoints. No diff required; never silently narrow to recent changes or one module. |
+| Scope | Boundary |
+| --- | --- |
+| Incremental re-review | reviewed revision 后的变化、未解决 finding 及受影响消费者；baseline 缺失先解析，不静默用 `HEAD~1`。 |
+| Complete delivery | delivery baseline 后的 task-owned commits、dirty、消费者及集成证据；MR/PR 绑定真实 base/head，区分未发布 local follow-up。 |
+| Existing module | 当前实现、职责、依赖、兼容和相关 caller；无需 diff。 |
+| Whole repository | 已识别 repo 的代码、文档、依赖/build 配置与验证入口；不得缩成近期 diff 或单模块。 |
 
-Follow concrete contract/consumer impacts beyond incremental hunks. Neither incremental nor complete-delivery review implies a repository audit.
+增量和完整交付都追踪 concrete contract/consumer，但不等于全仓审计。模块/全仓先画结构与 owner，再按风险深入；每个顶层区域记 inspected、sampled 或 excluded（含原因），generated/vendor 追到 source owner，并区分既有债务与本次新增。Sampling 不证明穷尽正确，空 diff 不终止 snapshot review。
 
-For module/repository scans, map structure and owners, then deepen by risk. Account for each top-level repository area as inspected, sampled or excluded with a reason; trace generated/vendor artifacts to their source owner. Separate existing debt from delivery-introduced issues. Sampling cannot prove exhaustive correctness; empty diffs do not stop snapshot reviews.
-
-Resolve facts before asking; ask only when remaining ambiguity changes the review scope. An empty change diff has no new code, but unresolved findings still need disposition; do not switch to a repository scan. Use a single commit or `HEAD~1` only when user-selected.
+先查可查事实，只在余下歧义改变 scope 时提问。空 change diff 不代表旧 finding 消失，也不授权切到 repo scan；单 commit 或 `HEAD~1` 只能由用户明确选择。
 
 ## Baseline
 
-Bind acceptance/spec, standards, selected diff/snapshot, relevant context and verification evidence. Evolution additionally requires caller-owned revision, fingerprint, round and prior findings.
+绑定 acceptance/spec、适用标准、diff/snapshot、context 与验证证据。Evolution 还需 caller-owned revision、fingerprint、round 和 prior findings。
 
-For explicit `design`, bind the file/section/proposal, problem, constraints, current anchors and decision question. No diff required. Verify rationale against reality; missing decisions can warrant `not-ready`.
+显式 `design` 绑定 file/section/proposal、problem、constraints、current anchors 与 decision question；无需 diff。根据现实验证 rationale，缺少关键 decision 可判 `not-ready`。
 
-## Strategy Selection
+## Strategy
 
-- Explicit strategy wins; run only that strategy, including `simple` or `design`.
-- Plain `rr` / `rr auto` never infer design from Markdown or a proposal.
-- Refactor, architecture governance, KISS/DRY, splitting or code health → `quality` over the selected scope and structural context.
-- Deletion, YAGNI, native/stdlib replacement or over-engineering → `prune`; broader architecture/security/performance risk → `quality`.
-- Otherwise plain `rr` / `rr auto`, and `caller=engineering-exit` → simple plus at most one evidence-backed escalation; caller owns disposition.
+- 显式 strategy 优先且只运行该 strategy，包括 `simple`、`design`。
+- Plain `rr` / `rr auto` 不因 Markdown/proposal 推断 design。
+- Refactor、架构治理、KISS/DRY、拆分或 code health → `quality`。
+- 删除、YAGNI、native/stdlib 替代或过度设计 → `prune`；更广的架构、安全、性能风险 → `quality`。
+- 其他 plain/auto 和 `caller=engineering-exit` → simple，最多一次 evidence-backed escalation；caller 负责 disposition。
+- 没有 material question 时选 `none`；size/checklist 不构成升级理由。
 
-Choose `none` when no material question remains. Size or checklist availability alone never justifies escalation.
+## Direct Routes
 
-## Strategy Routes
+- **Simple**：`references/simple-review.md`，maintainer pass + next strategy。
+- **Design**：`references/design-review.md`，proposal semantics + feasibility。
+- **Challenge**：`references/challenge-review.md`，real-consumer proof。
+- **Evolution**：`references/evolution-review.md`，需 caller-owned round state。
+- **Two-axis**：`~/Documents/reference/matt-skills/skills/engineering/code-review/SKILL.md`，独立 Spec / Standards passes。
+- **Quality**：`~/Documents/reference/addy-agent-skills/skills/code-review-and-quality/SKILL.md`，只读 `The Five-Axis Review`、`Review Process`、`Verification` 并选择 material axes。
+- **Prune**：`~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md`，标记 `delete|stdlib|native|yagni|shrink`、给 replacement、按 reduction 排序，结尾 `net: -<N> lines possible.` 或 `Lean already. Ship.`。无证据的 rejected-scope residue 也算；accessibility、data-loss prevention 和最小 runnable check 不算 bloat。
 
-- **Simple**: `references/simple-review.md` — maintainer pass and next-strategy decision.
-- **Design**: `references/design-review.md` — explicit proposal semantics and feasibility.
-- **Challenge**: `references/challenge-review.md` — real-consumer proof.
-- **Evolution**: `references/evolution-review.md` — requires caller-owned round state.
-- **Two-axis**: `~/Documents/reference/matt-skills/skills/engineering/code-review/SKILL.md` — bind baseline; independent Spec and Standards passes.
-- **Quality**: `~/Documents/reference/addy-agent-skills/skills/code-review-and-quality/SKILL.md` — read only `The Five-Axis Review`, `Review Process`, `Verification`; select material axes.
-- **Prune**: `~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md` — tag `delete|stdlib|native|yagni|shrink`, identify replacements, sort by reduction; end `net: -<N> lines possible.` or `Lean already. Ship.` Flag rejected-scope residue unless real safety, compatibility or contract evidence requires it. Accessibility, data-loss prevention and a minimal runnable check are not bloat.
+External lens 只继承上述窄 contract，不继承 tracker/client workflow；缺失时按本条 contract 执行，不搜索或安装替代。
 
-External lenses are direct and narrow; do not inherit tracker/client workflows. If absent, use the bullet contract above without searching or installing substitutes.
+## Evidence And Result
 
-## Evidence And Results
-
-- For mixed observations, calculations, inference or framework assumptions, read `../engineering-exit/references/evidence-classification.md`. Only direct/computed evidence proves claims; support inference and qualify framework claims.
-- Preserve the strategy's verdict, vocabulary and required sections; do not flatten it into simple.
-- Findings first, at the narrowest file/line or artifact/evidence anchor, with impact and correction/decision. Say `no material findings` when appropriate.
-- Report actual coverage and omissions, including area accounting for snapshot scans. Avoid raw file inventories or tool narration; a pass applies only to stated coverage.
-- End with `next_review.strategy: none|two-axis|quality|prune|challenge`, an evidence-backed reason and an unresolved question unless `none`.
-- Review recommendations grant no fix or scope-expansion authority. Domain/release/security gates remain with their owners.
-- Design stays one-shot/read-only; it does not replace doc-arch-review's durable-document ownership review or become grill/steelman.
+- 混合 observation、calculation、inference 或 framework assumption 时读 `../engineering-exit/references/evidence-classification.md`；只有 direct/computed evidence 证明 claim，其余须限定。
+- 保留 strategy 的 verdict、词汇与 required sections，不压平成 simple。
+- Findings 按 severity 在前，锚定最窄 file/line、artifact 或 evidence，说明 impact 与 correction/decision；无实质问题写 `no material findings`。报告 coverage/omission；snapshot scan 含 area accounting，不堆 raw inventory/tool narration。
+- 结尾必须有 `next_review.strategy: none|two-axis|quality|prune|challenge`、evidence-backed reason，以及除 `none` 外的 exact unresolved question。
+- Recommendation 不授予 fix 或扩 scope 权限；domain/release/security gate 仍归 owner。Design 保持 one-shot/read-only，不替代 `doc-arch-review` 或变成 grill/steelman。

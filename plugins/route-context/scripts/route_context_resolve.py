@@ -13,6 +13,7 @@ from typing import Any
 
 HOME = Path.home()
 ME_ROOT = HOME / "Documents" / "me"
+REFERENCE_ROOT = HOME / "Documents" / "reference"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 PROJECTS = {
@@ -34,7 +35,7 @@ PROJECTS = {
 }
 
 DRAFT_DIR = ME_ROOT / "_Drafts"
-SNIPPETS_DIR = ME_ROOT / "Snippets"
+SNIPPETS_DIR = REFERENCE_ROOT / "snippet-lab"
 
 FORUM_SNIPPET_46 = {
     "id": "gitlab-project-snippet-46",

@@ -124,12 +124,17 @@ for skill in "${all_skills[@]}"; do
 done
 
 explicit_skills=(engineering-exit load-context loop-ledger save-context)
+if grep -Eq '"role"[[:space:]]*:[[:space:]]*"distribution"' "$repo/.ai-meta-repo-role.json"; then
+  explicit_skills+=(agent-assignment)
+else
+  check_implicit_skill "agent-assignment" "maintenance delegation routing"
+fi
 for skill in "${explicit_skills[@]}"; do
   check_claude_entry "skills/$skill/SKILL.md"
   check_codex_skill "$skill"
 done
 
-for command in ee ll load-context save-context; do
+for command in aa ee ll load-context save-context; do
   check_claude_entry "commands/$command.md"
 done
 

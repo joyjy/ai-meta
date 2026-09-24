@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Horizontal client consistency
-description: Source, aggregation, and client adapter layers for Claude Code, OpenCode, and Codex.
+description: Source, aggregation, and client adapter layers for Claude Code, OpenCode, Codex, Kimi Code, and Pi.
 resource:
 tags: [ai-meta, architecture, clients]
 ---
@@ -10,7 +10,7 @@ tags: [ai-meta, architecture, clients]
 
 ## Scope
 
-本文件记录 ai-meta 的水平维度：Claude Code、OpenCode、Codex 如何在各自能力边界内共享规则、入口和本机运行态桥接。
+本文件记录 ai-meta 的水平维度：Claude Code、OpenCode、Codex、Kimi Code、Pi 如何在各自能力边界内共享规则、入口和本机运行态桥接。
 
 ## Current Facts
 
@@ -20,7 +20,7 @@ ai-meta 的水平维度是三层适配：
 owner repositories  可版本管理的源文件层
 <maintenance-checkout>/   全局底座、ai-meta 自有 workflow 与发布注册
 ~/.ai/              本机运行态聚合层
-工具配置目录         Claude Code / OpenCode / Codex 的最后一跳适配层
+工具配置目录         Claude Code / OpenCode / Codex / Kimi Code / Pi 的最后一跳适配层
 ```
 
 原则：源文件进 repo，运行态留本机，客户端目录保持薄软链。
@@ -60,6 +60,9 @@ install.sh              发布软链到本机运行态
 ~/.config/opencode/AGENTS.md  -> ~/.ai/instructions.md
 ~/.claude/CLAUDE.md           -> ~/.ai/instructions.md
 ~/.codex/AGENTS.md            -> ~/.ai/instructions.md
+~/.agents/AGENTS.md           -> ~/.ai/instructions.md  # Kimi Code 全局规则
+~/.pi/agent/AGENTS.md         -> ~/.ai/instructions.md
+~/.pi/agent/skills/           -> ~/.agents/skills/
 
 ~/.config/opencode/commands/  -> ~/.ai/commands/
 ~/.claude/commands/           -> ~/.ai/commands/
@@ -77,7 +80,7 @@ plugin marketplace 和独立 plugin 目录；`~/.codex` 中的安装缓存、启
 
 项目能力 skill 由能力 owner repo 维护 canonical 包，ai-meta `install.sh` 只登记其 source root，并将同一目录软链到 `~/.ai/skills/` 与 `~/.agents/skills/`。owner repo 不存在时跳过该能力并清理 ai-meta 管理的旧软链，不在 ai-meta 复制 fallback 内容。
 
-显式调用策略属于客户端适配元数据。仅允许用户主动运行的 skill 在共享 `SKILL.md` frontmatter 中声明 `disable-model-invocation: true`，供 Claude 读取；如果 Claude 同时发布 command 薄入口，该 command 也声明相同字段。Codex 在 skill 目录的 `agents/openai.yaml` 中声明 `policy.allow_implicit_invocation: false`。当前 explicit-only 集合是 `engineering-exit`、`load-context`、`loop-ledger` 和 `save-context`；`agent-doc-hygiene`、`grill`、`review-router` 和 `steelman` 保留语义触发及 agent 主动路由能力。缩写只存在于用户 command / invocation，不作为第二个 skill identity。
+显式调用策略属于客户端适配元数据。仅允许用户主动运行的 skill 在共享 `SKILL.md` frontmatter 中声明 `disable-model-invocation: true`，供 Claude 读取；如果 Claude 同时发布 command 薄入口，该 command 也声明相同字段。Codex 在 skill 目录的 `agents/openai.yaml` 中声明 `policy.allow_implicit_invocation: false`。`engineering-exit`、`load-context`、`loop-ledger` 和 `save-context` 始终仅显式调用；`agent-assignment` 在维护版自动路由，在发行版由用户显式调用。`agent-doc-hygiene`、`grill`、`review-router` 和 `steelman` 保留语义触发及 agent 主动路由能力。缩写只存在于用户 command / invocation，不作为第二个 skill identity。
 
 ## Relationships
 
