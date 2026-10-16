@@ -34,6 +34,7 @@ description: Route rr code/MR/PR, module, whole-repository, simplification and e
 - Plain `rr` / `rr auto` 不因 Markdown/proposal 推断 design。
 - Refactor、架构治理、KISS/DRY、拆分或 code health → `quality`。
 - 删除、YAGNI、native/stdlib 替代或过度设计 → `prune`；更广的架构、安全、性能风险 → `quality`。
+- 明确要求测试减法、删减测试或 `rr prune tests` → `prune` 的测试场景；不把普通测试变更自动切到减法评审。
 - 其他 plain/auto 和 `caller=engineering-exit` → simple，最多一次 evidence-backed escalation；caller 负责 disposition。
 - 没有 material question 时选 `none`；size/checklist 不构成升级理由。
 
@@ -43,15 +44,16 @@ description: Route rr code/MR/PR, module, whole-repository, simplification and e
 - **Design**：`references/design-review.md`，proposal semantics + feasibility。
 - **Challenge**：`references/challenge-review.md`，real-consumer proof。
 - **Evolution**：`references/evolution-review.md`，需 caller-owned round state。
-- **Two-axis**：`~/Documents/reference/matt-skills/skills/engineering/code-review/SKILL.md`，独立 Spec / Standards passes。
-- **Quality**：`~/Documents/reference/addy-agent-skills/skills/code-review-and-quality/SKILL.md`，只读 `The Five-Axis Review`、`Review Process`、`Verification` 并选择 material axes。
-- **Prune**：`~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md`，标记 `delete|stdlib|native|yagni|shrink`、给 replacement、按 reduction 排序，结尾 `net: -<N> lines possible.` 或 `Lean already. Ship.`。无证据的 rejected-scope residue 也算；accessibility、data-loss prevention 和最小 runnable check 不算 bloat。
+- **Two-axis**：`~/Documents/reference/matt-skills/skills/engineering/code-review/SKILL.md` ([GitHub fallback](https://github.com/mattpocock/skills/blob/main/skills/engineering/code-review/SKILL.md) if absent)，独立 Spec / Standards passes。
+- **Quality**：`~/Documents/reference/addy-agent-skills/skills/code-review-and-quality/SKILL.md` ([GitHub fallback](https://github.com/addyosmani/agent-skills/blob/main/skills/code-review-and-quality/SKILL.md) if absent)，只读 `The Five-Axis Review`、`Review Process`、`Verification` 并选择 material axes。
+- **Prune / tests**：直接读取 `references/test-prune.md` 和 `../coding-conventions/templates/testing/AGENTS.md`；前者规定评审产物，后者独立拥有测试价值标准。仍使用下面 Prune 的标签与净减结果，不递归调用 coding-conventions 或额外 specialist。
+- **Prune（其他对象）**：`~/Documents/reference/ponytail/skills/ponytail-review/SKILL.md` ([GitHub fallback](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail-review/SKILL.md) if absent)，标记 `delete|stdlib|native|yagni|shrink`、给 replacement、按 reduction 排序，结尾 `net: -<N> lines possible.` 或 `Lean already. Ship.`。无证据的 rejected-scope residue 也算；accessibility、data-loss prevention 和最小 runnable check 不算 bloat。
 
-External lens 只继承上述窄 contract，不继承 tracker/client workflow；缺失时按本条 contract 执行，不搜索或安装替代。
+External lens 只继承上述窄 contract，不继承 tracker/client workflow。本机文件缺失时读取对应 GitHub fallback；两者均不可用时按本条 contract 执行，不搜索或安装替代。
 
 ## Evidence And Result
 
-- 混合 observation、calculation、inference 或 framework assumption 时读 `../engineering-exit/references/evidence-classification.md`；只有 direct/computed evidence 证明 claim，其余须限定。
+- 混合 observation、calculation、inference 或 framework assumption 时读 `../../docs/reference/evidence-classification.md`；结论保留证据范围、计算假设和推断前提。
 - 保留 strategy 的 verdict、词汇与 required sections，不压平成 simple。
 - Findings 按 severity 在前，锚定最窄 file/line、artifact 或 evidence，说明 impact 与 correction/decision；无实质问题写 `no material findings`。报告 coverage/omission；snapshot scan 含 area accounting，不堆 raw inventory/tool narration。
 - 结尾必须有 `next_review.strategy: none|two-axis|quality|prune|challenge`、evidence-backed reason，以及除 `none` 外的 exact unresolved question。

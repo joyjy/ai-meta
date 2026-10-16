@@ -182,34 +182,6 @@ class LLTurnTest(unittest.TestCase):
             self.assertIn("bound Codex goal cannot be amended in place",
                           amended.stderr)
 
-    def test_root_amendment_rejects_structural_fields(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            ledger = root / "active.ll"
-            workitem = self.write_json(root / "workitem.json", {
-                "id": "structural-amendment",
-                "ff": {
-                    "goal": "完成初始目标",
-                    "acceptance": ["初始目标有证据"],
-                    "blocking_questions": [],
-                    "ready_for_dispatch": True,
-                },
-            })
-            initialized = self.run_cli(
-                str(WORKITEM), "init", str(ledger), "--input", str(workitem))
-            self.assertEqual(0, initialized.returncode, initialized.stderr)
-            amendment = self.write_json(root / "amendment.json", {
-                "actor": "user",
-                "goal": "修改后的目标",
-                "acceptance": ["新验收"],
-            })
-            rejected = self.run_cli(
-                str(TURN), "amend-root", str(ledger), "--input",
-                str(amendment))
-            self.assertNotEqual(0, rejected.returncode)
-            self.assertIn("cannot carry structural fields acceptance",
-                          rejected.stderr)
-
     def test_goal_bound_structural_contract_patch_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

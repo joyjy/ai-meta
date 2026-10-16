@@ -21,7 +21,9 @@ ai-meta/
 ├── .agents/plugins/        # personal marketplace 注册源
 ├── docs/
 │   ├── architecture/       # 当前架构、边界和 change guidance
-│   └── plan/               # 尚未成为当前事实的项目计划
+│   ├── reference/         # 跨场景共享判断规则
+│   ├── runbook/            # 工具路由按需引用的操作流程
+│   └── plan/               # 本机项目计划，Git 忽略；源码快照中可能不存在
 ├── manual/                 # 面向人的工具说明
 ├── mcp/                    # 共享 MCP 配置结构示例
 └── runtime/                # 可版本管理的 runtime registration 示例
@@ -45,10 +47,12 @@ ai-meta/
 - `scripts/skill_verification.py`：skill 改动验证账本的 schema、fingerprint、事件写入和 verdict 计算；`scripts/skill-verification` 是薄入口。
 - `scripts/save_context_audit_rs.py`：save-context 审计的派发、回读、结算与清理编排；`save_context_audit_archive.py` 拥有归档白名单、打包、完整性校验及 Run 归档状态查询，`save_context_audit_io.py` 提供两者共用的进程调用、JSON 解析和原子写入。
 - `changelog.md`：已完成项目历史。
-- `route-context.json`：context 套件输入侧的可版本管理路由配置；`plugins/route-context/` 保留既存插件身份，包装输入路由和独立的 MR 链接 Stop 检查。
+- `route-context.json`：context 套件输入侧的可版本管理路由配置；`plugins/route-context/` 保留既存插件身份，包装输入路由、独立的 MR 链接 Stop 检查和普通任务行动承诺 Stop 检查。
 - `install.sh`：ai-meta source 与已登记 owner-repo skill 到 `~/.ai`、`~/.agents/skills` 和各客户端最后一跳的发布关系。
 - `.ai-meta-repo-role.json` 与 `scripts/private-release`：checkout source identity、私有发行生成和脱敏校验入口。
 - `sync-conventions.sh`：coding-conventions 模板到个人工程入口的受控同步关系。
+
+- `docs/reference/evidence-classification.md`：跨场景证据分类及表达边界。工程交付和评审入口引用同一正文。
 
 ## Generated And Runtime Mapping
 
@@ -67,6 +71,7 @@ ai-meta/
 - `python3 -m unittest scripts.test_skill_verification`：revision-bound ledger、加载 fingerprint 和 verdict 状态机回归。
 - `scripts/private-release check <distribution-root>`：私有发行副本的本机路径、内网标识、身份信息和凭据形态 gate。
 - `python3 plugins/route-context/scripts/test_route_context_resolve.py` 与 `python3 plugins/route-context/scripts/test_route_context_hook.py`：context 套件输入侧配置解析和 prompt-time 注入回归。
+- `node --test plugins/route-context/scripts/test_task_continuation_stop.js`：普通任务承诺收尾、单次续轮与身份/人工 gate 回归。
 - `node --test plugins/route-context/scripts/test_context_stop.js`：context 套件输出侧 MR 漏链、来源边界及单次续轮回归。
 - `bash install.sh`：发布前预检与本机软链/适配同步。
 - `git diff --check`：文档和脚本改动的基础格式检查。

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -42,6 +43,19 @@ class JevClientTest(unittest.TestCase):
         with patch.dict(os.environ, {"TYPESAFE_API_KEY": "ambient-key"}):
             with patch.object(Path, "read_text", return_value="TYPESAFE_API_KEY=file-key\n"):
                 self.assertEqual(api_key_from_environment("private.env"), "file-key")
+
+    def test_private_default_file_and_ambient_precedence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            default_file = Path(directory) / "jev.env"
+            default_file.write_text("OTHER_KEY=unused\nTYPESAFE_API_KEY=default-key\n", encoding="utf-8")
+            with patch("jev_client.DEFAULT_ENV_FILE", default_file):
+                with patch.dict(os.environ, {}, clear=True):
+                    self.assertEqual(api_key_from_environment(), "default-key")
+                with patch.dict(os.environ, {"TYPESAFE_API_KEY": "ambient-key"}):
+                    self.assertEqual(api_key_from_environment(), "ambient-key")
+                    with self.assertRaises(JevError) as raised:
+                        api_key_from_environment(str(Path(directory) / "missing.env"))
+                    self.assertEqual(raised.exception.code, "credential_file_unreadable")
 
     def test_preserves_native_answer_and_fixed_endpoint(self) -> None:
         seen = []

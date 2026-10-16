@@ -6,7 +6,7 @@
 
 - `../templates/` 保存跨项目默认成立、适合直接约束实现和验证的共享规则。
 - `../preferences/` 保存个人取舍，只进入个人默认层。
-- `../patterns/` 保存仅在特定 forces 成立时采用的工程解法，不作为无条件规则注入 `AGENTS.md`。
+- `../patterns/` 保存从场景出发的检查与决策 SOP。入口描述任务事实，正文先检查前提，再选择解法；不把某种实现作为命中场景后的必选答案。
 
 ## Admission
 
@@ -14,8 +14,10 @@
 2. 每个正式 pattern 单独成 OKF concept 文件，至少包含 Context、Problem、Forces、Pattern、Failure Modes、Implementation Checklist 和 Verification。
 3. 正文默认使用中文并面向人类读者，保留必要英文 ID、技术术语与 API；只保留可迁移的当前解法，不写完整事故复盘。
 4. 真实 MR、issue 或代码只作为 evidence anchor。候选只保留证据入口和一句待提炼主题，不提前写成结论。
-5. 晋升至少需要 `KNOWN` evidence anchor；重复性需要 `COMPUTED` 独立命中，适用范围需要带 supporting evidence 的 `INFERRED`。主入口会同时加载 evidence classification；不得仅凭 `COMMON`、`FRAME` 或 `GUESS` 晋升。
-6. 新增正式条目时同步更新主 skill 的 Pattern Routes；其中只保留 ID、可辨认 signal 与 exact path。
+5. 晋升至少需要 `KNOWN` evidence anchor；重复性需要 `COMPUTED` 独立命中，适用范围需要带 supporting evidence 的 `INFERRED`。主入口按晋升条件读取 [证据分类](../../../docs/reference/evidence-classification.md)；不得仅凭 `COMMON`、`FRAME` 或 `GUESS` 晋升。
+6. 新增或调整条目时，同步主 skill 的 Pattern Routes。触发写“新增／修改什么”，不要求 agent 先知道存在某个缺陷或已选择某个方案。
+7. 按义务分层，不按文件名机械分类。默认交付要求归对应模板；条件必查由主入口声明场景和检查点。具体解法保留在 pattern 内按 forces 选择。一份正文可同时包含必查问题和可选解法，不因此整篇升级成强制实现。
+8. 每条路由保留适用场景、exact path 和必要的排除条件。检查简单方案已足够、用户另有明确约束和缺少执行授权的反例。不新增全量预读、平行目录索引或固定测试矩阵。
 
 ## OKF And Labels
 

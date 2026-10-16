@@ -17,7 +17,7 @@ When the user explicitly requests independent Codex and Rollerskate outputs, fre
 
 ## LLM Council
 
-Use only when the user explicitly asks to run a council/deliberation, or when building a council primitive is itself the task. The reference implementation is `~/Documents/reference/llm-council/backend/council.py`; take only its three-stage orchestration, not its provider, Web UI, or conversation shell.
+Use only when the user explicitly asks to run a council/deliberation, or when building a council primitive is itself the task. The reference implementation is `~/Documents/reference/llm-council/backend/council.py` ([GitHub fallback](https://github.com/karpathy/llm-council/blob/master/backend/council.py) if absent); take only its three-stage orchestration, not its provider, Web UI, or conversation shell.
 
 - Use real isolated agents: homogeneous cold-start agents produce initial answers from the same packet, cold-start reviewers rank anonymized answers, then a cold-start chairman synthesizes. In Codex, use `fork_turns=none` and self-contained packets. Default to three initial agents, one reviewer, and one chairman unless the request sets another bounded shape.
 - Never simulate several roles in one agent and claim that a council ran. If isolation is unavailable, report the capability gap.

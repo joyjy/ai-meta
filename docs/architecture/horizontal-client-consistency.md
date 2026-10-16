@@ -80,7 +80,9 @@ plugin marketplace 和独立 plugin 目录；`~/.codex` 中的安装缓存、启
 
 项目能力 skill 由能力 owner repo 维护 canonical 包，ai-meta `install.sh` 只登记其 source root，并将同一目录软链到 `~/.ai/skills/` 与 `~/.agents/skills/`。owner repo 不存在时跳过该能力并清理 ai-meta 管理的旧软链，不在 ai-meta 复制 fallback 内容。
 
-显式调用策略属于客户端适配元数据。仅允许用户主动运行的 skill 在共享 `SKILL.md` frontmatter 中声明 `disable-model-invocation: true`，供 Claude 读取；如果 Claude 同时发布 command 薄入口，该 command 也声明相同字段。Codex 在 skill 目录的 `agents/openai.yaml` 中声明 `policy.allow_implicit_invocation: false`。`engineering-exit`、`load-context`、`loop-ledger` 和 `save-context` 始终仅显式调用；`agent-assignment` 在维护版自动路由，在发行版由用户显式调用。`agent-doc-hygiene`、`grill`、`review-router` 和 `steelman` 保留语义触发及 agent 主动路由能力。缩写只存在于用户 command / invocation，不作为第二个 skill identity。
+显式调用策略属于客户端适配元数据。仅允许用户主动运行的 skill 在共享 `SKILL.md` frontmatter 中声明 `disable-model-invocation: true`。Claude 读取这个字段。如果 Claude 同时发布 command 薄入口，该 command 也声明相同字段。Codex 在 skill 目录的 `agents/openai.yaml` 中声明 `policy.allow_implicit_invocation: false`。
+
+`engineering-exit`、`load-context` 和 `save-context` 始终仅显式调用；`agent-assignment` 在维护版自动路由，在发行版由用户显式调用。`agent-doc-hygiene`、`final-form`、`loop-ledger`、`grill`、`review-router` 和 `steelman` 保留语义触发及 agent 主动路由能力。`loop-ledger` 的自动选择条件与平台 goal 授权检查由其 Admission 规则持有。缩写只存在于用户 command / invocation，不作为第二个 skill identity。
 
 ## Relationships
 

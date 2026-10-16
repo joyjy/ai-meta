@@ -1,6 +1,5 @@
 ---
 description: 启动或恢复由单个 loop-ledger 文件支撑的 Codex goal
-disable-model-invocation: true
 ---
 
 input = $ARGUMENTS

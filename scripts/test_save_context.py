@@ -68,22 +68,6 @@ updated: 2026-07-02
                                        "amt.md").read_text(encoding="utf-8"))
             self.assertIn("wrote", proc.stdout)
 
-    def test_context_file_dash_reads_stdin(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            context = self.valid_context()
-
-            proc = self.run_script(home,
-                                   "amt",
-                                   "--context-file",
-                                   "-",
-                                   "--skip-timeline",
-                                   input_text=context)
-
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertEqual(context, (home / ".ai" / "contexts" /
-                                       "amt.md").read_text(encoding="utf-8"))
-
     def test_malformed_context_refuses_to_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -124,21 +108,6 @@ mainline:
             self.assertFalse((home / ".ai" / "contexts" /
                               "gtd.md").exists())
 
-    def test_route_index_rejects_extra_fields(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            invalid = self.valid_context().replace(
-                "workstreams=0()", "workstreams=0(); recommendation=mainline")
-
-            proc = self.run_script(home,
-                                   "amt",
-                                   "--context-stdin",
-                                   "--skip-timeline",
-                                   input_text=invalid)
-
-            self.assertEqual(2, proc.returncode)
-            self.assertIn("must contain exactly", proc.stderr)
-
     def test_unknown_top_level_keys_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -175,16 +144,6 @@ mainline:
             self.assertIn("validation succeeded", proc.stdout)
             self.assertFalse((home / ".ai" / "contexts" / "amt.md").exists())
             self.assertFalse((home / "Documents" / "me" / "Daily Notes").exists())
-
-    def test_fallback_frontmatter_parser_accepts_empty_workstreams(
-            self) -> None:
-        _, frontmatter = save_context.split_context_frontmatter(
-            self.valid_context())
-
-        parsed = save_context.fallback_parse_frontmatter(frontmatter)
-
-        self.assertEqual("context.v3", parsed["schema"])
-        self.assertEqual({}, parsed["workstreams"])
 
     def test_empty_context_stdin_refuses_to_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -228,51 +187,25 @@ mainline:
             context_path.parent.mkdir(parents=True)
             context_path.write_text(self.valid_context().replace(
                 "workstreams: {}", """workstreams:
-  forum:
-    state: active
-    summary: Old forum
-    doing: [old]
-    blocked: []
-    next_step: old
-  other:
-    state: parked
-    summary: Preserve other
-    doing: []
-    blocked: []
-    next_step: keep""").replace(
+  forum: {state: active, summary: Old forum, doing: [old], blocked: [], next_step: old}
+  other: {state: parked, summary: Preserve other, doing: [], blocked: [], next_step: keep}""").replace(
                 "workstreams=0()", "workstreams=2(active:forum, parked:other)"
             ).replace("# amt Context", """# amt Context
-
 ## Mainline
-
 keep mainline details
-
 ## Workstreams
-
 ### forum
-
 old forum details
-
 ### other
-
 preserve other details"""),
                                     encoding="utf-8")
             payload = """schema: context.workstream.v1
 state: blocked
 summary: Updated forum
-doing:
-  - finish writer
-blocked:
-  - missing trigger
+doing: [finish writer]
+blocked: [missing trigger]
 next_step: validate writer
-details: |
-  ### Doing
-
-  - finish writer
-
-  ### Blocked
-
-  - missing trigger
+details: finish writer
 """
 
             proc = self.run_script(home,

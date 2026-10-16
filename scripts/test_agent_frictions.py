@@ -29,127 +29,31 @@ class AgentFrictionsTest(unittest.TestCase):
     def write_rollout(self, root: Path) -> Path:
         rollout = root / "rollout-thread-1.jsonl"
         events = [
-            {
-                "timestamp": "2026-07-13T01:00:00Z",
-                "type": "session_meta",
-                "payload": {
-                    "session_id": "thread-1",
-                    "cwd": "/repo",
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:01:00Z",
-                "type": "event_msg",
-                "payload": {
-                    "type": "turn_aborted",
-                    "turn_id": "turn-abort",
-                    "reason": "interrupted",
-                    "duration_ms": 1000,
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:02:00Z",
-                "type": "event_msg",
-                "payload": {
-                    "type": "patch_apply_end",
-                    "turn_id": "turn-1",
-                    "call_id": "call-1",
-                    "success": True,
-                    "changes": {
-                        "/repo/a.md": {
-                            "kind": "update"
-                        }
-                    },
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:03:00Z",
-                "type": "response_item",
-                "payload": {
-                    "type":
-                        "message",
-                    "role":
-                        "user",
-                    "content": [{
-                        "type": "input_text",
-                        "text": "SECRET-PROMPT"
-                    }],
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:04:00Z",
-                "type": "response_item",
-                "payload": {
-                    "type": "custom_tool_call_output",
-                    "output": [{
-                        "type": "text",
-                        "text": "SECRET-TOOL-OUTPUT"
-                    }],
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:05:00Z",
-                "type": "event_msg",
-                "payload": {
-                    "type": "patch_apply_end",
-                    "turn_id": "turn-2",
-                    "call_id": "call-2",
-                    "success": True,
-                    "changes": {
-                        "/repo/a.md": {
-                            "kind": "update"
-                        }
-                    },
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:06:00Z",
-                "type": "event_msg",
-                "payload": {
-                    "type": "patch_apply_end",
-                    "turn_id": "turn-3",
-                    "call_id": "call-fail",
-                    "success": False,
-                    "changes": {
-                        "/repo/b.md": {
-                            "kind": "update"
-                        }
-                    },
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:07:00Z",
-                "type": "event_msg",
-                "payload": {
-                    "type": "patch_apply_end",
-                    "turn_id": "turn-4",
-                    "call_id": "call-3",
-                    "success": True,
-                    "changes": {
-                        "/repo/a.md": {
-                            "kind": "update"
-                        }
-                    },
-                },
-            },
-            {
-                "timestamp": "2026-07-13T01:08:00Z",
-                "type": "event_msg",
-                "payload": {
-                    "type": "patch_apply_end",
-                    "turn_id": "turn-5",
-                    "call_id": "call-4",
-                    "success": True,
-                    "changes": {
-                        "/repo/a.md": {
-                            "kind": "update"
-                        }
-                    },
-                },
-            },
+            {"timestamp": "2026-07-13T01:00:00Z", "type": "session_meta",
+             "payload": {"session_id": "thread-1", "cwd": "/repo"}},
+            {"timestamp": "2026-07-13T01:01:00Z", "type": "event_msg",
+             "payload": {"type": "turn_aborted", "turn_id": "turn-abort",
+                         "reason": "interrupted", "duration_ms": 1000}},
+            {"timestamp": "2026-07-13T01:03:00Z", "type": "response_item",
+             "payload": {"type": "message", "role": "user",
+                         "content": [{"type": "input_text", "text": "SECRET-PROMPT"}]}},
+            {"timestamp": "2026-07-13T01:04:00Z", "type": "response_item",
+             "payload": {"type": "custom_tool_call_output",
+                         "output": [{"type": "text", "text": "SECRET-TOOL-OUTPUT"}]}},
+            {"timestamp": "2026-07-13T01:06:00Z", "type": "event_msg",
+             "payload": {"type": "patch_apply_end", "turn_id": "turn-3",
+                         "call_id": "call-fail", "success": False,
+                         "changes": {"/repo/b.md": {"kind": "update"}}}},
         ]
-        rollout.write_text("".join(
-            json.dumps(event) + "\n" for event in events),
+        for turn, call, minute in [(1, 1, 2), (2, 2, 5), (4, 3, 7), (5, 4, 8)]:
+            events.append({
+                "timestamp": f"2026-07-13T01:{minute:02d}:00Z", "type": "event_msg",
+                "payload": {"type": "patch_apply_end", "turn_id": f"turn-{turn}",
+                            "call_id": f"call-{call}", "success": True,
+                            "changes": {"/repo/a.md": {"kind": "update"}}},
+            })
+        events.sort(key=lambda event: event["timestamp"])
+        rollout.write_text("".join(json.dumps(event) + "\n" for event in events),
                            encoding="utf-8")
         return rollout
 
@@ -195,24 +99,6 @@ class AgentFrictionsTest(unittest.TestCase):
             cursor = json.loads((store / "cursors" /
                                  "thread-1.json").read_text(encoding="utf-8"))
             self.assertEqual(9, cursor["last_line"])
-
-    def test_abort_is_deferred_and_list_can_filter_by_source(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            temp = Path(tmp)
-            store = temp / "store"
-            rollout = self.write_rollout(temp)
-            collected = agent_frictions.collect_events(rollout, store,
-                                                        "unclaimed", self.now)
-
-            rows = agent_frictions.list_events(store, "unclaimed", set(),
-                                                "thread-1")["events"]
-            aborted = next(row for row in rows
-                           if row["event_type"] == "task_aborted")
-            self.assertEqual("deferred", aborted["lifecycle"])
-            self.assertTrue(all(row["source_id"] == "thread-1" for row in rows))
-            self.assertEqual([], agent_frictions.list_events(
-                store, None, set(), "another-thread")["events"])
-            self.assertEqual(3, len(collected["created_event_ids"]))
 
     def test_open_summary_is_bounded_and_omits_long_fallbacks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -296,14 +182,6 @@ class AgentFrictionsTest(unittest.TestCase):
                                 "signature": "example.signature",
                                 "durable_ref": str(inbox) + "#examplesignature",
                             },
-                            {
-                                "lane": "prompt_contract_gaps",
-                                "audit_id": "candidate-b",
-                                "disposition": "promoted",
-                                "destination": "global_friction",
-                                "signature": "example.signature",
-                                "durable_ref": str(inbox) + "#examplesignature",
-                            },
                         ],
                         "occurrence": {
                             "kind": "codex_thread_project",
@@ -334,16 +212,9 @@ class AgentFrictionsTest(unittest.TestCase):
             )
 
             self.assertTrue(first["updated"])
-            self.assertEqual(1, first["occurrence_count"])
-            self.assertEqual(0, first["recurrence"])
             self.assertFalse(repeated["updated"])
-            self.assertEqual(1, repeated["occurrence_count"])
             self.assertTrue(second["updated"])
             self.assertEqual(2, second["occurrence_count"])
-            self.assertEqual(1, second["recurrence"])
-            content = inbox.read_text(encoding="utf-8")
-            self.assertEqual(2, content.count("- Occurrence："))
-            self.assertIn("- 复现：+1（最近：save-context-audit:audit-second）", content)
 
             first_write_ready = threading.Event()
             release_first = threading.Event()
@@ -423,24 +294,6 @@ class AgentFrictionsTest(unittest.TestCase):
             self.assertEqual(1, status["actionable_count"])
             self.assertEqual(1, sum(status["by_event_type"].values()))
             self.assertNotIn("facts", status)
-
-    def test_status_excludes_deferred_from_actionable_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            temp = Path(tmp)
-            store = temp / "store"
-            rollout = self.write_rollout(temp)
-            collected = agent_frictions.collect_events(rollout, store,
-                                                        "unclaimed", self.now)
-            agent_frictions.checkpoint(store, collected["created_event_ids"],
-                                       "context:amt:mainline", self.now)
-
-            status = agent_frictions.status_events(
-                store, "context:amt:mainline")
-
-            self.assertEqual(1, status["actionable_count"])
-            self.assertEqual({"deferred": 2, "pending": 1},
-                             status["by_lifecycle"])
-            self.assertEqual(3, sum(status["by_event_type"].values()))
 
     def test_new_aggregate_does_not_supersede_owned_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

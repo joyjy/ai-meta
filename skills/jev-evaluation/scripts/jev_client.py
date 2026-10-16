@@ -12,6 +12,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+DEFAULT_ENV_FILE = Path.home() / ".ai" / "jev.env"
 RETRYABLE_STATUS = {429, 529}
 
 
@@ -42,7 +43,9 @@ def api_key_from_environment(env_file: str | None = None) -> str:
         key = os.environ.get("TYPESAFE_API_KEY", "").strip()
         if key:
             return key
-        raise JevError("credential_missing", 2)
+        if not DEFAULT_ENV_FILE.exists():
+            raise JevError("credential_missing", 2)
+        env_file = str(DEFAULT_ENV_FILE)
     try:
         lines = Path(env_file).read_text(encoding="utf-8").splitlines()
     except OSError as exc:

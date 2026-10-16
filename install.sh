@@ -25,17 +25,6 @@ link_if_unclaimed() {
   fi
 }
 
-cleanup_ai_only_command_skill() {
-  local name="$1"
-  local dst="$AI/skills/$name"
-  if [ -L "$dst" ]; then
-    rm -f "$dst"
-    echo "  removed stale skill: $dst"
-  elif [ -e "$dst" ]; then
-    echo "  [WARN] not removing non-symlink skill: $dst"
-  fi
-}
-
 cleanup_skill_symlink() {
   local root="$1" name="$2"
   local dst="$root/$name"
@@ -120,8 +109,8 @@ done
 # ── skills ────────────────────────────────────────────────────────────────────
 echo ""
 echo "[skills] skills/ -> ~/.ai/skills/"
-cleanup_ai_only_command_skill "load-context"
-cleanup_ai_only_command_skill "save-context"
+cleanup_skill_symlink "$AI/skills" "dd"
+cleanup_skill_symlink "$AI/skills" "ff"
 cleanup_skill_symlink "$AI/skills" "agent-status"
 cleanup_skill_symlink "$AI/skills" "architecture-review"
 cleanup_skill_symlink "$AI/skills" "document-slimming"
@@ -133,9 +122,6 @@ for d in "$REPO/skills"/*/; do
     continue
   fi
   if [ ! -f "$d/SKILL.md" ]; then
-    continue
-  fi
-  if [ "$(basename "$d")" = "load-context" ] || [ "$(basename "$d")" = "save-context" ]; then
     continue
   fi
   symlink "$d" "$AI/skills/$(basename "$d")"
@@ -169,6 +155,7 @@ i18n_resource_project_root="${AI_META_I18N_RESOURCE_PROJECT_ROOT:-$HOME/Document
 publish_project_skill "mms-ui-client" "$i18n_resource_project_root/skills/mms-ui-client"
 
 for name in \
+  bmad-create-ux-design \
   bmad-brainstorming \
   bmad-help \
   bmad-create-prd \

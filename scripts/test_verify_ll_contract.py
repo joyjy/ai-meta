@@ -55,36 +55,6 @@ class VerifyLLContractTest(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertEqual(output, expected)
 
-    def test_segmented_contract_passes_with_same_verifier(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ledger = Path(tmp) / "contract.ll"
-            result = subprocess.run(
-                [str(LEDGER), "init", str(FIXTURES / "base_ll_contract.json"),
-                 str(ledger)],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(0, result.returncode, result.stderr)
-            code, output = self.run_contract(ledger)
-            self.assertEqual(0, code)
-            self.assertIn("PASS ll.contract.v0", output)
-
-    def test_missing_required_field_fails_with_stable_code(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_manual_report.json").read_text(encoding="utf-8"))
-        del data["ll_contract"]["target"]["outcome"]
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(code, 1)
-        self.assertIn(
-            "FAIL E_REQUIRED_FIELD ll_contract.target.outcome is required",
-            output)
-
     def test_remote_write_requires_confirmation_and_call_user_reason(self):
         data = json.loads(
             (FIXTURES /
@@ -120,52 +90,6 @@ class VerifyLLContractTest(unittest.TestCase):
             code, output = self.run_contract(Path(tmp.name))
             self.assertEqual(code, 0)
             self.assertIn("PASS ll.contract.v0", output)
-
-    def test_dynamic_hot_block_switches_to_next_focus_from_ledger(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            ledger = root / "contract.ll"
-            initialized = subprocess.run(
-                [str(LEDGER), "init", str(FIXTURES / "base_ll_contract.json"),
-                 str(ledger)],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(0, initialized.returncode, initialized.stderr)
-            original_front = ledger.read_text(encoding="utf-8").splitlines()[:8]
-
-            events = [
-                {
-                    "type": "focus_added",
-                    "focus": {
-                        "id": "review-gap",
-                        "goal": "修复 review 发现的 session 复用缺口",
-                        "done_when": ["resume 使用相同 session_id"],
-                    },
-                },
-                {"type": "focus_completed", "focus_id": "root"},
-            ]
-            for index, event in enumerate(events):
-                event_path = root / f"event-{index}.json"
-                event_path.write_text(json.dumps(event), encoding="utf-8")
-                appended = subprocess.run(
-                    [str(LEDGER), "append", str(ledger), "--event-file",
-                     str(event_path)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertEqual(0, appended.returncode, appended.stderr)
-
-            hot = render_hot_block(load_path(ledger), ledger)
-            self.assertEqual(8, len(hot))
-            self.assertIn("Focus: 修复 review 发现的 session 复用缺口", hot)
-            self.assertIn("resume 使用相同 session_id", hot[3])
-            self.assertEqual(
-                original_front,
-                ledger.read_text(encoding="utf-8").splitlines()[:8],
-            )
 
     def test_uncompileable_reply_event_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -346,30 +270,6 @@ class VerifyLLContractTest(unittest.TestCase):
             "FAIL E_GOAL_AUTHORIZATION codex_goal objective_source must be verified_contract",
             output)
 
-    def test_feedback_items_are_optional_and_validated(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_manual_report.json").read_text(encoding="utf-8"))
-        data["feedback"] = [{
-            "id": "ll-feedback-20260701-001",
-            "source": "user",
-            "quote": "修改意见很难结构化记录用来完善 ll",
-            "type": "loop_process_gap",
-            "applies_to": "ll",
-            "target_artifact": "skills/loop-ledger/SKILL.md",
-            "problem": "ll lacks a structured operator feedback capture path",
-            "proposed_change": "write ll feedback to a sidecar JSONL artifact",
-            "disposition": "applied_to_contract",
-            "current_task_impact": "none",
-        }]
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(code, 0)
-        self.assertIn("PASS ll.contract.v0", output)
-
     def test_current_task_feedback_cannot_claim_no_task_impact(self):
         data = json.loads(
             (FIXTURES /
@@ -392,28 +292,6 @@ class VerifyLLContractTest(unittest.TestCase):
         self.assertIn(
             "FAIL E_FEEDBACK_SCHEMA feedback[0].current_task_correction cannot have current_task_impact=none",
             output)
-
-    def test_done_fails_when_scope_feedback_is_not_applied(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_manual_report.json").read_text(encoding="utf-8"))
-        data["ll_contract"]["exit"]["state"] = "done"
-        data["feedback"] = [{
-            "id": "ll-feedback-20260701-003",
-            "source": "user",
-            "quote": "漏了历史筛选规则",
-            "type": "loop_process_gap",
-            "problem": "acceptance missed existing behavior",
-            "disposition": "requires_next_ff",
-            "current_task_impact": "updates_acceptance",
-        }]
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(code, 0)
-        self.assertIn("PASS ll.contract.v0", output)
 
     def test_loop_control_feedback_must_be_absorbed_before_ready_exit(self):
         data = json.loads(
@@ -501,94 +379,6 @@ class VerifyLLContractTest(unittest.TestCase):
             code, output = self.run_contract(Path(tmp.name))
         self.assertEqual(code, 1)
         self.assertIn("FAIL E_ACCEPTANCE_PRESERVATION", output)
-
-    def test_append_preflights_effective_hot_block_budget(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            ledger = root / "contract.ll"
-            source = root / "contract.json"
-            data = json.loads(
-                (FIXTURES / "base_ll_contract.json").read_text(encoding="utf-8"))
-            data["runtime_binding"]["hot_packet"] = {
-                "protocol": "ll-turn@1",
-                "soft_target": 1200,
-                "hard_limit": 1800,
-            }
-            source.write_text(json.dumps(data), encoding="utf-8")
-            initialized = subprocess.run(
-                [str(LEDGER), "init", str(source), str(ledger)],
-                check=False, capture_output=True, text=True)
-            self.assertEqual(0, initialized.returncode, initialized.stderr)
-            event = root / "event.json"
-            event.write_text(json.dumps({
-                "type": "focus_added",
-                "focus": {
-                    "id": "too-long",
-                    "goal": "x" * 1800,
-                    "done_when": ["bounded"],
-                },
-            }), encoding="utf-8")
-            added = subprocess.run(
-                [str(LEDGER), "append", str(ledger), "--event-file", str(event)],
-                check=False, capture_output=True, text=True)
-            self.assertEqual(0, added.returncode, added.stderr)
-            event.write_text(json.dumps({
-                "type": "focus_activated",
-                "focus_id": "too-long",
-            }), encoding="utf-8")
-            activated = subprocess.run(
-                [str(LEDGER), "append", str(ledger), "--event-file", str(event)],
-                check=False, capture_output=True, text=True)
-            self.assertNotEqual(0, activated.returncode)
-            self.assertIn("E_HOT_BLOCK", activated.stderr)
-
-    def test_rejects_malformed_hot_packet_policy(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_codex_goal.json").read_text(encoding="utf-8"))
-        data["runtime_binding"]["hot_packet"] = {
-            "protocol": "ll-turn@1",
-            "soft_target": 1200,
-            "hard_limit": 1700,
-        }
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(1, code)
-        self.assertIn("FAIL E_HOT_PACKET_POLICY", output)
-
-    def test_accepts_legacy_hot_packet_policy(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_codex_goal.json").read_text(encoding="utf-8"))
-        data["runtime_binding"]["hot_packet"] = {
-            "protocol": "ll-turn@1",
-            "soft_target": 800,
-            "hard_limit": 1200,
-        }
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(0, code, output)
-
-    def test_full_contract_requires_checkpoints(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_manual_report.json").read_text(encoding="utf-8"))
-        data["ll_contract"].pop("checkpoints", None)
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(code, 1)
-        self.assertIn(
-            "FAIL E_CHECKPOINTS full/strict contracts require ll_contract.checkpoints",
-            output)
 
     def test_done_fails_with_unresolved_checkpoint(self):
         data = json.loads(

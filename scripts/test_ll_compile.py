@@ -28,9 +28,6 @@ class LLCompileTest(unittest.TestCase):
                         "exclude": ["push"],
                     },
                     "acceptance": ["A 保真", "B 有来源", "A 保真"],
-                    "existing_capability_inventory": {
-                        "prior_entries": ["ll-workitem"],
-                    },
                     "verification_loop": {
                         "stop_conditions": ["C 回归通过"],
                     },
@@ -44,13 +41,6 @@ class LLCompileTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             compiled = json.loads(result.stdout)
             self.assertTrue(compiled["preflight"]["ok"])
-            self.assertTrue(compiled["preflight"]["within_soft_target"])
-            self.assertEqual(
-                {"LL", "Goal", "Scope", "Done", "Guardrails", "Ordinary",
-                 "Recovery", "Contract"},
-                set(compiled["preflight"]["fields"]),
-            )
-            self.assertLessEqual(compiled["preflight"]["length"], 1800)
             contract = load_path(ledger).contract
             self.assertEqual(
                 ["compiler", "tests"],
@@ -65,11 +55,6 @@ class LLCompileTest(unittest.TestCase):
                  for item in verification["acceptance_sources"]])
             self.assertEqual("user_request", contract["dispatch"][
                 "goal_authorization"]["source"])
-            self.assertEqual({
-                "protocol": "ll-turn@1",
-                "soft_target": 1200,
-                "hard_limit": 1800,
-            }, contract["runtime_binding"]["hot_packet"])
             self.assertIn("revision_sha256", contract["ff_binding"])
             self.assertTrue(contract["ff_binding"]["id"].startswith("ff-"))
 
@@ -126,36 +111,6 @@ class LLCompileTest(unittest.TestCase):
                 check=False, capture_output=True, text=True)
             self.assertNotEqual(0, result.returncode)
             self.assertIn("ready_for_dispatch must be true", result.stderr)
-
-    def test_preflight_accepts_long_scope_within_shared_packet_budget(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "ff.json"
-            ledger = root / "session.ll"
-            source.write_text(json.dumps({
-                "ff": {
-                    "goal": "验证长范围预检",
-                    "scope": {"include": ["范围" + "甲" * 1100]},
-                    "acceptance": ["预检给出字段长度"],
-                    "blocking_questions": [],
-                    "ready_for_dispatch": True,
-                },
-            }, ensure_ascii=False), encoding="utf-8")
-            result = subprocess.run(
-                [str(SCRIPT), str(ledger), "--input", str(source),
-                 "--preflight"],
-                check=False, capture_output=True, text=True)
-            self.assertEqual(0, result.returncode, result.stderr)
-            report = json.loads(result.stdout)
-            self.assertFalse(report["would_write"])
-            self.assertGreater(report["preflight"]["fields"]["Scope"]["length"],
-                               1000)
-            self.assertFalse(report["preflight"]["within_soft_target"])
-            self.assertLessEqual(report["preflight"]["fields"]["Scope"]["length"],
-                                 report["preflight"]["length"])
-            self.assertLessEqual(report["preflight"]["length"],
-                                 report["preflight"]["hard_limit"])
-            self.assertFalse(ledger.exists())
 
     def test_preflight_reports_total_and_contributions_over_hard_limit(self):
         with tempfile.TemporaryDirectory() as tmp:

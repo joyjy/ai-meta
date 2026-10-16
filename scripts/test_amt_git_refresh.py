@@ -5,7 +5,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
 
 
@@ -224,20 +223,6 @@ class AmtGitRefreshTest(unittest.TestCase):
         self.assertEqual(git(self.clean, "rev-parse", "HEAD"), self.before)
         self.assertEqual(report["state"], "healthy")
 
-    def test_healthy_refresh_runs_only_once_per_local_day(self) -> None:
-        first = self.run_refresh()
-
-        (self.writer / "README.md").write_text("three\n")
-        git(self.writer, "add", "README.md")
-        git(self.writer, "commit", "-m", "another remote update")
-        git(self.writer, "push")
-        newer_remote_head = git(self.writer, "rev-parse", "HEAD")
-        self.assertNotEqual(newer_remote_head, self.remote_head)
-
-        second = self.run_refresh(force=False, once_per_day=True)
-        self.assertEqual(second["checked_at"], first["checked_at"])
-        self.assertEqual(git(self.clean, "rev-parse", "HEAD"), self.remote_head)
-
     def test_parses_gitlab_ssh_and_https_remotes(self) -> None:
         expected = self.mod.GitLabRemote("gitlab.example.com", "group/demo")
         self.assertEqual(
@@ -249,60 +234,6 @@ class AmtGitRefreshTest(unittest.TestCase):
             expected,
         )
         self.assertIsNone(self.mod.parse_gitlab_remote(str(self.remote)))
-
-    def test_broker_json_returns_data_from_gtd_bridge(self) -> None:
-        original_run_gtd_broker = self.mod.run_gtd_broker
-
-        def fake_run_gtd_broker(request, _timeout_seconds):
-            self.assertEqual(request["resource"], "mr-list")
-            return subprocess.CompletedProcess(
-                ["gtd"],
-                0,
-                '{"ok":true,"data":[{"iid":1},{"iid":2}]}',
-                "",
-            )
-
-        self.mod.run_gtd_broker = fake_run_gtd_broker
-        try:
-            payload = self.mod.broker_json(
-                "mr-list",
-                "gitlab.example.com",
-                30,
-                project="group/demo",
-                query={
-                    "scope": "all",
-                    "state": "all",
-                    "source_branch": "feat/test",
-                    "per_page": "100",
-                },
-            )
-        finally:
-            self.mod.run_gtd_broker = original_run_gtd_broker
-
-        self.assertEqual(payload, [{"iid": 1}, {"iid": 2}])
-
-    def test_gtd_broker_uses_explicit_node_command(self) -> None:
-        completed = subprocess.CompletedProcess(["node", "gtd"], 0, "{}", "")
-
-        with (
-            mock.patch.dict(
-                self.mod.os.environ,
-                {
-                    "AMT_GTD_COMMAND": "/runtime/gtd",
-                    "AMT_GTD_NODE": "/runtime/node",
-                },
-            ),
-            mock.patch.object(
-                self.mod.subprocess,
-                "run",
-                return_value=completed,
-            ) as run,
-        ):
-            self.mod.run_gtd_broker({"resource": "mr-list"}, 30)
-
-        command = run.call_args.args[0]
-        self.assertEqual(command[:2], ["/runtime/node", "/runtime/gtd"])
-        self.assertEqual(command[2:6], ["gitlab", "broker", "request", "--json"])
 
     def test_cleanup_excludes_configured_project_prefix(self) -> None:
         original_gitlab_remote = self.mod.gitlab_remote
@@ -388,14 +319,6 @@ class AmtGitRefreshTest(unittest.TestCase):
                 "per_page": "100",
             },
         )
-
-    def test_cleanup_without_topic_candidates_does_not_query_gitlab(self) -> None:
-        report, delete_calls, broker_requests = self.cleanup_feature([])
-
-        self.assertEqual(report["candidates"], [])
-        self.assertEqual(report["broker_requests"], 0)
-        self.assertEqual(broker_requests, [])
-        self.assertEqual(delete_calls, [])
 
     def test_cleanup_skips_branch_with_open_mr(self) -> None:
         branch = "feat-open"

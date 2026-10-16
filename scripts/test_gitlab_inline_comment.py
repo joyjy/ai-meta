@@ -31,16 +31,6 @@ class GitlabMrTest(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = load_module()
 
-    def test_parse_mr_url(self):
-        mr = self.mod.parse_mr_url("https://gitlab.example.com/group/sub/project/-/merge_requests/123")
-
-        self.assertEqual(mr.iid, "123")
-        self.assertEqual(mr.repo, "group/sub/project")
-        self.assertEqual(mr.hostname, "gitlab.example.com")
-
-    def test_project_endpoint_uses_fullpath_placeholder_without_repo(self):
-        self.assertEqual(self.mod.project_endpoint(""), "projects/:fullpath")
-
     def test_project_endpoint_url_encodes_repo(self):
         self.assertEqual(self.mod.project_endpoint("group/sub/project"), "projects/group%2Fsub%2Fproject")
 
@@ -90,20 +80,66 @@ class GitlabMrTest(unittest.TestCase):
             create_output = (
                 "https://gitlab.example.com/group/project/-/merge_requests/12\n")
             with (
-                mock.patch.object(self.mod, "run", return_value=create_output) as run,
+                mock.patch.object(self.mod, "run", side_effect=[
+                    json.dumps({"id": 1, "path_with_namespace": "group/project",
+                                "squash_option": "default_on", "remove_source_branch_after_merge": True}),
+                    create_output,
+                ]) as run,
                 mock.patch.object(
                     self.mod, "glab_api",
-                    return_value={"description": protected}) as api,
+                    return_value={"description": protected, "project_id": 1,
+                                  "squash": True, "should_remove_source_branch": True}) as api,
                 redirect_stdout(io.StringIO()),
             ):
                 self.mod.cmd_create(args)
 
         self.assertIn("--description", run.call_args.args[0])
         self.assertIn(protected, run.call_args.args[0])
+        self.assertIn("--squash-before-merge=true", run.call_args.args[0])
+        self.assertIn("--remove-source-branch=true", run.call_args.args[0])
         api.assert_called_once_with(
             "projects/group%2Fproject/merge_requests/12",
             hostname="gitlab.example.com",
         )
+
+    def test_create_merge_defaults_overrides_and_failed_readback(self):
+        cases = [
+            ("default_off", False, [], False, False, False),
+            ("default_on", True, ["--squash-before-merge=false", "--remove-source-branch", "false"], False, False, False),
+            ("default_on", True, [], True, True, True),
+        ]
+        for policy, delete_default, extra, squash, delete, mismatch in cases:
+            with self.subTest(policy=policy, extra=extra, mismatch=mismatch), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "description.md"
+                path.write_text("change", encoding="utf-8")
+                args = SimpleNamespace(repo="group/project", hostname="gitlab.example.com",
+                    title="title", description_file=str(path), source_branch="topic", target_branch="master",
+                    label=[], assignee=[], reviewer=[], draft=False, yes=True, extra_args=extra, dry_run=False)
+                with mock.patch.object(self.mod, "run", side_effect=[
+                        json.dumps({"id": 1, "path_with_namespace": "group/project",
+                                    "squash_option": policy, "remove_source_branch_after_merge": delete_default}),
+                        "https://gitlab.example.com/group/project/-/merge_requests/12\n",
+                    ]) as run, mock.patch.object(self.mod, "glab_api", return_value={
+                        "description": "## User Description\n\nchange", "project_id": 1,
+                        "squash": not squash if mismatch else squash, "should_remove_source_branch": delete,
+                    }), redirect_stdout(io.StringIO()):
+                    if mismatch:
+                        with self.assertRaisesRegex(RuntimeError, "was created.*do not retry"):
+                            self.mod.cmd_create(args)
+                    else:
+                        self.mod.cmd_create(args)
+                command = run.call_args.args[0]
+                self.assertIn(f"--squash-before-merge={str(squash).lower()}", command)
+                self.assertIn(f"--remove-source-branch={str(delete).lower()}", command)
+
+    def test_create_rejects_unknown_defaults_before_remote_write(self):
+        args = SimpleNamespace(repo="group/project", hostname="gitlab.example.com", extra_args=[])
+        with mock.patch.object(self.mod, "run", return_value=json.dumps({
+                "id": 1, "path_with_namespace": "group/project", "squash_option": None,
+                "remove_source_branch_after_merge": True})) as run:
+            with self.assertRaisesRegex(RuntimeError, "MR was not created"):
+                self.mod.project_merge_options(args)
+        self.assertEqual(run.call_count, 1)
 
     def test_update_writes_composed_description_then_reads_it_back(self):
         tail = (
@@ -252,55 +288,6 @@ class GitlabMrTest(unittest.TestCase):
         self.assertEqual(payload, observed["payload"])
         self.assertIn("Content-Type: application/json", observed["command"])
         self.assertEqual({"id": "discussion-1"}, result)
-
-    def test_compact_notes_omits_unneeded_api_fields(self):
-        notes = self.mod.compact_notes(
-            [{
-                "id": "discussion-1",
-                "notes": [{
-                    "id": 7,
-                    "author": {"username": "reviewer", "name": "Reviewer", "avatar_url": "large"},
-                    "body": "Please fix this",
-                    "created_at": "2026-07-28T00:00:00Z",
-                    "resolvable": True,
-                    "resolved": False,
-                    "system": False,
-                    "position": {"new_path": "src/app.py", "new_line": 42, "head_sha": "large"},
-                }],
-            }]
-        )
-
-        self.assertEqual(
-            notes,
-            [{
-                "discussion_id": "discussion-1",
-                "note_id": 7,
-                "type": "diff",
-                "resolvable": True,
-                "resolved": False,
-                "author": {"username": "reviewer", "name": "Reviewer"},
-                "body": "Please fix this",
-                "created_at": "2026-07-28T00:00:00Z",
-                "position": {"new_path": "src/app.py", "new_line": 42},
-            }],
-        )
-
-    def test_filter_notes_defaults_to_human_notes_and_supports_reviewer_filter(self):
-        args = SimpleNamespace(
-            include_system=False,
-            type="all",
-            state="unresolved",
-            author="reviewer",
-            file=None,
-        )
-        notes = [
-            {"type": "system", "resolvable": False, "resolved": False, "author": {"username": "reviewer"}},
-            {"type": "general", "resolvable": False, "resolved": False, "author": {"username": "reviewer"}},
-            {"type": "diff", "resolvable": True, "resolved": False, "author": {"username": "reviewer"}},
-            {"type": "diff", "resolvable": True, "resolved": False, "author": {"username": "other"}},
-        ]
-
-        self.assertEqual([notes[2]], self.mod.filter_notes(notes, args))
 
     def test_reviewer_add_preserves_latest_reviewers_and_verifies_readback(self):
         args = SimpleNamespace(

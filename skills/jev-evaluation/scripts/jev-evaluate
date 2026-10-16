@@ -14,7 +14,7 @@ from jev_client import JevError, api_key_from_environment, evaluate
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate a TypeSafe Jev JSON request")
     parser.add_argument("input", nargs="?", default="-", help="request JSON path, or - for stdin")
-    parser.add_argument("--env-file", help="private .env file with TYPESAFE_API_KEY")
+    parser.add_argument("--env-file", help="private env file; overrides TYPESAFE_API_KEY and ~/.ai/jev.env")
     parser.add_argument("--timeout", type=float, default=20.0, help="seconds per attempt, 0 < value <= 120")
     parser.add_argument("--retries", type=int, default=2, help="transient retries, 0..3")
     args = parser.parse_args()

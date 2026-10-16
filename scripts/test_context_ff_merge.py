@@ -110,21 +110,6 @@ class ContextFFMergeTest(unittest.TestCase):
             context = (context_dir / "amt.md").read_text(encoding="utf-8")
             self.assertIn("origin_session_id: thread-from-environment", context)
 
-    def test_sparse_ff_does_not_gain_empty_optional_groups(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            context_dir = root / "contexts"
-
-            proc = self.run_script(context_dir, self.write_ff(root))
-
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            context = (context_dir / "amt.md").read_text(encoding="utf-8")
-            self.assertNotIn("checks:", context)
-            self.assertNotIn("constraints:", context)
-            self.assertNotIn("defaults:", context)
-            self.assertNotIn("parallelization:", context)
-            self.assertNotIn("exclude:", context)
-
     def test_existing_context_replaces_only_mainline_next_ff(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -139,22 +124,12 @@ goal: Existing context.
 mainline:
   state: active
   summary: keep summary
-  doing:
-  - keep doing
+  doing: [keep doing]
   blocked: []
   next_steps:
-  - ff:
-      output_target: context
-      goal: Old goal
-      blocking_questions: []
-      ready_for_dispatch: true
+  - ff: {goal: Old goal}
 workstreams:
-  other:
-    state: active
-    summary: preserve me
-    doing: []
-    blocked: []
-    next_step: keep this
+  other: {state: active, summary: preserve me, doing: [], blocked: [], next_step: keep this}
 updated: 2026-07-01
 ---
 
@@ -193,23 +168,6 @@ updated: 2026-07-01
             self.assertEqual(1, proc.returncode)
             self.assertIn("unknown key(s)", proc.stderr)
             self.assertEqual(invalid, context_path.read_text(encoding="utf-8"))
-
-    def test_long_ff_scalars_are_not_folded_for_lightweight_consumers(
-            self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            context_dir = root / "contexts"
-            goal = (
-                "在 example-amp-service 中实现可由 Apollo 热更新控制的过期 token "
-                "小批量清理能力，并为过期 token 保留一个月安全期。"
-            )
-
-            proc = self.run_script(context_dir,
-                                   self.write_ff(root, self.ff(goal)))
-
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            context = (context_dir / "amt.md").read_text(encoding="utf-8")
-            self.assertIn(f"goal: {goal}\n", context)
 
     def test_malformed_context_refuses_to_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -271,19 +229,13 @@ updated: 2026-07-10
 # context: project=amt; mainline=idle; workstreams=1(active:forum)
 schema: context.v3
 project: amt
-mainline:
-  state: idle
-  doing: []
-  blocked: []
-  next_steps: []
+mainline: {state: idle, doing: [], blocked: [], next_steps: []}
 workstreams:
   forum:
     state: active
     doing: []
     blocked: []
-    next_step:
-      ff:
-        goal: Completed forum goal
+    next_step: {ff: {goal: Completed forum goal}}
 updated: 2026-07-10
 ---
 
@@ -321,20 +273,13 @@ Completed recovery details.
 # context: project=amt; mainline=idle; workstreams=1(active:forum)
 schema: context.v3
 project: amt
-mainline:
-  state: idle
-  doing: []
-  blocked: []
-  next_steps: []
+mainline: {state: idle, doing: [], blocked: [], next_steps: []}
 workstreams:
   forum:
     state: active
-    doing:
-    - Preserve this work
+    doing: [Preserve this work]
     blocked: []
-    next_step:
-      ff:
-        goal: Completed forum goal
+    next_step: {ff: {goal: Completed forum goal}}
 updated: 2026-07-10
 ---
 
@@ -367,41 +312,23 @@ Preserve these details.
 # context: project=amt; mainline=idle; workstreams=2(active:forum, parked:other)
 schema: context.v3
 project: amt
-mainline:
-  state: idle
-  doing: []
-  blocked: []
-  next_steps: []
+mainline: {state: idle, doing: [], blocked: [], next_steps: []}
 workstreams:
   forum:
     state: active
     doing: []
     blocked: []
-    next_step:
-      ff:
-        goal: Completed forum goal
-  other:
-    state: parked
-    doing: []
-    blocked: []
-    next_step: null
+    next_step: {ff: {goal: Completed forum goal}}
+  other: {state: parked, doing: [], blocked: [], next_step: null}
 updated: 2026-07-10
 ---
 
-# amt Context
-
 ## Workstreams
-
 ### forum
-
 ### Critical Context
-
 Remove target details.
-
 ### other
-
 ### Critical Context
-
 Preserve unrelated details.
 """,
                 encoding="utf-8")

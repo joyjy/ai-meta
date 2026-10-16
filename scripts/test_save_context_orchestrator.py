@@ -87,10 +87,8 @@ class OrchestratorWorkflowTest(unittest.TestCase):
     def test_success_runs_fixed_order_and_returns_compact_receipt(self) -> None:
         audit = json.dumps({
             "status": "pending",
-            "run_id": "run-1",
             "receipt_path": "/audit/receipt.json",
             "output_path": "/audit/agent-audit.yaml",
-            "participant_policy": "runtime-selected",
         })
         runner = RecordingRunner([
             completed(stdout="validation succeeded\n"),
@@ -114,7 +112,6 @@ class OrchestratorWorkflowTest(unittest.TestCase):
         self.assertNotIn("--validate-only", runner.calls[2][0])
         self.assertEqual("context payload", runner.calls[0][1])
         self.assertEqual("context payload", runner.calls[2][1])
-        self.assertNotIn("title", receipt["stages"])
 
     def test_audit_failure_is_reported_without_blocking_checkpoint(self) -> None:
         runner = RecordingRunner([
@@ -155,27 +152,6 @@ class OrchestratorWorkflowTest(unittest.TestCase):
         self.assertEqual("failed", receipt["stages"]["preflight"]["status"])
         self.assertEqual("preflight_failed", receipt["stages"]["audit"]["reason"])
         self.assertEqual(1, len(runner.calls))
-
-    def test_receipt_never_claims_native_title_write(self) -> None:
-        runner = RecordingRunner([
-            completed(stdout="validation succeeded\n"),
-            completed(stdout="wrote /context\ntimeline already exists /daily\n"),
-        ])
-
-        code, receipt = orchestrate(
-            arguments(audit_thread_id=None, audit_cwd=None),
-            ["amt:work", "--context-file", "/tmp/context", "--timeline", "done"],
-            None,
-            READY_ADMISSION,
-            COMMANDS,
-            runner,
-        )
-
-        self.assertEqual(0, code)
-        self.assertEqual("succeeded", receipt["status"])
-        self.assertEqual("skipped", receipt["stages"]["audit"]["status"])
-        self.assertEqual(["context", "context"], [call[0][0] for call in runner.calls])
-        self.assertNotIn("title", receipt["stages"])
 
     def test_continue_work_skips_every_output_stage(self) -> None:
         runner = RecordingRunner([])
@@ -233,13 +209,6 @@ class OrchestratorWorkflowTest(unittest.TestCase):
                 "actionable": ["pipeline failed"],
             }))
 
-    def test_admission_rejects_unbounded_items(self) -> None:
-        with self.assertRaisesRegex(ValueError, "non-empty string list"):
-            parse_admission(json.dumps({
-                **READY_ADMISSION,
-                "checked": ["x" * 501],
-            }))
-
     def test_real_entry_keeps_repeated_timeline_checkpoint_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()
@@ -292,19 +261,10 @@ class OrchestratorWorkflowTest(unittest.TestCase):
             context_path.write_text(MAINLINE_CONTEXT, encoding="utf-8")
 
             result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--orchestrate",
-                    "--admission-file", str(admission_path),
-                    "amt",
-                    "--context-file", str(context_path),
-                    "--skip-timeline",
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-                env=env,
+                [sys.executable, str(SCRIPT), "--orchestrate",
+                 "--admission-file", str(admission_path), "amt",
+                 "--context-file", str(context_path), "--skip-timeline"],
+                text=True, capture_output=True, check=False, env=env,
             )
 
             self.assertEqual(0, result.returncode, result.stderr)

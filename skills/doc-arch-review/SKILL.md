@@ -15,7 +15,7 @@ Find architecture-doc gaps that could mislead implementation, migration, ownersh
 - OKF / knowledge bundle / doc-root taxonomy review: read `references/okf-standard.md`; read `references/okf-spec.md` only for unresolved conformance or claimed conflict.
 - OKF architecture restructuring or BMAD compatibility: directly read `references/okf-architecture-layout.md`.
 - OKF preview / footnote / embed / citation behavior: directly read `references/okf-reference-preset-proposal.md`. New OKF object proposals directly use `templates/okf-knowledge-object.md`.
-- Mixed evidence levels: directly read `../engineering-exit/references/evidence-classification.md`; keep output in domain language.
+- Mixed evidence levels: directly read `../../docs/reference/evidence-classification.md`; keep output in domain language.
 
 ## Boundaries
 

@@ -31,7 +31,7 @@ Use this only when a known target admits materially different terminal effects, 
 - Existing-session/client continuation is structural. Read `references/work-order-contract.md`; prove each surface/activity pair and delivery semantics before Ready.
 - A repeated stable event → manual routing → bounded agent step → verifiable artifact is a rollerskate signal. Evaluate it through the `automation_candidate` contract in `references/work-order-contract.md`; emit only advisory metadata, never Run authorization.
 - Do not inflate an executable request to populate fields.
-- Use `/ll` when selected by the user/project, or offer it when durable orchestration materially helps. Steps or tests alone do not require it; ordinary authorized work returns ready to the caller without another permission round.
+- Route automatically to loop-ledger when its Admission rules fit, or when selected by the user/project. loop-ledger owns selection and platform goal-authority checks; ordinary work returns ready to the caller without another permission round.
 - Show one action line: while blocked show only `Blocking question`; when Ready show only `Next`.
 - One question may confirm both exact effects and `/ll` handoff only when those are the sole remaining boundary and execution is requested; details live in the dispatch reference.
 - Explicit `/ll`, `/loop`, or loop-ledger invocation supplies dispatch authorization. Compile internally and return control when structurally ready; do not show another confirmation screen.
@@ -68,7 +68,7 @@ final-form:
 - Next: <only when Ready>
 ```
 
-For a new `/ll` offer: `Next: 是否按此范围启动 loop-ledger 和 Codex goal？` Already-authorized dispatch needs no repeat offer.
+Only when loop-ledger identifies missing goal authorization: `Next: 是否按此范围启动 loop-ledger 和 Codex goal？` Already-authorized dispatch needs no repeat offer.
 
 When routing to grill, state that structural ambiguity remains and ask one structural question.
 

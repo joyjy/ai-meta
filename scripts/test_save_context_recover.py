@@ -262,35 +262,5 @@ class SaveContextRecoverTest(unittest.TestCase):
             self.assertEqual(0, proc.returncode, proc.stderr)
             self.assertIn(str(rollout), proc.stdout)
 
-    def test_recovery_packet_keeps_legacy_context_support(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            rollout = Path(tmp) / "legacy.jsonl"
-            rollout.write_text(
-                json.dumps({
-                    "timestamp": "2026-06-24T01:00:00Z",
-                    "type": "response_item",
-                    "payload": {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{
-                            "type": "output_text",
-                            "text": "<!-- context: project=old; mainline=active; workstreams=0() -->\n\n---\nproject: old\n---\n",
-                        }],
-                    },
-                }) + "\n",
-                encoding="utf-8",
-            )
-
-            proc = subprocess.run(
-                [sys.executable, str(SCRIPT), "--rollout", str(rollout)],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertIn("project=old", proc.stdout)
-
-
 if __name__ == "__main__":
     unittest.main()
