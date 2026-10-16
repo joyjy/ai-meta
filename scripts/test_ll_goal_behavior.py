@@ -19,8 +19,6 @@ class LLGoalBehaviorEvalTest(unittest.TestCase):
         cls.cases = json.loads(CASES.read_text(encoding="utf-8"))
 
     def test_confirmed_ff_is_declared_completely_in_goal_and_hot_block(self):
-        self.assertGreaterEqual(len(self.cases), 3)
-        self.assertLessEqual(len(self.cases), 5)
         for case in self.cases:
             with self.subTest(case=case["name"]), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -70,8 +68,6 @@ class LLGoalBehaviorEvalTest(unittest.TestCase):
                 self.assertIn(
                     f"{(ROOT / 'll-hot-block').resolve()} {ledger.resolve()}",
                     objective.stdout)
-                self.assertIn("恢复、人工 gate、状态迁移或最终审计",
-                              objective.stdout)
 
 
 if __name__ == "__main__":

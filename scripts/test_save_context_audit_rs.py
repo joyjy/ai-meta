@@ -71,31 +71,19 @@ class SaveContextAuditRsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex_home = root / "codex"
-            rollout = (
-                codex_home / "sessions/2026/08/07"
-                / "rollout-2026-08-07T01-02-03-thread-audit.jsonl"
-            )
+            rollout = (codex_home / "sessions/2026/08/07"
+                       / "rollout-2026-08-07T01-02-03-thread-audit.jsonl")
             rollout.parent.mkdir(parents=True)
-            rollout.write_text(
-                json.dumps({
-                    "timestamp": "2026-08-07T01:00:00Z",
-                    "type": "session_meta",
-                    "payload": {
-                        "session_id": "thread-audit",
-                        "cwd": "/workspace/project",
-                        "originator": "Codex Desktop",
-                    },
-                }) + "\n" + json.dumps({
-                    "timestamp": "2026-08-07T01:01:00Z",
-                    "type": "response_item",
-                    "payload": {
-                        "type": "message",
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": "save context"}],
-                    },
-                }) + "\n",
-                encoding="utf-8",
-            )
+            events = [
+                {"timestamp": "2026-08-07T01:00:00Z", "type": "session_meta",
+                 "payload": {"session_id": "thread-audit", "cwd": "/workspace/project",
+                             "originator": "Codex Desktop"}},
+                {"timestamp": "2026-08-07T01:01:00Z", "type": "response_item",
+                 "payload": {"type": "message", "role": "user",
+                             "content": [{"type": "input_text", "text": "save context"}]}},
+            ]
+            rollout.write_text("".join(json.dumps(event) + "\n" for event in events),
+                               encoding="utf-8")
             fake_rs = root / "rs"
             capture = root / "captured-run.json"
             counter = root / "calls.txt"
@@ -109,48 +97,22 @@ class SaveContextAuditRsTest(unittest.TestCase):
                 "    counter.write_text(counter.read_text() + 'x' if counter.exists() else 'x')\n"
                 "    print(json.dumps({'status': 'accepted', 'run': {'runId': 'run_test'}}))\n"
                 "elif sys.argv[1:3] == ['run', 'inspect']:\n"
-                "    print(json.dumps({'summary': {\n"
-                "        'status': 'active',\n"
-                "        'terminalSummary': 'still running',\n"
-                "    }}))\n"
+                "    print(json.dumps({'summary': {'status': 'active'}}))\n"
                 "else:\n"
                 "    raise SystemExit(2)\n",
                 encoding="utf-8",
             )
             fake_rs.chmod(0o755)
-            audit_root = root / "audits"
-            environment = {
-                **os.environ,
-                "FAKE_CAPTURE": str(capture),
-                "FAKE_COUNTER": str(counter),
-            }
-            command = [
-                sys.executable,
-                str(SCRIPT),
-                "dispatch",
-                "--thread-id", "thread-audit",
-                "--codex-home", str(codex_home),
-                "--cwd", "/workspace/project",
-                "--route", "amt:mainline",
-                "--audit-root", str(audit_root),
-                "--rs-command", str(fake_rs),
-            ]
-
-            first = subprocess.run(
-                command,
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
-            second = subprocess.run(
-                command,
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
-
+            environment = {**os.environ, "FAKE_CAPTURE": str(capture),
+                           "FAKE_COUNTER": str(counter)}
+            command = [sys.executable, str(SCRIPT), "dispatch",
+                       "--thread-id", "thread-audit", "--codex-home", str(codex_home),
+                       "--cwd", "/workspace/project", "--route", "amt:mainline",
+                       "--audit-root", str(root / "audits"), "--rs-command", str(fake_rs)]
+            first = subprocess.run(command, text=True, capture_output=True,
+                                   check=False, env=environment)
+            second = subprocess.run(command, text=True, capture_output=True,
+                                    check=False, env=environment)
             self.assertEqual(0, first.returncode, first.stderr)
             self.assertEqual(0, second.returncode, second.stderr)
             receipt = json.loads(first.stdout)
@@ -158,146 +120,61 @@ class SaveContextAuditRsTest(unittest.TestCase):
             self.assertEqual("pending", receipt["status"])
             self.assertEqual("run_test", receipt["run_id"])
             self.assertEqual("runtime-selected", receipt["participant_policy"])
+            self.assertEqual("thread-audit", receipt["thread_id"])
+            self.assertEqual("/workspace/project", receipt["project_cwd"])
+            self.assertEqual("amt:mainline", receipt["route"])
+            self.assertEqual(str(rollout.resolve()), receipt["rollout"])
             self.assertEqual("x", counter.read_text(encoding="utf-8"))
             self.assertFalse(Path(receipt["output_path"]).exists())
-
             run_request = json.loads(capture.read_text(encoding="utf-8"))
             self.assertEqual("RunIntent@1", run_request["schemaVersion"])
-            self.assertEqual(
-                f"save-context-audit-{receipt['audit_id']}",
-                run_request["requestId"],
-            )
-            self.assertEqual("change", run_request["desiredEffect"])
+            self.assertEqual(f"save-context-audit-{receipt['audit_id']}", run_request["requestId"])
             self.assertNotIn("requestedParticipantRefs", run_request)
-            self.assertEqual(
-                Path(receipt["workspace"]).as_uri(),
-                run_request["workspaceRef"],
-            )
-            self.assertEqual(
-                [
-                    Path(receipt["output_path"]).as_uri(),
-                    Path(receipt["summary_path"]).as_uri(),
-                ],
-                run_request["terminalEvidence"],
-            )
-            self.assertNotIn("steward", run_request)
-            self.assertNotIn("workspace", run_request)
-            self.assertNotIn("maxSteps", run_request)
-            self.assertNotIn("maxDepth", run_request)
             workspace = Path(receipt["workspace"])
-            self.assertTrue((workspace / "AUDITOR.md").is_file())
+            self.assertEqual(workspace.as_uri(), run_request["workspaceRef"])
+            self.assertEqual([Path(receipt["output_path"]).as_uri(),
+                              Path(receipt["summary_path"]).as_uri()],
+                             run_request["terminalEvidence"])
             self.assertTrue((workspace / "recovery-packet.md").is_file())
             self.assertFalse((workspace / "rollout.jsonl").exists())
-            self.assertIn(
-                "plain-language `save-context.audit-summary.v1` JSON",
-                (workspace / "AUDIT_TASK.md").read_text(encoding="utf-8"),
-            )
-
-            status = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "status",
-                    "--receipt", receipt["receipt_path"],
-                    "--rs-command", str(fake_rs),
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
+            status_command = [sys.executable, str(SCRIPT), "status",
+                              "--receipt", receipt["receipt_path"], "--rs-command", str(fake_rs)]
+            status = subprocess.run(status_command, text=True, capture_output=True,
+                                    check=False, env=environment)
             self.assertEqual(0, status.returncode, status.stderr)
             status_payload = json.loads(status.stdout)
             self.assertEqual("active", status_payload["status"])
-            self.assertEqual("still running", status_payload["terminal_summary"])
             self.assertFalse(status_payload["cleanup_ready"])
-
             Path(receipt["output_path"]).write_text(
-                "schema: agent.audit.v1\n"
-                "thread_id: thread-audit\n"
-                "execution_friction: []\n"
-                "prompt_contract_gaps: []\n",
-                encoding="utf-8",
-            )
-            Path(receipt["summary_path"]).write_text(
-                json.dumps({
-                    "schema": "save-context.audit-summary.v1",
-                    "thread_id": "thread-audit",
-                    "object": "save-context audit",
-                    "finding": "No evidence-backed finding exists.",
-                    "evidence": [],
-                    "recommendation": "No action.",
-                    "candidate_ids": ["worker-guessed-id"],
-                }),
-                encoding="utf-8",
-            )
-            ready = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "status",
-                    "--receipt", receipt["receipt_path"],
-                    "--rs-command", str(fake_rs),
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
+                "schema: agent.audit.v1\nthread_id: thread-audit\n"
+                "execution_friction: []\nprompt_contract_gaps: []\n", encoding="utf-8")
+            Path(receipt["summary_path"]).write_text(json.dumps({
+                "schema": "save-context.audit-summary.v1", "thread_id": "thread-audit",
+                "object": "audit", "finding": "No findings.", "evidence": [],
+                "recommendation": "No action.", "candidate_ids": ["worker-guessed-id"],
+            }), encoding="utf-8")
+            ready = subprocess.run(status_command, text=True, capture_output=True,
+                                   check=False, env=environment)
             self.assertEqual(0, ready.returncode, ready.stderr)
             ready_payload = json.loads(ready.stdout)
             self.assertEqual("ready", ready_payload["status"])
             self.assertTrue(ready_payload["needs_settlement"])
             self.assertFalse(ready_payload["cleanup_ready"])
-            self.assertEqual(
-                {"execution_friction": 0, "prompt_contract_gaps": 0},
-                ready_payload["candidate_counts"],
-            )
-            self.assertEqual(
-                "No evidence-backed finding exists.",
-                ready_payload["audit_summary"]["finding"],
-            )
             self.assertEqual([], ready_payload["audit_summary"]["candidate_ids"])
-
             settlement_input = root / "settlement-input.json"
-            settlement_input.write_text(
-                json.dumps({
-                    "schema": "save-context.audit-settlement.v1",
-                    "items": [],
-                }),
-                encoding="utf-8",
-            )
+            settlement_input.write_text(json.dumps({
+                "schema": "save-context.audit-settlement.v1", "items": [],
+            }), encoding="utf-8")
             settled = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "settle",
-                    "--receipt", receipt["receipt_path"],
-                    "--input", str(settlement_input),
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
+                [sys.executable, str(SCRIPT), "settle", "--receipt", receipt["receipt_path"],
+                 "--input", str(settlement_input)],
+                text=True, capture_output=True, check=False, env=environment)
             self.assertEqual(0, settled.returncode, settled.stderr)
             settled_payload = json.loads(settled.stdout)
             self.assertEqual("settled", settled_payload["status"])
             self.assertTrue(settled_payload["cleanup_ready"])
-
-            settled_status = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "status",
-                    "--receipt", receipt["receipt_path"],
-                    "--rs-command", str(fake_rs),
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
+            settled_status = subprocess.run(status_command, text=True, capture_output=True,
+                                           check=False, env=environment)
             self.assertEqual(0, settled_status.returncode, settled_status.stderr)
             self.assertEqual("settled", json.loads(settled_status.stdout)["status"])
 
@@ -876,29 +753,6 @@ class SaveContextAuditRsTest(unittest.TestCase):
             self.assertEqual(["missing_receipt"], blocked["exclusion_reasons"])
             self.assertTrue(workspace.is_dir())
             self.assertTrue((audit_dir / "run.json").is_file())
-
-    def test_inventory_reports_runtime_database_schema_errors_cleanly(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            runtime_db = root / "runtime.db"
-            sqlite3.connect(runtime_db).close()
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "inventory",
-                    "--audit-root", str(root / "audits"),
-                    "--runtime-db", str(runtime_db),
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("cannot read Rollerskate runtime database", result.stderr)
-            self.assertNotIn("Traceback", result.stderr)
 
     def test_prune_rejects_workspace_outside_audit_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

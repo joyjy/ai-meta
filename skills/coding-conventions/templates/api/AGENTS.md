@@ -22,6 +22,11 @@
 - 兼容入口必须有可指认的真实调用方或明确迁移成本；保留时把旧协议视为 adapter，新旧入口调用同一个应用用例，并分别用契约测试锁定路径、字段、状态码、header 和错误语义。
 - 不在缺少调用方证据时收紧旧入口 scope 或删除旧字段。长期兼容也要明确 source of truth；迁移、下线或权限收紧必须先有调用方观测与回归证据。
 
+#### 外部 API 接入
+
+- 首次接入或改变外部 API / SDK 契约时，核对实际版本的成功、失败、媒体类型和结果未知语义。传输成功不自动代表业务成功；厂商差异由已有接口适配边界处理。
+- 按 coding-conventions 的 `vendor-api-contract-preflight` SOP 定向检查。已有验证证据仍覆盖当前版本和调用方式时，只核对变更域。不为普通调用重复整套预检，不为验证主动触发未授权副作用。
+
 #### Source Of Truth And Verification
 
 - OpenAPI / API Spec 负责 method、path、schema 和错误契约；API catalog / surface map 负责 audience、能力分组、owner 与可发现性；领域知识只维护长期业务语义，不复制完整接口清单。

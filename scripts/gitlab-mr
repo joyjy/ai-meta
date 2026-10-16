@@ -190,6 +190,8 @@ def protect_user_description(value: str) -> str:
 def validate_create_extra_args(values: list[str]) -> None:
     for value in values:
         flag = value.split("=", 1)[0]
+        if flag in {"-R", "--repo"}:
+            raise RuntimeError("use the helper's dedicated --repo option to bind the target project")
         if flag in DESCRIPTION_BYPASS_FLAGS or (
                 value.startswith("-d") and value != "--draft"):
             raise RuntimeError(
@@ -426,6 +428,50 @@ def post_discussion(project: str, iid: str, payload: dict[str, Any], hostname: s
         return json.loads(run(cmd))
 
 
+MERGE_OPTION_FLAGS = {
+    "--squash-before-merge": "squash",
+    "--remove-source-branch": "should_remove_source_branch",
+}
+
+
+def split_merge_options(values: list[str]) -> tuple[list[str], dict[str, bool]]:
+    passthrough: list[str] = []
+    result: dict[str, bool] = {}
+    index = 0
+    while index < len(values):
+        value = values[index]
+        index += 1
+        flag, separator, setting = value.partition("=")
+        if flag not in MERGE_OPTION_FLAGS:
+            passthrough.append(value)
+            continue
+        if not separator and index < len(values) and values[index] in {"true", "false"}:
+            setting = values[index]
+            index += 1
+        if separator and setting not in {"true", "false"}:
+            raise RuntimeError(f"{flag} expects true or false")
+        result[MERGE_OPTION_FLAGS[flag]] = setting != "false"
+    return passthrough, result
+
+
+def project_merge_options(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, bool]]:
+    cmd = ["glab", "repo", "view", "--output", "json"]
+    add_repo(cmd, args.repo or "", args.hostname or "")
+    project = json.loads(run(cmd))
+    policies = {"always": True, "default_on": True, "default_off": False, "never": False}
+    policy = project.get("squash_option")
+    remove = project.get("remove_source_branch_after_merge")
+    if policy not in policies or type(remove) is not bool:
+        raise RuntimeError("cannot resolve project squash/delete-source defaults; MR was not created")
+    if not project.get("id") or not project.get("path_with_namespace"):
+        raise RuntimeError("cannot resolve exact target project; MR was not created")
+    options = {"squash": policies[policy], "should_remove_source_branch": remove}
+    options.update(split_merge_options(args.extra_args or [])[1])
+    if policy in {"always", "never"} and options["squash"] != policies[policy]:
+        raise RuntimeError("explicit squash option conflicts with project policy; MR was not created")
+    return project, options
+
+
 def cmd_create(args: argparse.Namespace) -> int:
     cmd = ["glab", "mr", "create"]
     add_repo(cmd, args.repo or "", args.hostname or "")
@@ -450,24 +496,37 @@ def cmd_create(args: argparse.Namespace) -> int:
         cmd.append("--draft")
     if args.yes:
         cmd.append("--yes")
+    explicit = {}
     if args.extra_args:
         validate_create_extra_args(args.extra_args)
-        cmd.extend(args.extra_args)
+        passthrough, explicit = split_merge_options(args.extra_args)
+        cmd.extend(passthrough)
+        for flag, field in MERGE_OPTION_FLAGS.items():
+            if field in explicit:
+                cmd.append(f"{flag}={str(explicit[field]).lower()}")
     if args.dry_run:
-        print(json.dumps({"command": cmd}, ensure_ascii=False, indent=2))
+        print(json.dumps({"command": cmd, "merge_defaults": "resolved from target project at execution"},
+                         ensure_ascii=False, indent=2))
         return 0
+    project, options = project_merge_options(args)
+    for flag, field in MERGE_OPTION_FLAGS.items():
+        if field not in explicit:
+            cmd.append(f"{flag}={str(options[field]).lower()}")
     output = run(cmd)
     sys.stdout.write(output)
+    mr = created_mr(output, args)
+    readback = glab_api(
+        f"{project_endpoint(mr.repo)}/merge_requests/{mr.iid}", hostname=mr.hostname)
+    if mr.repo != project["path_with_namespace"] or readback.get("project_id") != project["id"]:
+        raise RuntimeError(f"MR !{mr.iid} was created but target identity mismatched; do not retry creation")
+    for field, expected in options.items():
+        if readback.get(field) is not expected:
+            raise RuntimeError(
+                f"MR !{mr.iid} was created but {field} readback differs from {expected}; do not retry creation")
     if protected:
-        mr = created_mr(output, args)
-        project = project_endpoint(mr.repo)
-        readback = glab_api(
-            f"{project}/merge_requests/{mr.iid}", hostname=mr.hostname)
         verify_description_readback(str(readback.get("description") or ""), protected)
-        print(json.dumps({
-            "mr": mr.iid,
-            "user_description_verified": True,
-        }, ensure_ascii=False))
+    print(json.dumps({"mr": mr.iid, "user_description_verified": bool(protected),
+                      "merge_options_verified": True, **options}, ensure_ascii=False))
     return 0
 
 

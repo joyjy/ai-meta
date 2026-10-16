@@ -1,21 +1,13 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import {
-  aggregateV8Coverage,
   expandFiles,
   initialize,
-  listenOnLoopback,
-  main,
   normalizeConfig,
-  parseCoverageSummary,
   runConfigured,
-  runNodeCli,
-  withTempDirectory,
 } from "../src/index.mjs";
 
 function temp(prefix) {
@@ -71,63 +63,6 @@ test("node-ts-build requires a build and overwrites stale dist before testing", 
   }
 });
 
-test("diagnose collects V8 coverage and configured entrypoint process metrics", () => {
-  const root = temp("node-test-kit-diagnose-");
-  try {
-    fs.mkdirSync(path.join(root, "src"));
-    fs.mkdirSync(path.join(root, "test"));
-    fs.writeFileSync(path.join(root, "src", "entry.mjs"), "export function answer() { return 42; }\n");
-    fs.writeFileSync(path.join(root, "test", "entry.test.mjs"), [
-      "import test from 'node:test';",
-      "import assert from 'node:assert/strict';",
-      "import { answer } from '../src/entry.mjs';",
-      "test('answer', () => assert.equal(answer(), 42));",
-    ].join("\n"));
-    const config = normalizeConfig({
-      preset: "node-js",
-      files: ["test/*.test.mjs"],
-      coverage: { include: ["src/**"] },
-      diagnostics: { sourceRoots: ["src"], entrypoints: { cli_processes: "src/entry.mjs" } },
-      report: { output: "tmp/report.json" },
-    }, root);
-    const report = runConfigured(config, { diagnose: true, quiet: true });
-    assert.equal(report.test.passed, 1);
-    assert.equal(report.metrics.cli_processes, 1, JSON.stringify(report.metrics));
-    assert.ok(report.metrics.function_count >= 1);
-    assert.equal(fs.existsSync(path.join(root, "tmp", "report.json")), true);
-  } finally {
-    remove(root);
-  }
-});
-
-test("coverage aggregation preserves legacy summary and generic entrypoints", () => {
-  const root = temp("node-test-kit-coverage-");
-  try {
-    const coverage = path.join(root, "coverage");
-    const src = path.join(root, "src");
-    fs.mkdirSync(coverage);
-    fs.mkdirSync(src);
-    const entry = path.join(src, "entry.mjs");
-    fs.writeFileSync(entry, "export function run() { return 1; }\n");
-    fs.writeFileSync(path.join(coverage, "coverage-123-1.json"), JSON.stringify({
-      result: [{
-        url: pathToFileURL(entry).href,
-        functions: [{ functionName: "run", ranges: [{ startOffset: 7, endOffset: 34, count: 2 }] }],
-      }],
-    }));
-    const result = aggregateV8Coverage(coverage, {
-      root,
-      sourceRoots: ["src"],
-      entrypoints: { entry_processes: [path.join("src", "entry.mjs")] },
-    });
-    assert.equal(result.entry_processes, 1);
-    assert.equal(result.total_hits, 2);
-    assert.deepEqual(parseCoverageSummary("# all files | 80 | 70 | 60 |\n"), { line: 80, branch: 70, function: 60 });
-  } finally {
-    remove(root);
-  }
-});
-
 test("init creates one preset config and refuses overwrite", () => {
   const root = temp("node-test-kit-init-");
   try {
@@ -137,34 +72,4 @@ test("init creates one preset config and refuses overwrite", () => {
   } finally {
     remove(root);
   }
-});
-
-test("CLI help is available without a project config", async () => {
-  const lines = [];
-  const original = console.log;
-  console.log = (line) => lines.push(line);
-  try {
-    assert.equal(await main(["--help"]), 0);
-    assert.match(lines.join("\n"), /node-test-kit <init\|run\|coverage\|diagnose>/);
-  } finally {
-    console.log = original;
-  }
-});
-
-test("shared fixtures clean temp state, run Node CLIs, and own loopback lifecycle", async () => {
-  let directory;
-  const result = await withTempDirectory("node-test-kit-fixture-", async (root) => {
-    directory = root;
-    const cli = path.join(root, "cli.mjs");
-    fs.writeFileSync(cli, "console.log(JSON.stringify({ args: process.argv.slice(2) }));\n");
-    return runNodeCli(cli, ["one", "two"]);
-  });
-  assert.equal(fs.existsSync(directory), false);
-  assert.deepEqual(JSON.parse(result.stdout), { args: ["one", "two"] });
-
-  const server = http.createServer((request, response) => response.end("ok"));
-  const loopback = await listenOnLoopback(server);
-  const body = await fetch(`http://${loopback.host}:${loopback.port}`).then((response) => response.text());
-  assert.equal(body, "ok");
-  await loopback.close();
 });

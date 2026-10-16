@@ -42,8 +42,4 @@ python3 scripts/codex_phrase_stats.py --max-chars 80 --exclude-acks --exclude-sk
 
 ## 验证
 
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_codex_phrase_stats.py' -v
-```
-
-覆盖注入过滤、批注提取、编辑距离、否定/问句/数字/英文命令保护、全角归一化、非传递聚类、全量保留，以及分叉去重不吞掉真实重复。数据库只读连接；实际历史扫描结果的缺口见 JSON 的 `gaps`。
+短语统计不保留逐项单元测试。修改统计逻辑时，用最小代表性输入检查过滤、聚类和去重结果。不因存在分支而恢复整套组合测试。数据库只读连接；实际历史扫描结果的缺口见 JSON 的 `gaps`。

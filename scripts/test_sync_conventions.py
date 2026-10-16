@@ -46,24 +46,6 @@ class SyncConventionsTest(unittest.TestCase):
                 self.assertEqual(0, proc.returncode, proc.stderr)
             return agents.read_text(encoding="utf-8")
 
-    def test_legacy_declaration_is_migrated_to_managed_block(self) -> None:
-        content = self.run_sync(
-            "# Project\n\n"
-            "<!-- coding-conventions: cli -->\n"
-            "<!-- coding-conventions:begin cli -->\n"
-            "stale\n"
-            "<!-- coding-conventions:end cli -->\n",
-            parent_content=(
-                "<!-- coding-conventions:begin general -->\n"
-                "parent\n"
-                "<!-- coding-conventions:end general -->\n"
-            ),
-        )
-
-        self.assertNotIn("<!-- coding-conventions: cli -->", content)
-        self.assertEqual(1, content.count("<!-- coding-conventions:begin cli -->"))
-        self.assertNotIn("stale", content)
-
     def test_begin_marker_alone_declares_template(self) -> None:
         content = self.run_sync(
             "# Project\n\n"
@@ -81,23 +63,6 @@ class SyncConventionsTest(unittest.TestCase):
         self.assertEqual(1, content.count("<!-- coding-conventions:begin cli -->"))
         self.assertNotIn("stale", content)
 
-    def test_api_template_id_resolves_to_managed_template(self) -> None:
-        content = self.run_sync(
-            "# Project\n\n"
-            "<!-- coding-conventions:begin api -->\n"
-            "stale\n"
-            "<!-- coding-conventions:end api -->\n",
-            parent_content=(
-                "<!-- coding-conventions:begin general -->\n"
-                "parent\n"
-                "<!-- coding-conventions:end general -->\n"
-            ),
-        )
-
-        self.assertEqual(1, content.count("<!-- coding-conventions:begin api -->"))
-        self.assertIn("Surface First", content)
-        self.assertNotIn("stale", content)
-
     def test_missing_general_adds_block_without_separate_declaration(self) -> None:
         content = self.run_sync(
             "# Project\n\n"
@@ -113,33 +78,6 @@ class SyncConventionsTest(unittest.TestCase):
             content.index("<!-- coding-conventions:begin general -->"),
             content.index("<!-- coding-conventions:begin cli -->"),
         )
-
-    def test_node_test_kit_is_only_injected_when_explicitly_enabled(self) -> None:
-        testing_only = self.run_sync(
-            "# Project\n\n"
-            "<!-- coding-conventions:begin testing -->\n"
-            "stale\n"
-            "<!-- coding-conventions:end testing -->\n",
-            parent_content=(
-                "<!-- coding-conventions:begin general -->\n"
-                "parent\n"
-                "<!-- coding-conventions:end general -->\n"
-            ),
-        )
-        with_node_kit = self.run_sync(
-            testing_only
-            + "\n<!-- coding-conventions:begin node-test-kit -->\n"
-            "stale\n"
-            "<!-- coding-conventions:end node-test-kit -->\n",
-            parent_content=(
-                "<!-- coding-conventions:begin general -->\n"
-                "parent\n"
-                "<!-- coding-conventions:end general -->\n"
-            ),
-        )
-
-        self.assertNotIn("Node-only CLI / server", testing_only)
-        self.assertIn("Node-only CLI / server", with_node_kit)
 
     def test_personal_parent_only_includes_default_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

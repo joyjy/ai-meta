@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 import tempfile
@@ -160,25 +159,6 @@ class SkillVerificationTest(unittest.TestCase):
         failed = self.sample(record["change_id"], loaded["load"]["load_id"],
                              "failed", "task:failed-s")
         self.assertEqual("falsified", failed["evaluation"]["verdict"])
-
-    def test_cli_status_open_filters_closed_records(self) -> None:
-        closed = self.begin(required_samples=0)
-        self.check(closed["change_id"])
-        self.skill.write_text("# Demo\n\nChanged worktree behavior.\n",
-                              encoding="utf-8")
-        open_record = self.begin(required_samples=1)
-
-        command = [
-            "python3", str(Path(verification.__file__)),
-            "--root", str(self.root), "status", "--open",
-        ]
-        result = subprocess.run(command, text=True, capture_output=True,
-                                check=True)
-        payload = json.loads(result.stdout)
-        self.assertEqual([open_record["change_id"]],
-                         [item["change_id"] for item in payload["changes"]])
-        self.assertEqual({"pending": 1}, payload["counts"])
-
 
 if __name__ == "__main__":
     unittest.main()

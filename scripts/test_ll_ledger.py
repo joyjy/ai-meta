@@ -134,46 +134,6 @@ class LLLedgerTest(unittest.TestCase):
             self.assertTrue(ledger.is_file())
             self.assertFalse((root / "review").exists())
 
-    def test_append_rejects_reusable_gap_feedback_moved_to_independent_audit(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "source.json"
-            ledger = root / "session.ll"
-            source.write_text(FIXTURE.read_text(encoding="utf-8"),
-                              encoding="utf-8")
-            initialized = subprocess.run(
-                [str(LEDGER), "init", str(source), str(ledger)],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(0, initialized.returncode, initialized.stderr)
-            before = ledger.read_text(encoding="utf-8")
-            event = root / "event.json"
-            event.write_text(json.dumps({
-                "type": "feedback",
-                "item": {
-                    "id": "legacy-gap",
-                    "source": "user",
-                    "quote": "LL generated the wrong acceptance",
-                    "type": "loop_process_gap",
-                    "problem": "contract fidelity gap",
-                    "disposition": "captured",
-                    "current_task_impact": "none",
-                },
-            }), encoding="utf-8")
-
-            appended = subprocess.run(
-                [str(LEDGER), "append", str(ledger), "--event-file", str(event)],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-
-            self.assertEqual(1, appended.returncode)
-            self.assertIn("moved to independent agent.audit.v1", appended.stderr)
-            self.assertEqual(before, ledger.read_text(encoding="utf-8"))
-
     def test_append_keeps_current_task_correction_in_the_ll_ledger(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

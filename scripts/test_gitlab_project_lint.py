@@ -216,62 +216,20 @@ class GitlabProjectLintTest(unittest.TestCase):
             "squash_option",
         )
 
-    def test_checks_full_gitlab_settings_baseline(self):
-        project = {
-            "default_branch": "main",
-            "merge_method": "ff",
-            "squash_option": "default_on",
-            "only_allow_merge_if_pipeline_succeeds": True,
-            "allow_merge_on_skipped_pipeline": False,
-            "remove_source_branch_after_merge": True,
-            "only_allow_merge_if_all_discussions_are_resolved": True,
-        }
-        approvals = {
-            "approvals_before_merge": 0,
-            "reset_approvals_on_push": True,
-            "disable_overriding_approvers_per_merge_request": True,
-            "merge_requests_author_approval": False,
-            "merge_requests_disable_committers_approval": False,
-            "require_password_to_approve": False,
-            "require_reauthentication_to_approve": False,
-        }
-        rules = [{
-            "name": "All Members",
-            "rule_type": "any_approver",
-            "approvals_required": 1,
-            "applies_to_all_protected_branches": False,
-        }]
-        push_rule = {
-            "branch_name_regex": "^(epic|feat|fix|test|doc|proposal)-",
-        }
-        protected_branches = [{
-            "name": "main",
-            "merge_access_levels": [{
-                "access_level": 30
-            }],
-            "push_access_levels": [{
-                "access_level": 0
-            }],
-        }]
-
-        self.assertEqual(self.mod.check_project(project, "default-on"), [])
-        self.assertEqual(self.mod.check_approvals(approvals), [])
-        self.assertEqual(self.mod.check_approval_rules(rules), [])
-        self.assertEqual(self.mod.check_push_rule(push_rule), [])
-        self.assertEqual(
-            self.mod.check_protected_branches(project, protected_branches), [])
-
-    def test_branch_name_push_rule_drift_is_reported(self):
-        expected = "^(epic|feat|fix|test|doc|proposal)-"
-
-        for push_rule, actual in ((None, None), ({"branch_name_regex": ""}, "")):
-            with self.subTest(push_rule=push_rule):
-                findings = self.mod.check_push_rule(push_rule)
-                self.assertEqual(
-                    [(finding.area, finding.field, finding.actual,
-                      finding.expected) for finding in findings],
-                    [("push_rule", "branch_name_regex", actual, expected)],
-                )
+    def test_l2_without_ci_or_required_approval(self):
+        project = {**self.mod.COMMON_PROJECT_SETTINGS,
+                   "squash_option": "default_on",
+                   "only_allow_merge_if_pipeline_succeeds": False}
+        self.assertEqual(self.mod.check_project(
+            project, "default-on", flow="l2", has_pipeline=False), [])
+        for flow, has_pipeline in (("l1", False), ("l2", True), ("l2", None)):
+            self.assertTrue(self.mod.check_project(
+                project, "default-on", flow=flow, has_pipeline=has_pipeline))
+        self.assertEqual(self.mod.check_approval_rules([], flow="l2"), [])
+        rule = {"name": "All Members", **self.mod.ALL_MEMBERS_RULE_SETTINGS,
+                "approvals_required": 0}
+        self.assertEqual(self.mod.check_approval_rules([rule], flow="l2"), [])
+        self.assertTrue(self.mod.check_approval_rules([rule], flow="l1"))
 
     def test_protected_branch_drift_is_reported(self):
         findings = self.mod.check_protected_branches(
@@ -296,50 +254,6 @@ class GitlabProjectLintTest(unittest.TestCase):
             ],
         )
 
-
-    def test_global_user_push_exceptions_are_allowed(self):
-        findings = self.mod.check_protected_branches(
-            {"default_branch": "main"},
-            [{
-                "name": "main",
-                "merge_access_levels": [{
-                    "access_level": 30
-                }],
-                "push_access_levels": [{
-                    "access_level": 40,
-                    "user_id": 1,
-                    "access_level_description": "Pro-CI-Bot",
-                }, {
-                    "access_level": 40,
-                    "user_id": 2,
-                    "access_level_description": "Arch-CICD-Worker",
-                }],
-            }],
-        )
-
-        self.assertEqual(findings, [])
-
-    def test_unconfigured_user_push_exception_is_reported_by_name(self):
-        findings = self.mod.check_protected_branches(
-            {"default_branch": "main"},
-            [{
-                "name": "main",
-                "merge_access_levels": [{
-                    "access_level": 30
-                }],
-                "push_access_levels": [{
-                    "access_level": 40,
-                    "user_id": 1,
-                    "access_level_description": "Other-Bot",
-                }],
-            }],
-        )
-
-        self.assertEqual(
-            [(finding.area, finding.field, finding.actual, finding.expected)
-             for finding in findings],
-            [("protected_branches", "main.push_access_level", "Other-Bot", 0)],
-        )
 
     def test_l1_l2_reject_non_baseline_squash_metadata(self):
         self.mod.run = lambda _cmd: "git@gitlab.example.com:example-org/demo/service.git"

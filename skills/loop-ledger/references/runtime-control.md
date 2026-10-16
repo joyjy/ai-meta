@@ -39,7 +39,7 @@ Events are append-only. The verifier derives the effective contract by applying 
 
 ## Goal Gate
 
-The current loop-ledger adapter supports only Codex goals. Legacy contracts for other adapters may remain verifier-compatible, but loop-ledger does not dispatch them. A Codex goal requires:
+The current loop-ledger adapter supports only Codex goals. Legacy contracts for other adapters may remain verifier-compatible, but loop-ledger does not dispatch them. Automatic selection follows the main skill’s Admission rules and never substitutes for platform-required explicit goal authorization. A Codex goal requires:
 
 - unchanged authorized scope and acceptance, from either the explicit loop-ledger request or confirmed final-form;
 - no blocking question;
@@ -65,6 +65,6 @@ On resume after compaction or a terminal-ready user confirmation:
 
 Ask only when an unresolved decision or missing authority affects scope, destructive or remote action, acceptance, business judgment, validation cost, or execution risk. Reuse still-valid authorization for the exact action. A correction that changes goal, scope, acceptance, authorization, architecture, or continuation semantics creates a new final-form revision. A goal-bound loop-ledger cannot be structurally rebound through `human_decision`, `root_amendment`, or `contract_patch`; initialize a new loop-ledger and bind a new Codex goal. Legacy non-goal adapters may append a verified contract patch.
 
-A loop-ledger whose runtime projection is already `completed` is terminal and cannot be amended or reopened. If the user requests another loop-ledger run after completion, compile that request as a new final-form, initialize a new loop-ledger, and bind a new Codex goal. An ordinary follow-up returns to the caller workflow unless the user or an applicable project contract selects controlled execution. Do not append ordinary feedback, `root_amendment`, or `contract_patch` events to make the completed run active again. `root_amendment` remains only for non-terminal legacy adapters without a bound goal and cannot carry structural fields.
+A loop-ledger whose runtime projection is already `completed` is terminal and cannot be amended or reopened. If the user requests another loop-ledger run after completion, compile that request as a new final-form, initialize a new loop-ledger, and bind a new Codex goal. An ordinary follow-up returns to the caller workflow unless the main skill’s Admission rules select controlled execution and the required goal authority is present. Do not append ordinary feedback, `root_amendment`, or `contract_patch` events to make the completed run active again. `root_amendment` remains only for non-terminal legacy adapters without a bound goal and cannot carry structural fields.
 
 For explicit focus transitions, hot rejection, human decisions, session rebinding, or a user-authorized Root amendment, use the corresponding `ll-turn` subcommand. `ll-workitem` only compiles a dispatch-ready WorkItem final-form; it does not own runtime transitions.

@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-continuation-stop.js\"",
+        "timeout": 5,
+        "statusMessage": "Checking unfinished action promises..."
+      }]
+    }]
+  }
+}

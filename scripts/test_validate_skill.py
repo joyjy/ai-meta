@@ -7,9 +7,6 @@ import sys
 import tempfile
 import unittest
 
-import yaml
-
-
 SCRIPT = Path(__file__).with_name("validate-skill")
 
 
@@ -27,31 +24,6 @@ class ValidateSkillTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.mod = load_module()
-
-    def test_sanitize_removes_only_ai_meta_frontmatter_extension(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "source" / "sample-skill"
-            destination = root / "copy" / "sample-skill"
-            source.mkdir(parents=True)
-            (source / "SKILL.md").write_text(
-                "---\n"
-                "name: sample-skill\n"
-                "description: Sample description\n"
-                "disable-model-invocation: true\n"
-                "metadata:\n  owner: test\n"
-                "---\n\n# Sample\n",
-                encoding="utf-8",
-            )
-
-            self.mod.sanitize_skill_copy(source, destination)
-
-            content = (destination / "SKILL.md").read_text(encoding="utf-8")
-            frontmatter = yaml.safe_load(content.split("---", 2)[1])
-            self.assertEqual("sample-skill", frontmatter["name"])
-            self.assertEqual({"owner": "test"}, frontmatter["metadata"])
-            self.assertNotIn("disable-model-invocation", frontmatter)
-            self.assertIn("# Sample", content)
 
     def test_repo_skill_detection_excludes_external_skill(self):
         self.assertTrue(

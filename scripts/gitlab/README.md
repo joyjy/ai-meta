@@ -28,6 +28,10 @@
 
 它负责 file-backed MR 描述、reviewer 合并、紧凑 discussions 读取和 positioned discussion；不负责 pipeline。`reviewers add` 按 exact active username 解析用户，保留写入前 readback 到的全部既有 reviewer，可用 `--expected-head-sha` 固定 revision，并使用 JSON `reviewer_ids` 写入后再次 readback；重复调用返回 `already_present` 且不发 PUT。写前确定失败返回 `not_applied`，写请求或写后验证无法定论时返回 `ambiguous`，调用方不得盲重试。创建和更新 description 时，输入文件只包含人工正文；helper 将其规范化到唯一的 `## User Description` 保护段，更新时保留从 `## PR Type` 开始且带 Managed PR Agent 自动生成脚注的管理尾段，并在写后 readback。既有 Managed PR Agent 尾段前若出现无法归属的未保护正文，helper 会停止而不猜测。当前任务已绑定某个 MR 时，首次 push 前先读取其 `source_branch`，再显式推送 `HEAD:<source_branch>`。MR 子命令不支持的 hostname 通过 `--repo https://<host>/<repo>` 传递，API 则使用 `glab api --hostname`。
 
+创建 MR 时，helper 读取目标项目的 squash 和删除源分支默认值，并显式传入 glab。调用方通过额外参数指定 `--squash-before-merge=true|false` 或 `--remove-source-branch=true|false` 时，保留显式选择。与项目强制 squash 策略冲突时，在创建前拒绝。
+
+创建后回读目标项目身份及两项 MR 选项。回读失败会报告 MR 已创建，禁止重复创建。项目 setting lint 不替代此项核验。`--dry-run` 保持离线，仅预览命令，项目默认值在实际执行时解析。
+
 ### `gitlab-ci`
 
 源码：[`../gitlab-ci`](../gitlab-ci)
@@ -48,6 +52,7 @@
 只读检查项目 MR / approval / squash / push rule 设置，并按 `gitlab.flow` 规则报告结果；不负责 CI YAML lint。
 
 - `l1` 是 strict MR baseline，不允许 warn；`l2` 是 transitional baseline，允许 warn 并静默 14 天内已记录 WARN；`l3` 不运行 settings lint。
+- `l2` 允许 0 人审批（无 All Members 规则也符合）；当项目 pipeline 列表确认为空时，不要求开启成功流水线门禁。已有 pipeline 或适用性未知时仍检查；查询失败不按无 CI 处理。`l1` 保持至少 1 人审批及成功流水线要求。
 - `gitlab.squash` 只在 `l1` / `l2` 使用，缺失时按 `default-on` 检查。没有 `index.md` 或未声明 `gitlab.flow` 时，不从其他文档或 remote namespace 推断。
 - 写回项目索引使用 `--write-index`；手动检查时显式传 `--flow` 和 `--squash`。
 

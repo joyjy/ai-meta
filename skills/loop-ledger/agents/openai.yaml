@@ -2,4 +2,4 @@ interface:
   display_name: "loop-ledger"
   short_description: "Run a recoverable multi-turn Codex goal"
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

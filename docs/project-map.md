@@ -15,6 +15,7 @@
 | 名称 | 类型 | 维护边界 | 主要职责 | Context |
 | --- | --- | --- | --- | --- |
 | `ai-meta` | AI 系统模块 | `<maintenance-checkout>` | `~/.ai/` 配置、共享指令、工具路由、ai-meta 自有 skills、项目 skill 注册、commands、软链发布、context 协议 | `amt` |
+| `tandem` | 工作域 | `Projects/tandem` | 工作协作、本人表达画像与真实回复校准；跨客户端加载入口归 ai-meta | `td` |
 | `gtd` | 工作域 | `Projects/gtd` | 目标、任务、待办、日历、项目推进，以及 WorkItem 投影、tracker lifecycle、持久资源和 source closeout | `gtd` |
 | `snippet-lab` | 工作域 | `reference/snippet-lab` | 个人可复用 snippets 与示例用户值班周期工单分析 | `snippet-lab` |
 | `symphony-lite` | AI 系统模块（待封存） | `Projects/symphony-lite` | 历史 WorkItem 控制核与 Dashboard；冻结新增能力，只保留迁移和封存前的兼容入口，不再拥有 WorkItem lifecycle 或执行自动化 | `sl` |

@@ -30,6 +30,19 @@ tags: [consistency, recovery]
 
 ## Pattern
 
+### 0. 先证明收益与机制必要性
+
+从实际访问粒度、重复访问间隔、实例数量、依赖有效期及容量预算出发。先选择能满足正确性的最少机制，不把准入、短 TTL、多层缓存或观测组合成默认套餐。区分两种依据：一致性机制需要明确失效风险；收益和容量限制需要流量、成本或预算证据。
+
+| 可选机制 | 采用前需要的证据 | 不足时的选择 |
+| --- | --- | --- |
+| 重复访问次数准入 | 一次性写入成本显著，且计数覆盖实际重复访问范围 | 不默认增加。共享缓存配 Pod 本地计数会漏掉跨 Pod 复用，不能用单实例访问推断整体热度 |
+| 固定逻辑 TTL | 存在未被版本或事件覆盖的变化、时间型业务规则，或明确的最大陈旧期限 | 不用短 TTL 兜底代替失效协议。依赖版本与 epoch 已覆盖变化时，不再无依据强制周期重算 |
+| 物理 TTL | 重复访问间隔、依赖有效期、写入量、条目大小和可用容量 | 不默认越短越安全。过短会阻断复用；超过依赖可用期也不保证继续命中。存在依赖校验时，物理保留不等于业务无条件有效 |
+| 分段计时与逐请求观测 | 有明确排障问题、现有证据缺口、使用方及开销边界 | 日志精简只处理正文和级别，不顺手加入阶段探针、终态日志或新指标 |
+
+评估收益时分别看源缓存和成品缓存，注明接口、主体、区域与流量窗口。成品命中低不能推出源缓存无收益，也不能直接比较不同流量区域。命中率不是唯一结论，还要核对避免的计算或回源成本，以及新增写入和存储成本。缺少证据时保留待验证项，不补一组保守默认值当作最优参数。
+
 ### 1. 先定位不一致窗口
 
 对每类缓存对象写明 authority、commit point、cache role、key scope、允许陈旧度和 repair owner，再检查：
@@ -66,6 +79,7 @@ tags: [consistency, recovery]
 
 ## Implementation Checklist
 
+- 先绑定访问粒度、重复间隔和容量约束；每项额外机制说明它解决的独立缺口。
 - 标出 authority、commit point、key scope 与 repair owner，再按 forces 选模式。
 - Cache-aside 默认 authority commit 后 invalidate，并保存删除前 key scope。
 - Read-through 定义 loader 来源、错误分类、miss 合并和旧回填防护。
@@ -75,6 +89,8 @@ tags: [consistency, recovery]
 
 ## Verification
 
+- 只验证选中机制的真实风险，不因本清单补齐未采用机制。
+- 使用同类流量比较修改前后的命中、回源、写入和容量；多实例准入要验证跨实例重复访问。
 - 重现 stale refill 顺序，验证旧填充被版本拒绝或最终失效。
 - 在 authority commit 后终止进程或让 cache 失败，验证结果与修复契约。
 - 打乱并发 writer、loader 与 retry 的完成顺序，验证旧版本不能覆盖新版本。
@@ -84,6 +100,8 @@ tags: [consistency, recovery]
 - 对 write-behind 注入故障，验证已确认写不丢失且顺序不反转。
 
 ## Evidence
+
+- [`iam-idaas-auth-service!472`](https://gitlab.example.com/example-org/idaas/iam-idaas-auth-service/-/merge_requests/472)：共享 Redis 成品配有 Pod 本地复用计数，另有固定逻辑期限。该变更移除两项限制，保留版本、epoch 与策略准入检查。该样本支撑按场景选择机制，不证明准入或逻辑 TTL 普遍无用。
 
 - 真实命中：[`iam-vehicle-service!68`](https://gitlab.example.com/example-org/iam/iam-vehicle-service/-/merge_requests/68) 覆盖删除后失效与 key scope；[`iam-li-user-api@dcb508d`](https://gitlab.example.com/example-org/idaas/iam-li-user-api/-/blob/dcb508da8bc01301cb9f482321089a8a002edf1c/src/main/java/com/lixiang/iam/user/controller/ProfileMgmtController.java#L299-340) 覆盖 evict 与负缓存；[`iam-idaas-pip-service@d352e47`](https://gitlab.example.com/example-org/idaas/iam-idaas-pip-service/-/blob/d352e47b57eac5c15d9f25bdfdd93cbd187bee0c/src/main/java/com/lixiang/iam/pip/service/impl/ResourceServiceImpl.java#L185-237) 覆盖写后失效与回填。
 - 独立复现次数：3 个服务仓库命中 authority commit 后的缓存修复边界。

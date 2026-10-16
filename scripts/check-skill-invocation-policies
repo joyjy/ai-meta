@@ -123,7 +123,7 @@ for skill in "${all_skills[@]}"; do
   check_skill_identity "$skill"
 done
 
-explicit_skills=(engineering-exit load-context loop-ledger save-context)
+explicit_skills=(engineering-exit load-context save-context)
 if grep -Eq '"role"[[:space:]]*:[[:space:]]*"distribution"' "$repo/.ai-meta-repo-role.json"; then
   explicit_skills+=(agent-assignment)
 else
@@ -134,11 +134,17 @@ for skill in "${explicit_skills[@]}"; do
   check_codex_skill "$skill"
 done
 
-for command in aa ee ll load-context save-context; do
+for command in aa ee load-context save-context; do
   check_claude_entry "commands/$command.md"
 done
 
 check_implicit_skill "agent-doc-hygiene" "semantic and engineering-exit invocation"
+check_implicit_skill "loop-ledger" "authorized durable execution and progress reporting"
+check_implicit_skill "final-form" "semantic task clarification"
+if frontmatter_has "$repo/commands/ll.md" "disable-model-invocation: true"; then
+  status=1
+  echo "ll command must remain implicitly invocable" >&2
+fi
 check_implicit_skill "grill" "semantic and proactive invocation"
 check_implicit_skill "review-router" "semantic and proactive invocation"
 check_implicit_skill "steelman" "semantic and proactive invocation"

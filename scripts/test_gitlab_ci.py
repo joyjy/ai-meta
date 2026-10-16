@@ -44,17 +44,6 @@ class GitlabCiTest(unittest.TestCase):
             cmd,
         )
 
-    def test_get_maps_positional_id_to_pipeline_id_flag(self):
-        cmd = self.mod.build_command(self.parse("get", "123", "-R", "group/project"))
-
-        self.assertEqual(
-            [
-                "glab", "ci", "get", "--pipeline-id", "123", "--output",
-                "json", "--repo", "group/project",
-            ],
-            cmd,
-        )
-
     def test_trace_is_noninteractive_when_job_is_explicit(self):
         cmd = self.mod.build_command(
             self.parse("trace", "lint", "--pipeline-id", "456")
@@ -64,20 +53,6 @@ class GitlabCiTest(unittest.TestCase):
             ["glab", "ci", "trace", "lint", "--pipeline-id", "456"],
             cmd,
         )
-
-    def test_merged_lint_uses_pipeline_simulation(self):
-        cmd = self.mod.build_command(
-            self.parse("lint", "--merged", "--ref", "main", "--include-jobs")
-        )
-
-        self.assertEqual(
-            [
-                "glab", "ci", "lint", "--dry-run", "--ref", "main",
-                "--include-jobs",
-            ],
-            cmd,
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

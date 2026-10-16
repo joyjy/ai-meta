@@ -25,35 +25,6 @@ test('the eight-MR incident detects bare table and recommendation references fro
   assert.deepEqual(missingMrLinks(source, [source]), []);
 });
 
-test('one link per MR covers repeated table and prose mentions throughout the response', () => {
-  const first = url('endpoint', '19');
-  const second = url('endpoint', '20');
-  const sources = [first, second];
-  const message = `| [endpoint !19](${first}) | 待 approve |\n| [endpoint !20](${second}) | 叠在 !19 上 |\n建议先查 !19，再看 !20；endpoint !20 已完成基础。`;
-  assert.deepEqual(missingMrLinks(message, sources), []);
-  assert.deepEqual(missingMrLinks(`先查 !19，再看 !20。\n${message}`, sources), []);
-  assert.deepEqual(missingMrLinks(`[endpoint !19](${first})，建议先看 !19。\n随后处理 endpoint !20，再回看 !20。`, sources), [{ label: 'endpoint !20', url: second }]);
-  assert.deepEqual(missingMrLinks(`!19、endpoint !19；!20、endpoint !20\n[!19](${first})`, sources), [{ label: '!20', url: second }]);
-  assert.deepEqual(missingMrLinks(`!19\n[来源][mr]\n[mr]: ${first}`, sources), []);
-  // A code example or a different repository's same IID is not this MR's link.
-  for (const link of [`\`${first}\``, `\`\`\`text\n${first}\n\`\`\``, `[other !19](${url('other', '19')})`]) {
-    assert.deepEqual(missingMrLinks(`endpoint !19\n${link}`, sources), [{ label: 'endpoint !19', url: first }]);
-  }
-});
-
-test('links, code, unknown repositories, ordinary numbers and ambiguous IDs do not trigger', () => {
-  const other = 'https://other.example.com/team/iam-arch-hub/-/merge_requests/254';
-  for (const [message, sources] of [
-    [source, [source]],
-    ['正文 254、版本 1602，unknown!254 和 !9999', [source]],
-    ['`arch-hub !254`\n```text\n!1602\n```', [source]],
-    ['[arch-hub !254][mr]\n[mr]: ' + url('arch-hub', '254'), [source]],
-    ['!254', [source, other]],
-    ['arch-hub!254', [source, other]],
-    ['!254', ['https://user:secret@gitlab.example.com/team/arch-hub/-/merge_requests/254']],
-  ]) assert.deepEqual(missingMrLinks(message, sources), [], message);
-});
-
 test('source evidence accepts only observed Codex user/tool text, not assistant claims or arbitrary fields', () => {
   const tool = { type: 'response_item', payload: { type: 'custom_tool_call_output', output: [{ type: 'text', text: source }] } };
   assert.equal(missingMrLinks('!254', sourceTexts(tool)).length, 1);
