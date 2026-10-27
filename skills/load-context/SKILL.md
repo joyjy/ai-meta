@@ -8,28 +8,25 @@ disable-model-invocation: true
 
 Restore a recovery snapshot; this skill owns the workflow.
 
-## Route Resolution
+## Route Resolution And Projection
 
-Resolve in order:
+Run `~/.ai/scripts/load-context select [<abbr>[:<workstream>]]` once from the working directory. An explicit route passes through. Without one, the script binds the cwd through `gtd project resolve`, which owns project `index.md` matching, and fails with `route_unresolved` unless exactly one project matches; then ask for abbr and stop.
 
-1. Explicit `<abbr>` or `<abbr>:<workstream>`.
-2. Current project `index.md` frontmatter `abbr:`.
-3. Find exactly one project `index.md` covering the repo, preferring containing path, then Source/Links path, remote, repo basename, and project basename in that order. Verify its abbr against `~/.ai/contexts/<abbr>.md` when repo hints exist.
-4. If unknown or tied, ask for abbr and stop.
-
-Never infer abbr from context filenames, fuzzy matches or code-only directories. Report fallback index path and context identity match.
+Never infer abbr from context filenames, fuzzy matches or code-only directories. When `resolution.by` is not `explicit`, report `resolution.entry` as the fallback index path.
 
 Bare `<abbr>` selects mainline. Only explicit `<abbr>:<workstream>` selects a workstream, even if only one is active.
+
+The `load-context.projection.v1` result carries `goal`, `selected` (the route's YAML record), `markdown` (its section; `null` when the heading is absent), mainline-only `workstreams` names/states/summaries, and `temporary_paths`. It is the only load input: do not cat or re-parse the context file.
 
 ## Paths And Read Boundary
 
 - Project context: `~/.ai/contexts/<abbr>.md`; context.v3 embeds all workstreams.
-- Legacy `~/.ai/contexts/<abbr>/<workstream>.md` is fallback only when v3 lacks the requested workstream.
-- Context starts with YAML frontmatter and a second-line route-index comment; YAML owns state, Markdown holds recovery detail.
+- Legacy `~/.ai/contexts/<abbr>/<workstream>.md` is fallback only when v3 lacks the requested workstream; the script reports it as `legacy_path`.
 - Next Steps are recovery notes, not authority. Route narrows discovery, never selects mutable objects. Hide machine-only fields.
-- Read `index.md` only to resolve or verify project identity: select `abbr` and matching project/source path fields, not Backlog or the whole body. An unambiguous explicit route needs no index read. Defer Git flow/action fields until needed; retain any resolved index path.
+- Ordinary load does not read `index.md`. Defer Git flow/action fields until needed; retain any resolved index path.
 - Load only the selected projection and probes below. Expand referenced files only when requested or one small file is needed to understand the snapshot.
 - Durable facts override conflicting context, but open their owner only when needed for the user's next task.
+- Loading may prune confirmed-missing temporary-output registrations from the selected route and its explicit retention manifest, without another confirmation. `temporary_paths` gives the `lstat` status of backticked temp-root paths in the selected section: only `missing` (`ENOENT`) proves absence; `unverified` (permission errors, unavailable mounts) does not, and a dangling symlink reports `exists`. Paths in an explicit retention manifest need their own `lstat`. Recheck absence and source content before writing, preserve other routes and non-registration content, and never delete an existing file. This narrow maintenance is not a save checkpoint.
 
 ## Repo Maintenance Reminder
 
@@ -49,9 +46,9 @@ Health findings are advisory, never authorize changes, and block recovery only w
 
 ## Workflow
 
-1. Resolve the route as above. If the project context is missing, say `~/.ai/contexts/<abbr>.md 不存在，请先运行 /save-context <abbr>`. If the requested workstream is absent from v3 and legacy fallback, report its exact route and ask the user to confirm its name or load mainline.
-2. Select before emitting tool output: inspect the route index and section boundaries, then extract common YAML identity/goal fields, the selected route's YAML record, and its Markdown section. Parsing may read the file; output must omit unselected recovery details. Mainline may also include workstream names, states, and one-line summaries; a workstream load omits other routes. Expand only for missing Goal/Doing/Blocked/Next Steps/Critical Context.
-3. Internalize Goal, unfinished Doing, Blocked, first Next Step, and critical anchors. For registered temporary outputs, check only path existence; later read the original file instead of regenerating it, and treat a missing path as a health trigger. Later mutations need current-turn exact identity evidence; ask if ambiguous. Do not execute or ask whether to continue.
+1. Resolve and select with the script above. On `context_missing`, say `~/.ai/contexts/<abbr>.md 不存在，请先运行 /save-context <abbr>`. On `workstream_missing`, read `legacy_path` when present; otherwise report its exact route and ask the user to confirm its name or load mainline. On `context_invalid`, run the health branch.
+2. Read the context file directly only when `markdown` is `null` or lacks Goal/Doing/Blocked/Next Steps/Critical Context, and expand only that part. Output must omit unselected recovery details.
+3. Internalize Goal, unfinished Doing, Blocked, first Next Step, and critical anchors. Check registered temporary outputs through `temporary_paths` and prune confirmed-missing registrations as above; absence alone does not trigger health checks. Read an explicit retention manifest to maintain registrations and compare recorded purposes/cleanup conditions with the selected snapshot. Existence does not prove recovery value. If those records already show obsolete outputs, briefly flag the paths or manifest and reason; otherwise leave value unassessed. Do not expand logs, refresh remote state, delete existing files, or start a cleanup audit during load. Later read retained originals instead of regenerating them. Other mutations need current-turn exact identity evidence; ask if ambiguous. Do not execute recovery Next Steps or ask whether to continue.
 4. Run count-only `~/.ai/scripts/agent-frictions status --owner context:<abbr>:<selected-route>`. Do not load, interpret, or settle events; only surface nonzero `actionable_count`.
 5. Apply the repo-maintenance reminder rule using the selected route’s parent project abbr.
 6. Run the conditional health branch only when triggered. Do not investigate unrelated files from a health finding.
@@ -70,7 +67,7 @@ Health findings are advisory, never authorize changes, and block recovery only w
 
 阻塞问题：<仅 context 明确记录时>
 活跃分线：<仅主线且存在时>
-临时产物：<仅选中 route 登记时；给出 exact path 和 purpose，缺失时标记 stale>
+临时产物：<仅选中 route 的登记；给出 exact path 和 purpose；区分存在与仍需保留；仅记录已明确过时项的路径/清单和原因；失效登记已移除时可简报数量>
 健康提示：<仅触发 health branch 且有问题时，最多 1-3 条>
 摩擦候选：<仅 actionable_count > 0 时写 N 条待下次 save-context 结算>
 仓库维护提示：<按 Repo Maintenance Reminder；零问题省略>

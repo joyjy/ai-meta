@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Build a compact recovery packet from a Codex rollout JSONL file.
 
-This script is deliberately read-only. It helps a fresh thread recover evidence
-from an old or archived Codex session without asking that old thread to run
-another model turn.
+Read-only library: the save-context audit freezes this packet as its only
+rollout evidence, and the timeline helper reuses the rollout parsing.
 """
 
 from __future__ import annotations
@@ -493,32 +492,3 @@ def build_packet(path: Path, args: argparse.Namespace) -> str:
             lines.append(f"- {count}x `{path_text}`")
 
     return "\n".join(lines).rstrip() + "\n"
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--rollout", help="Path to a Codex rollout JSONL file")
-    parser.add_argument(
-        "--thread-id",
-        help=
-        "Codex thread/session id to locate under sessions and archived_sessions"
-    )
-    parser.add_argument("--codex-home",
-                        default=str(default_codex_home()),
-                        help="Codex home directory")
-    parser.add_argument("--max-messages", type=int, default=8)
-    parser.add_argument("--max-tool-calls", type=int, default=30)
-    parser.add_argument("--max-paths", type=int, default=25)
-    parser.add_argument("--max-context-blocks", type=int, default=3)
-    parser.add_argument("--max-text-chars", type=int, default=1200)
-    parser.add_argument("--max-context-chars", type=int, default=12000)
-    args = parser.parse_args()
-
-    path = locate_rollout(
-        Path(args.codex_home).expanduser(), args.rollout, args.thread_id)
-    print(build_packet(path, args), end="")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

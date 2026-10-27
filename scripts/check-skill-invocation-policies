@@ -124,18 +124,30 @@ for skill in "${all_skills[@]}"; do
 done
 
 explicit_skills=(engineering-exit load-context save-context)
-if grep -Eq '"role"[[:space:]]*:[[:space:]]*"distribution"' "$repo/.ai-meta-repo-role.json"; then
-  explicit_skills+=(agent-assignment)
-else
-  check_implicit_skill "agent-assignment" "maintenance delegation routing"
-fi
 for skill in "${explicit_skills[@]}"; do
   check_claude_entry "skills/$skill/SKILL.md"
   check_codex_skill "$skill"
 done
 
-for command in aa ee load-context save-context; do
+for command in ee; do
   check_claude_entry "commands/$command.md"
+done
+
+# Commands are typing aliases only: a full-name command duplicates its skill in Claude's slash menu,
+# and each alias must name exactly one existing skill so Codex, which has no commands, can reach it.
+for command_file in "$repo"/commands/*.md; do
+  command_name="$(basename "$command_file" .md)"
+  if [ -d "$repo/skills/$command_name" ]; then
+    status=1
+    echo "command duplicates skill name: commands/$command_name.md" >&2
+  fi
+  targets="$(grep -oE 'skills/[a-z0-9-]+/SKILL\.md' "$command_file" | sort -u || true)"
+  if [ "$(printf '%s\n' "$targets" | grep -c . || true)" -ne 1 ] || [ ! -f "$repo/$targets" ]; then
+    status=1
+    echo "command must reference exactly one existing skill: commands/$command_name.md" >&2
+  else
+    echo "ok: /$command_name -> $targets"
+  fi
 done
 
 check_implicit_skill "agent-doc-hygiene" "semantic and engineering-exit invocation"

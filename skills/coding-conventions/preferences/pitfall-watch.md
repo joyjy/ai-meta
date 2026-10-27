@@ -27,9 +27,11 @@
 - 独立 occurrence：1 session / 1 project。
 - 下次命中：若来自独立 session 或 project，更新 occurrence 并评估 temporary pitfall；生成外部身份绑定 SQL 前先对目标业务用户与外部身份做同主体最终核对，不沿用上一轮查询值。
 
-### shell.zsh.readonly-status-variable
+### shell.zsh.bash-semantics-assumed
 
+- 机制：Bash 工具实际在 zsh 中执行内联脚本，却按 bash 语义写变量和分词。
 - 首次证据：2026-07-21，zsh 内联仓库扫描把命令结果赋给只读特殊参数 `status`。
-- 最近证据：2026-07-21。
-- 独立 occurrence：1 session / 1 project。
-- 下次命中：若来自独立 session 或 project，更新 occurrence 并评估是否形成 temporary pitfall；不要仅因同一会话重试而累计。
+- 最近证据：2026-10-27，hw:cn-email。循环变量 `path` 覆盖了与 `PATH` 绑定的数组，后续 `tail` 和 `cut` 报 command not found。同一会话中，zsh 不按空白拆分 `set -- $spec`，`$1` 拿到整串，`$2` 为空，请求路径因此出错。
+- 独立 occurrence：2 sessions / 2 projects（按 mechanism 合并原 `shell.zsh.readonly-status-variable`）。
+- 晋升评估（2026-10-27）：次数已达评估门槛，但暂不晋升。`temporary.md` 不在 `sync-conventions.sh` 的同步列表中，coding-conventions 也只在 SQL 方言场景路由到它，写内联 shell 时不会加载，晋升后不会生效。若要生效，需放到写 shell 时必然加载的位置（全局规则 §3 的 shell 条目），由用户决定。
+- 下次命中：更新 occurrence。多行或需要分词的内联脚本写成 `bash` 脚本文件或 `bash -c`；变量名避开 zsh 特殊参数，包括已命中的 `status` 和 `path`。

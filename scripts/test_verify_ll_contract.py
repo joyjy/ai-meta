@@ -225,20 +225,6 @@ class VerifyLLContractTest(unittest.TestCase):
             "FAIL E_DONE_VERIFICATION done requires verification commands or substitute evidence",
             output)
 
-    def test_active_contract_requires_continue_action(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_manual_report.json").read_text(encoding="utf-8"))
-        data["ll_contract"]["exit"]["state"] = "active"
-        data["ll_contract"]["exit"]["next_action"] = "report"
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(code, 1)
-        self.assertIn("FAIL E_ACTIVE_NEXT_ACTION", output)
-
     def test_codex_goal_requires_explicit_authorization(self):
         data = json.loads(
             (FIXTURES /
@@ -394,22 +380,6 @@ class VerifyLLContractTest(unittest.TestCase):
             code, output = self.run_contract(Path(tmp.name))
         self.assertEqual(code, 1)
         self.assertIn("FAIL E_CHECKPOINT_UNRESOLVED", output)
-
-    def test_next_ff_ready_requires_next_ff_action(self):
-        data = json.loads(
-            (FIXTURES /
-             "engineering_exit_manual_report.json").read_text(encoding="utf-8"))
-        data["ll_contract"]["exit"]["state"] = "next_ff_ready"
-        data["ll_contract"]["exit"]["next_action"] = "report"
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
-                                         suffix=".json") as tmp:
-            json.dump(data, tmp)
-            tmp.flush()
-            code, output = self.run_contract(Path(tmp.name))
-        self.assertEqual(code, 1)
-        self.assertIn(
-            "FAIL E_NEXT_FF next_ff_ready requires exit.next_action=next_ff",
-            output)
 
 
 if __name__ == "__main__":

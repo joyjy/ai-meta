@@ -23,7 +23,6 @@ load-context
   -> final-form
   -> ll contract gate when controlled execution or recovery is needed
   -> 当前任务主 skill
-  -> agent-assignment 执行分流（维护版默认；发行版显式调用）
   -> 实现、诊断或评审
   -> engineering-exit
   -> save-context
@@ -39,7 +38,6 @@ load-context
 - `loop-ledger` 普通启动和普通 turn 只加载薄主 skill 并调用确定性 helper；架构文档只在修改 `ll.contract.v0`、compiler、verifier、session format 或 adapter 时读取，`runtime-control` 只处理 fast path 被拒、恢复、人工 / 安全 gate 和非普通状态迁移，checkpoint、feedback、terminal audit 与 archive 只在收尾时加载 `closeout` reference。
 - 当前任务主 skill 负责本轮实际执行，例如 `coding-conventions`、`agent-doc-hygiene`、
   `doc-arch-review` 或项目外部 skill。
-- `agent-assignment` 在维护版的非简单任务首次实质工具调用前选择 direct、RS 或 explicit-model internal；发行版仅在用户显式调用时执行该分流。
 - `engineering-exit` 是实现后的总装线，收束源码、验证、文档生命周期、浅 gate、release
   preflight 和 MR 材料。
 - `save-context` 保存恢复索引和必要锚点，并在会话证据仍可用时结算当前 scope 的 objective
@@ -65,7 +63,6 @@ load-context
 ## Decisions / Invariants
 
 - `coding-conventions` 注入工程执行偏好，不写入恢复 context。
-- `agent-assignment` 是执行分流 source of truth，不由 `coding-conventions` 的偏好目录加载或持有。
 - context 只保存恢复索引；durable facts 必须回写到对应 source of truth。
 - `final-form` 是模糊需求与可执行任务之间的 sparse 中间层；空 optional groups 不进入默认输出。
 - `ll.contract.v0` 仍是运行控制契约；固定控制字段从 base contract 模板复用。新 run 将它嵌入一个 `ll.segmented.v1` session 文件，前块固定、后部只追加，不再为 brief、state 和 evidence 建立多份 loop-ledger 文件。
@@ -83,7 +80,7 @@ load-context
 
 改垂直 ll 时，先检查：
 
-- 新规则属于 ll 的哪个环节：加载、工程约定注入、context 恢复、`final-form` 收束、主 skill、执行分流、
+- 新规则属于 ll 的哪个环节：加载、工程约定注入、context 恢复、`final-form` 收束、主 skill、agent 执行、
   `engineering-exit`、`save-context`，还是 specialist gate。
 - 是否会拉长 skill 链条；如果需要第二层以上 specialist，优先改成 follow-up work order。
 - 是否把 durable facts 误写进 context，或把执行记录误写进 architecture docs。

@@ -12,6 +12,12 @@
 - 若 lintest pytest / runner 运行在 compose 内，优先使用 compose service DNS 和容器端口；不要依赖宿主 `localhost` 端口。
 - 前后端分离项目的 agent 集成验证，若只需证明静态 UI 与后端 proxy 契约，优先静态 build + serve 或 nginx mount `dist`；只有明确要验证镜像构建或发布一致性时，才默认走 UI image / multi-stage image。
 
+## Kubernetes Integration Resource Budget
+
+- 为其他系统新建、复制或扩展 Kubernetes integration 环境前，先读取 [IDaaS integration 资源声明](https://gitlab.example.com/example-org/idp/idp-integration/-/tree/master/k8s) 中同类组件的 `resources`、`ns-limit.yml` 和 JVM 配置。具体数值由该配置维护，本模板不复制数值表。
+- 单套环境只部署所需组件。同类组件的 requests、limits、副本数和 JVM 预算默认不高于参考配置；初始化容器也要显式声明资源。需要超出时，先说明证据和单套新增占用，由用户决定。
+- 单套预算和并行总预算分别核对。增加测试分片不改变单套基线；`LimitRange` 的单容器最大值不能当作默认申请量或整套总配额。本节不要求将 Kubernetes requests 直接转换为 Compose 容器上限。
+
 ## Gate
 
 - 发现项目有原生 lintest gate 时，先记录入口和运行位置，再决定是否执行；不要把模板、示例或复制来的配置当作真实 project-native gate。

@@ -41,7 +41,7 @@ Reuse the main skill's count-only friction result. Only if it is unavailable, ru
 
 ## Temporary Files
 
-- Normal load never deletes temp files.
-- Mention stale `/private/tmp` or `/tmp` paths found in context as candidates.
+- Follow the main skill's confirmed-missing registration pruning rule; missing temporary outputs alone do not trigger this health branch.
+- Normal load never deletes existing temp files.
 - Clean only when explicitly requested, limited to exact paths or a clear project/workstream prefix; never use broad globs or touch system/app entries, sockets, or permission-restricted paths.
 - Before deletion, list exact paths and ask unless the user already named those exact paths.

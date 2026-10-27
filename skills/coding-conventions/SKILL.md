@@ -1,6 +1,6 @@
 ---
 name: coding-conventions
-description: 在代码实现、调试、验证或评审中主动识别工程模板与可复用 pattern；也用于 cc、consumer pattern、consumer replay、消费后内部重放，跳板机脚本交付，以及约定初始化 / 校验、偏好与 pitfall 维护、范式提炼和数仓建模。
+description: Proactively identify engineering templates and reusable patterns during implementation, debugging, verification or review. Use for cc, consumer pattern, consumer replay (消费后内部重放), bastion-host script handoff (跳板机脚本交付), convention init or validation (约定初始化 / 校验), preference and pitfall maintenance, pattern distillation (范式提炼), and data-warehouse modeling (数仓建模).
 ---
 
 # coding-conventions
@@ -8,11 +8,12 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 ## Routing
 
 - 新增、修改或评审自有 CLI：读取 `templates/cli/AGENTS.md`；涉及 `usage` 实现时，同读 `patterns/cli-usage-observability.md`。不以项目缺少 CLI 受控块或尚无统计需求为由跳过。
-- 选择验证方式、新增或保留测试、执行测试减法时，先读 `templates/testing/AGENTS.md` 的准入与保留标准。项目明确要求的检查继续执行。
+- 实现或修复业务行为时，先读 `templates/general/AGENTS.md` 的业务切面检查和 `templates/testing/AGENTS.md`。即使未计划修改测试或日志，也要检查现有结构。仅选择验证方式、新增或保留测试、执行测试减法时，仍先读 testing 模板的准入与保留标准。项目明确要求的检查继续执行。
 - 已有 `coding-conventions:begin <template-id>`：读取对应模板作为受控块事实源；用户明确指令与更高层执行边界优先。报告 unsupported ID 或缺失模板。
 - 无受控块但要实现、调试、验证或评审：按技术栈读模板；团队 / 外部项目不加载 `preferences/*`。
 - 用户提到 `consumer pattern`、`consumer replay` 或“消费后内部重放”时，先读取 `patterns/consumer-owned-retryable-execution-unit.md`，按其定义判断当前实现与适用性；用户明确指定其他定义时遵从该定义。普通 `consumer` 一词仍按下方场景信号路由。
 - 按 Pattern Routes 用当前任务场景定位 SOP。先检查事实和约束，再选择解法；不等识别出缺陷或选好技术才加载，不预读无关正文或递归 Related。
+- 新建、复制或扩展 Kubernetes integration 测试环境：读取 `templates/lintest/AGENTS.md` 的资源基线约束。
 - 代码实现：读取 `references/structural-checkpoints.md`，按行为阶段执行结构检查。
 - 创建或清理 Git worktree：读取 `references/worktree-lifecycle.md`。
 - 初始化、注入模板、配置 hook 或接入 `node-test-kit`：读 `references/project-initialization.md`，按已授权目标扫描；范围未定时展示候选并确认。只读校验工程约定和验证能力时读 `references/project-audit.md`。
@@ -26,7 +27,7 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 
 ## Ownership Boundaries
 
-- 工程规则归本 skill，任务归 `gtd`，执行分流归 `agent-assignment`，工具路线摩擦归 `~/.ai/agent-frictions.md`。
+- 工程规则归本 skill，任务归 `gtd`，工具路线摩擦归 `~/.ai/agent-frictions.md`。
 - `templates/` 可注入项目；`preferences/` 只进个人层；`patterns/` 只在 forces 命中时读取。UI 方向归 `design-direction`，只从已解析的个人 project root 读 `DESIGN.md`；GitLab flow 和 MR baseline 归 tool routes、context / exit skills 与项目 `index.md`。
 
 ## Template Routes
@@ -51,7 +52,7 @@ description: 在代码实现、调试、验证或评审中主动识别工程模�
 - 建设或调整分析模型、共享指标、数仓层或回刷：`patterns/business-process-first-warehouse-modeling.md`。先定粒度和消费契约，不要求完整分层。
 - 改变 Java / JDBC 时间持久化、跨时区展示或本地周期调度：`patterns/explicit-wall-time-and-instant-boundaries.md`。先定时间语义；普通时间类型引用不触发。
 - 首次接入外部 API / SDK，或改变版本、端点及响应处理：`patterns/vendor-api-contract-preflight.md`。先核对已有 adapter 和契约证据；普通调用已验证入口不重做预检。
-- 新增缓存或改变缓存读取、写入、删除与失效链路：`patterns/authority-first-cache-consistency.md`。先查实际复用、机制必要性、权威提交与失效覆盖，不默认叠加准入、TTL 或观测。
+- 新增缓存、设计缓存 client，或改变缓存读写与失效链路：`patterns/authority-first-cache-consistency.md`。该文件统一提供 cache-aside、read-through、write-through、write-behind / write-back、refresh-ahead 与不加缓存的选型表。先查权威提交、新鲜度、writer 覆盖和恢复能力。按当前约束选择最少机制，不因模式名或“最佳实践”默认叠加功能。
 - 跨进程、存储或区域的状态设计，按当前待决问题选一份，不整组加载：
   - 谁接收、谁提交、谁排序、谁保存副本：`patterns/authority-ordering-replication-separation.md`。
   - 成功响应证明什么、读取何时可见、超时如何处理：`patterns/operation-scoped-consistency-contract.md`；具体缓存问题走缓存 SOP。

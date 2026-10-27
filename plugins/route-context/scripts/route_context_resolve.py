@@ -104,10 +104,6 @@ GTD_RUNTIME_RE = re.compile(
     r"\bgtd\s+runtime\b|GTD\s+runtime|本地运行面|挂在\s*runtime|daemon",
     re.IGNORECASE,
 )
-SAVE_CONTEXT_RECOVER_RE = re.compile(
-    r"save-context\s+recover|长线程|卡在压缩|离线恢复|旧\s*Codex\s*线程|interrupted|interrupt",
-    re.IGNORECASE,
-)
 
 LLM_COUNCIL_ROUTE = {
     "id": "llm-council-workflow",
@@ -176,17 +172,6 @@ GTD_RUNTIME_ROUTE = {
     "notes": [
         "Use GTD runtime for local daemon and periodic-job management.",
         "Keep runtime daemon work on the GTD runtime entrypoint.",
-    ],
-}
-
-SAVE_CONTEXT_RECOVER_ROUTE = {
-    "id": "save-context-recover",
-    "name": "Long Codex thread save-context recovery",
-    "entrypoint": "~/.ai/scripts/save-context-recover",
-    "tool_route": "~/.ai/tool-routes.md#长线程-save-context-离线恢复",
-    "notes": [
-        "Use this read-only recovery helper when a long Codex thread is stuck around compaction, interrupted, or blocked before save-context.",
-        "The output is evidence for rebuilding context.v2; it is not the final saved context.",
     ],
 }
 
@@ -550,17 +535,6 @@ def resolve_route_context(prompt: str, cwd: str | Path) -> dict[str, Any]:
         special_routes.append(GTD_RUNTIME_ROUTE)
         notes.append(
             "GTD runtime/local daemon wording resolves to ~/.ai/scripts/gtd runtime."
-        )
-
-    save_context_recover_match = SAVE_CONTEXT_RECOVER_RE.search(prompt)
-    if save_context_recover_match:
-        matches.append({
-            "kind": "special_route",
-            "phrase": save_context_recover_match.group(0),
-        })
-        special_routes.append(SAVE_CONTEXT_RECOVER_ROUTE)
-        notes.append(
-            "Long/interrupted Codex thread recovery resolves to the read-only save-context-recover helper."
         )
 
     gtd_entrypoint_match = GTD_ENTRYPOINT_RE.search(prompt)

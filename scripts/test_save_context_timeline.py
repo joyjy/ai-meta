@@ -16,9 +16,18 @@ SCRIPT = Path(__file__).with_name("save_context_timeline.py")
 
 class SaveContextTimelineTest(unittest.TestCase):
 
-    def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def setUp(self) -> None:
+        usage = tempfile.TemporaryDirectory()
+        self.addCleanup(usage.cleanup)
+        self.usage_dir = usage.name
+
+    def run_script(self, *args: str,
+                   env_extra: dict[str, str] | None = None
+                   ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["TZ"] = "Asia/Shanghai"
+        env["AI_META_USAGE_DIR"] = self.usage_dir
+        env.update(env_extra or {})
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             text=True,
@@ -177,68 +186,48 @@ class SaveContextTimelineTest(unittest.TestCase):
                 json.loads(proc.stdout)["checkpoints"],
             )
 
-    def test_thread_id_entry_locates_archived_rollout(self) -> None:
+    def test_claude_session_counts_only_typed_prompts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            codex_home = Path(tmp)
-            rollout = (codex_home / "archived_sessions" /
-                       "rollout-2026-07-23T00-00-00-thread-archived.jsonl")
-            self.write_rollout(rollout, [
-                {
-                    "timestamp": "2026-07-23T00:00:00Z",
-                    "type": "session_meta",
-                    "payload": {
-                        "session_id": "thread-archived",
-                    },
-                },
-                self.user_message(
-                    "2026-07-23T00:01:00Z",
-                    "hello",
-                    turn_id="turn-1",
-                ),
-            ])
+            projects = Path(tmp) / "projects"
+            transcript = projects / "-repo" / "session-1.jsonl"
+
+            def user(timestamp: str, content: object,
+                     **fields: object) -> dict[str, object]:
+                return {"type": "user", "sessionId": "session-1",
+                        "uuid": f"u-{timestamp}", "timestamp": timestamp,
+                        "message": {"role": "user", "content": content},
+                        **fields}
+
+            self.write_rollout(transcript, [
+                user("2026-07-23T00:50:00Z",
+                     "<command-message>load-context</command-message>\n"
+                     "<command-name>/load-context</command-name>\n"
+                     "<command-args>amt</command-args>",
+                     turnOrigin="human"),
+                user("2026-07-23T00:50:01Z",
+                     [{"type": "text", "text": "skill body"}], isMeta=True),
+                user("2026-07-23T00:52:00Z", "first request", turnOrigin="human"),
+                user("2026-07-23T00:53:00Z",
+                     [{"type": "tool_result", "content": "ok"}]),
+                user("2026-07-23T00:54:00Z", "<task-notification>done",
+                     turnOrigin="task_notification"),
+                user("2026-07-23T00:55:00Z", "<bash-stdout>x</bash-stdout>"),
+                user("2026-07-23T00:56:00Z", "summary", isCompactSummary=True),
+                user("2026-07-23T01:00:00Z",
+                     [{"type": "text", "text": "later"}], turnOrigin="human"),
+            ], malformed=True)
 
             proc = self.run_script(
-                "--codex-home",
-                str(codex_home),
-                "--thread-id",
-                "thread-archived",
-            )
+                "--claude-session", "--claude-projects", str(projects),
+                env_extra={"CLAUDE_CODE_SESSION_ID": "session-1"})
 
             self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertEqual("thread-archived",
-                             json.loads(proc.stdout)["thread_id"])
-
-    def test_non_user_rollout_reports_clear_error(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            rollout = Path(tmp) / "rollout.jsonl"
-            self.write_rollout(
-                rollout,
-                [
-                    {
-                        "timestamp": "2026-07-23T00:00:00Z",
-                        "type": "session_meta",
-                        "payload": {
-                            "id": "thread-empty",
-                        },
-                    },
-                    {
-                        "timestamp": "2026-07-23T00:01:00Z",
-                        "type": "response_item",
-                        "payload": {
-                            "type": "message",
-                            "role": "system",
-                            "content": [],
-                        },
-                    },
-                ],
-                malformed=True,
-            )
-
-            proc = self.run_script("--rollout", str(rollout))
-
-            self.assertEqual(1, proc.returncode)
-            self.assertIn("no role=user messages found", proc.stderr)
-            self.assertEqual("", proc.stdout)
+            data = json.loads(proc.stdout)
+            self.assertEqual("session-1", data["thread_id"])
+            self.assertEqual("2026-07-23T08:52:00.000+08:00", data["first_user_at"])
+            self.assertEqual("2026-07-23T09:00:00.000+08:00", data["checkpoint_at"])
+            self.assertEqual(2, data["user_message_count"])
+            self.assertEqual(1, data["excluded_control_turn_count"])
 
 
 if __name__ == "__main__":

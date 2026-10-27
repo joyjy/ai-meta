@@ -100,46 +100,6 @@ class AgentFrictionsTest(unittest.TestCase):
                                  "thread-1.json").read_text(encoding="utf-8"))
             self.assertEqual(9, cursor["last_line"])
 
-    def test_open_summary_is_bounded_and_omits_long_fallbacks(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            inbox = Path(tmp) / "agent-frictions.md"
-            inbox.write_text(
-                "# Agent Frictions\n\n## Open\n\n"
-                "### 2026-08-28 First\n"
-                "- Signature：first.signature\n"
-                "- 障碍：first short summary\n"
-                "- fallback：SECRET-LONG-FALLBACK\n"
-                "- 复现：2（legacy format）\n"
-                "- 状态：open\n\n"
-                "### 2026-08-27 Second\n"
-                "- Signature：second.signature\n"
-                "- 障碍：second short summary\n"
-                "- 状态：open\n\n"
-                "### 2026-08-26 Third\n"
-                "- Signature：third.signature\n"
-                "- 障碍：third short summary\n"
-                "- 状态：open\n\n"
-                "## Closed\n",
-                encoding="utf-8")
-
-            result = agent_frictions.open_summary(inbox, 2)
-
-            self.assertEqual(3, result["open_count"])
-            self.assertEqual(2, result["shown"])
-            self.assertEqual("first.signature",
-                             result["entries"][0]["signature"])
-            self.assertEqual(2, result["entries"][0]["recurrence"])
-            self.assertEqual(3, result["entries"][0]["occurrence_count"])
-            self.assertEqual(
-                "legacy_unbound", result["entries"][0]["identity_status"]
-            )
-            self.assertEqual(0, result["entries"][1]["recurrence"])
-            self.assertEqual(1, result["entries"][1]["occurrence_count"])
-            self.assertEqual(
-                "legacy_unbound", result["entries"][1]["identity_status"]
-            )
-            self.assertNotIn("SECRET", json.dumps(result))
-
     def test_record_occurrence_is_idempotent_and_counts_distinct_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

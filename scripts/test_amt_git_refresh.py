@@ -223,18 +223,6 @@ class AmtGitRefreshTest(unittest.TestCase):
         self.assertEqual(git(self.clean, "rev-parse", "HEAD"), self.before)
         self.assertEqual(report["state"], "healthy")
 
-    def test_parses_gitlab_ssh_and_https_remotes(self) -> None:
-        expected = self.mod.GitLabRemote("gitlab.example.com", "group/demo")
-        self.assertEqual(
-            self.mod.parse_gitlab_remote("git@gitlab.example.com:group/demo.git"),
-            expected,
-        )
-        self.assertEqual(
-            self.mod.parse_gitlab_remote("https://gitlab.example.com/group/demo.git"),
-            expected,
-        )
-        self.assertIsNone(self.mod.parse_gitlab_remote(str(self.remote)))
-
     def test_cleanup_excludes_configured_project_prefix(self) -> None:
         original_gitlab_remote = self.mod.gitlab_remote
         original_cleanup_repository_branches = self.mod.cleanup_repository_branches

@@ -33,7 +33,7 @@ begin(change contract + fingerprint)
 - `check` 记录测试、lint 或人工静态审查的引用；同名 check 以最新事件为准。
 - `load` 核对 `SKILL.md` 及该 change 登记的全部 artifact 的 SHA-256，完全匹配才生成 `load_id`。调用方仍须提供真实客户端加载证据；磁盘内容匹配、仅阅读源文件或改动前的历史调用不算加载回执。
 - `sample` 必须引用匹配的 `load_id`。证据只存可回读引用和短注释，不复制完整对话、prompt 或敏感正文。
-- `status` 是自动化的只读入口；自动化不得直接猜测、补写或修改 ledger。
+- `status` 是自动化的只读入口；自动化不得直接猜测、补写或修改 ledger。每条记录带 `source_drift`（登记后内容已变化的 artifact）与 `superseded_by`（同一 `SKILL.md` 更新登记的记录）；`source_drift` 非空的记录无法再取得 `validated`，应重新登记或停止追踪；仅 `superseded_by` 非空表示已有更新登记，旧记录内容未变时仍可验证，通常改为追踪新记录。
 
 ## Verdict Contract
 
@@ -45,7 +45,7 @@ begin(change contract + fingerprint)
 
 ## Daily Review Integration
 
-`amt:daily-review` 每轮最多调用一次 `~/.ai/scripts/skill-verification status --limit 20`，按 `change_id` 与上轮 memory 比较状态变化。报告须区分 `static_validated` 与 `validated`，并把 `pending` / `inconclusive` 留作待采样项；它只消费 CLI 返回的结构化摘要，不扫描原始记录。
+`skills/daily-review` 通过 `scripts/daily-review-collect` 的事实包消费全部 open 记录及其 `source_drift` / `superseded_by`，按 `change_id` 与上轮 memory 比较状态变化并报告新出现的过期记录。报告须区分 `static_validated` 与 `validated`，并把 `pending` / `inconclusive` 留作待采样项；它不扫描原始记录，也不写 ledger。
 
 ## Change Guidance
 

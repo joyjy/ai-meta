@@ -11,11 +11,15 @@ import os
 import re
 import subprocess
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Iterator
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_usage  # noqa: E402
 
 SCHEMA = "skill.verification.v1"
 SUMMARY_SCHEMA = "skill.verification.summary.v1"
@@ -23,6 +27,7 @@ CHANGE_ID_RE = re.compile(r"^[a-f0-9]{16}$")
 CHECK_STATES = {"passed", "failed"}
 SAMPLE_RESULTS = {"passed", "failed", "inconclusive"}
 OPEN_VERDICTS = {"pending", "inconclusive"}
+COMMANDS = ["begin", "check", "load", "sample", "status", "usage"]
 
 
 def utc_now() -> str:
@@ -423,7 +428,39 @@ def record_sample(args: argparse.Namespace) -> dict[str, Any]:
     return record
 
 
-def compact(record: dict[str, Any]) -> dict[str, Any]:
+def source_drift(record: dict[str, Any]) -> list[str]:
+    """Registered artifacts whose current content no longer matches the change fingerprint."""
+    source = record["source"]
+    repo = Path(source["owner_repo"])
+    drifted = []
+    for item in source.get("artifacts") or [{"relative_path": source["relative_path"],
+                                              "content_sha256": source["content_sha256"]}]:
+        try:
+            current = sha256_file(repo / item["relative_path"])
+        except (OSError, ValueError):
+            current = None
+        if current != item["content_sha256"]:
+            drifted.append(item["relative_path"])
+    return drifted
+
+
+def successors(records: list[dict[str, Any]]) -> dict[str, str]:
+    """Map each change to the newest later change registered for the same SKILL.md."""
+    newest: dict[str, dict[str, Any]] = {}
+    for record in records:
+        path = record["skill"]["canonical_path"]
+        if path not in newest or record["created_at"] > newest[path]["created_at"]:
+            newest[path] = record
+    return {record["change_id"]: newest[record["skill"]["canonical_path"]]["change_id"]
+            for record in records
+            if newest[record["skill"]["canonical_path"]]["change_id"] != record["change_id"]}
+
+
+def all_records(root: Path) -> list[dict[str, Any]]:
+    return [load_change(root, path.stem)[1] for path in sorted((root / "changes").glob("*.json"))]
+
+
+def compact(record: dict[str, Any], superseded_by: str | None = None) -> dict[str, Any]:
     return {
         "change_id": record["change_id"],
         "skill_id": record["skill"]["skill_id"],
@@ -432,19 +469,24 @@ def compact(record: dict[str, Any]) -> dict[str, Any]:
         "summary": record["contract"]["summary"],
         "acceptance": record["contract"]["acceptance"],
         "evaluation": evaluate(record),
+        "source_drift": source_drift(record),
+        "superseded_by": superseded_by,
         "updated_at": record.get("updated_at"),
     }
 
 
 def status(args: argparse.Namespace) -> dict[str, Any]:
+    records_all = all_records(args.root)
+    later = successors(records_all)
     if args.change_id:
         _, record = load_change(args.root, args.change_id)
         record["evaluation"] = evaluate(record)
+        record["source_drift"] = source_drift(record)
+        record["superseded_by"] = later.get(record["change_id"])
         return record
     records = []
-    for path in sorted((args.root / "changes").glob("*.json")):
-        _, record = load_change(args.root, path.stem)
-        summary = compact(record)
+    for record in records_all:
+        summary = compact(record, later.get(record["change_id"]))
         if args.open_only and summary["evaluation"]["verdict"] not in OPEN_VERDICTS:
             continue
         records.append(summary)
@@ -510,6 +552,9 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument("--open", dest="open_only", action="store_true")
     status_parser.add_argument("--limit", type=int, default=50)
     status_parser.set_defaults(handler=status)
+
+    usage_parser = commands.add_parser("usage")
+    usage_parser.set_defaults(handler=lambda _args: cli_usage.summarize("skill-verification", COMMANDS))
     return parser
 
 
@@ -519,13 +564,15 @@ def main(argv: list[str] | None = None) -> int:
     args.root = args.root.expanduser()
     if getattr(args, "limit", 1) < 1:
         parser.error("--limit must be positive")
+    started, code = time.monotonic(), 0
     try:
         result = args.handler(args)
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
-    print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
-    return 0
+        code = 2
+    cli_usage.record("skill-verification", args.command, started, code)
+    return code
 
 
 if __name__ == "__main__":

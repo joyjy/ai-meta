@@ -1,6 +1,6 @@
 ---
 name: browser-buddy
-description: Coordinate guarded browser collaboration in draft-fill, live-copilot, or distill-cli mode. Use to fill without submitting, guide while the user operates, or watch a live browser action and capture the interface or network requests it causes. Do not use for ordinary web research or deterministic project E2E.
+description: Coordinate guarded browser collaboration in draft-fill, live-copilot, or distill-cli mode. Use for bb, filling a form without submitting, guiding while the user operates, or watching a live browser action to capture the interface or network requests it causes. Do not use for ordinary web research or deterministic project E2E.
 ---
 
 # browser-buddy

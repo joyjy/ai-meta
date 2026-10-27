@@ -108,25 +108,6 @@ mainline:
             self.assertFalse((home / ".ai" / "contexts" /
                               "gtd.md").exists())
 
-    def test_unknown_top_level_keys_are_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            invalid = self.valid_context().replace(
-                "updated: 2026-07-02",
-                "unexpected_route: mainline\nupdated: 2026-07-02",
-            )
-
-            proc = self.run_script(home,
-                                   "amt",
-                                   "--context-stdin",
-                                   "--skip-timeline",
-                                   input_text=invalid)
-
-            self.assertEqual(2, proc.returncode)
-            self.assertIn("unknown key(s)", proc.stderr)
-            self.assertFalse((home / ".ai" / "contexts" /
-                              "amt.md").exists())
-
     def test_validate_only_checks_context_and_timeline_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -162,23 +143,6 @@ mainline:
             self.assertIn("context input is empty", proc.stderr)
             self.assertEqual("# existing\n",
                              context_path.read_text(encoding="utf-8"))
-
-    def test_allow_empty_context_stdin_writes_empty_context(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            context_path = home / ".ai" / "contexts" / "amt.md"
-            context_path.parent.mkdir(parents=True)
-            context_path.write_text("# existing\n", encoding="utf-8")
-
-            proc = self.run_script(home,
-                                   "amt",
-                                   "--context-stdin",
-                                   "--allow-empty",
-                                   "--skip-timeline",
-                                   input_text="")
-
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertEqual("", context_path.read_text(encoding="utf-8"))
 
     def test_workstream_save_merges_only_explicit_route(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

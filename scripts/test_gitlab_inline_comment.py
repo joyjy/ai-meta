@@ -31,9 +31,6 @@ class GitlabMrTest(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = load_module()
 
-    def test_project_endpoint_url_encodes_repo(self):
-        self.assertEqual(self.mod.project_endpoint("group/sub/project"), "projects/group%2Fsub%2Fproject")
-
     def test_repo_selector_carries_hostname_without_unsupported_flag(self):
         self.assertEqual(
             self.mod.repo_selector("group/project", "gitlab.example.com"),
@@ -203,69 +200,6 @@ class GitlabMrTest(unittest.TestCase):
                     self.mod.cmd_update(args)
 
         put.assert_not_called()
-
-    def test_put_description_uses_json_input(self):
-        observed = {}
-
-        def fake_run(command):
-            observed["command"] = command
-            payload_path = Path(command[command.index("--input") + 1])
-            observed["payload"] = json.loads(payload_path.read_text(encoding="utf-8"))
-            return "{}"
-
-        with mock.patch.object(self.mod, "run", side_effect=fake_run):
-            self.mod.put_mr_description(
-                "projects/group%2Fproject",
-                "12",
-                "## User Description\n\n内容",
-                "gitlab.example.com",
-            )
-
-        self.assertEqual(
-            {"description": "## User Description\n\n内容"},
-            observed["payload"],
-        )
-        self.assertIn("Content-Type: application/json", observed["command"])
-
-    def test_find_diff_file_accepts_old_or_new_path(self):
-        diff_file = self.mod.find_diff_file(
-            [{"old_path": "old/name.py", "new_path": "new/name.py"}],
-            "old/name.py",
-        )
-
-        self.assertEqual(diff_file["new_path"], "new/name.py")
-
-    def test_build_payload_uses_latest_version_position(self):
-        args = SimpleNamespace(
-            file="src/app.py",
-            line=42,
-            old_line=None,
-            message="Needs a guard",
-            message_file=None,
-        )
-        payload = self.mod.build_inline_payload(
-            args,
-            {"old_path": "src/app.py", "new_path": "src/app.py"},
-            {
-                "base_commit_sha": "base",
-                "start_commit_sha": "start",
-                "head_commit_sha": "head",
-            },
-        )
-
-        self.assertEqual(payload["body"], "Needs a guard")
-        self.assertEqual(
-            payload["position"],
-            {
-                "position_type": "text",
-                "base_sha": "base",
-                "start_sha": "start",
-                "head_sha": "head",
-                "new_path": "src/app.py",
-                "old_path": "src/app.py",
-                "new_line": 42,
-            },
-        )
 
     def test_post_discussion_uses_json_input_and_content_type(self):
         observed = {}

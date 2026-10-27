@@ -43,11 +43,11 @@ Ingress 可以遍布各区域，负责鉴权、校验、路由和结果返回。
 
 ### 3. Ordering 独立声明
 
-只为不变量需要的范围付出协调成本。说明顺序域、epoch 与 handoff 语义，不用 wall-clock timestamp 假装全局因果顺序。
+只为不变量需要的范围付出协调成本，明确实际顺序域。采用 epoch 或改变 authority 时再说明切换语义，不用 wall-clock timestamp 假装全局因果顺序。
 
 ### 4. 分开 commit replication 与 projection
 
-Consensus replica 参与命令排序和 commit；atomic commit participant 决定同一事务提交或放弃；projection 只应用已经提交的事实。Projection 需要 source version、checkpoint、幂等 apply、gap detection、delete barrier 与 reconcile，但不因此获得提交权。
+Consensus replica 参与命令排序和 commit；atomic commit participant 决定同一事务提交或放弃；projection 只应用已经提交的事实。先选择满足可见性要求的刷新方式，全量刷新或按需重建足够时直接复用。增量维护再按乱序、缺口和删除风险选择版本、checkpoint、幂等 apply 或删除屏障。Projection 不因同步方式获得提交权。
 
 ### 5. 多 authority 必须拥有冲突模型
 
@@ -68,18 +68,21 @@ Consensus replica 参与命令排序和 commit；atomic commit participant 决�
 
 - 在图和文档中分别标出 ingress、authority、ordering、commit participant 与 projection。
 - 为每类 mutation 指定唯一 commit point 和权威结果。
-- 声明顺序范围、版本比较域、epoch 与 handoff 语义。
+- 声明必要的顺序范围，只为所用版本或切换机制定义比较域与 epoch。
 - 区分参与 commit、影响 durability 和只保存 projection 的副本。
 - 多 authority 逐类证明 merge law 或指定仲裁 owner。
-- authority 演进时保持稳定命令边界，并设计 fencing 与版本连续性。
+- 选择满足契约的 projection 刷新方式，不默认建设增量复制设施。
+- authority 演进时保持稳定命令边界，按并存 writer 风险设计切换保护。
 
 ## Verification
 
-- 从每个 ingress 发起 mutation，证明它们落到声明的 authority 或 quorum。
-- 隔离 ingress 与 authority，验证 API 可达不会被误判为可提交。
-- 暂停 projection 后重放重复、乱序和删除事件，验证旧版本不能覆盖新版本。
-- 对 multi-primary 候选制造并发写，验证 merge law 与仲裁证据。
-- 执行 authority handoff，验证旧 writer 被 fence 且版本域连续或明确换 epoch。
+只验证当前角色、所选同步机制与最大真实风险。
+
+- 存在多个 ingress 时，从相应入口验证 mutation 落到声明的提交权威。
+- 入口与 authority 断连是当前风险时，验证失败响应符合契约。
+- 全量刷新或重建时，核对视图来源与更新行为；增量维护时，再验证适用的重复、乱序与删除处理。
+- 采用 multi-primary 时，验证并发写下的 merge law 或仲裁结果。
+- 改变 authority 时，验证旧 writer 无法越过切换边界，版本比较规则保持明确。
 
 ## References
 

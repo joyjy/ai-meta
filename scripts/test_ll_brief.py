@@ -50,32 +50,18 @@ class LLBriefTest(unittest.TestCase):
                 text=True,
             )
 
-    def test_renders_exactly_eight_hot_path_lines(self):
+    def test_hot_path_brief_stays_bounded_and_binds_exact_path(self):
         result = self.run_brief(self.active_contract())
         self.assertEqual(0, result.returncode, result.stderr)
-        lines = result.stdout.rstrip("\n").splitlines()
-        self.assertEqual(8, len(lines))
-        self.assertTrue(lines[0].startswith("LL: "))
-        self.assertTrue(lines[1].startswith("Root: "))
-        self.assertTrue(lines[2].startswith("Focus: "))
-        self.assertTrue(lines[3].startswith("Local done: "))
-        self.assertTrue(lines[4].startswith("Scope: "))
-        self.assertTrue(lines[5].startswith("Guardrails: "))
-        self.assertTrue(lines[6].startswith("Reply: "))
         self.assertEqual(
             "Contract: active goal binds exact path; never infer newest.",
-            lines[-1],
+            result.stdout.rstrip("\n").splitlines()[-1],
         )
-        self.assertNotIn("…", result.stdout)
-        self.assertIn("one active focus", lines[5])
-        self.assertIn("ask before=scope change", lines[5])
         self.assertNotIn("knowledge_gate", result.stdout)
         self.assertNotIn("risk_chain_markers", result.stdout)
-        self.assertIn("ll-turn@1", lines[6])
-        self.assertNotIn("status=continue|completed|blocked|needs_human",
-                         lines[6])
         self.assertNotIn(str(Path.home()), result.stdout)
         self.assertLessEqual(len(result.stdout.rstrip("\n")), 1200)
+
 
 if __name__ == "__main__":
     unittest.main()

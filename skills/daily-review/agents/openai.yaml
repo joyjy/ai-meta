@@ -1,0 +1,5 @@
+interface:
+  display_name: "daily-review"
+  short_description: "Review the previous day's Codex work and settle audits"
+policy:
+  allow_implicit_invocation: false

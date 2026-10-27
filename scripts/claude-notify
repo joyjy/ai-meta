@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# claude-notify — Claude Code Notification hook: forward idle and permission prompts to larkbot notify.
+# Reads the hook JSON from stdin; other notification types and delivery failures stay silent.
+
+input=$(cat)
+
+field() { jq -r "$1 // empty" <<<"$input"; }
+
+# idle_prompt fires ~60s after a reply you have not answered; permission_prompt blocks the task.
+case "$(field .notification_type)" in
+  idle_prompt) presentation=glance ;;
+  permission_prompt) presentation=focus ;;
+  *) exit 0 ;;
+esac
+
+message=$(field .message)
+[ -n "$message" ] || message=$(field .title)
+[ -n "$message" ] || exit 0
+
+# Clicking opens the app bundle, which brings the iTerm window to the front.
+click=()
+[ "$TERM_PROGRAM" = iTerm.app ] && click=(--click file:///Applications/iTerm.app)
+
+"$HOME/Documents/me/Projects/larkbot/larkbot" notify send --presentation "$presentation" "${click[@]}" \
+  --title "Claude - $(basename "$(field .cwd)")" "$message" >/dev/null 2>&1
+exit 0

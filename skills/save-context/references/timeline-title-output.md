@@ -40,9 +40,17 @@ Use links or file paths when useful. For Codex, first run one of:
   --rollout <rollout.jsonl>
 ```
 
+For Claude Code, run the following; it reads the current session from
+`$CLAUDE_CODE_SESSION_ID` and counts typed prompts and slash commands, not
+tool results, notifications or command output:
+
+```bash
+~/.ai/scripts/save-context-timeline --claude-session
+```
+
 The JSON contract is:
 
-- `thread_id`: exact Codex thread.
+- `thread_id`: exact Codex thread or Claude Code session.
 - `timezone`: current local timezone used for every output timestamp.
 - `first_user_at`: first included deduplicated `role=user` message after the
   control-only exclusion below.
@@ -84,7 +92,7 @@ range; do not apply the previous 09:00 cutoff or invent overnight clusters.
 
 普通 current-task title refresh 与最终输出由主 skill 自包含。本节只在用户明确要求历史/批量维护时使用：
 
-- 通过原生 list/read 解析 exact task IDs，并逐个用原生 rename；不要按最新时间选择，也不要直接写 Codex SQLite/index 或运行 `codex_session_titles.py`。
+- 通过原生 list/read 解析 exact task IDs，并逐个用原生 rename；不要按最新时间选择。
 - 从 source identity 与 execution context 排除 automation，不因短标题推断。
 - 原生能力无法重命名 archived task 时，可临时 unarchive exact task、rename、恢复 archived state，并回读两项；不得遗留 archive side effect。
 - 缺少能力或失败时报告 exact skip/failure，不回退到本地数据库写入。

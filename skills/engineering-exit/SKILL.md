@@ -1,6 +1,6 @@
 ---
 name: engineering-exit
-description: "engineering-exit / ee: 收束实现后的源码、文档、验证证据和 MR 准备。适用于用户说 ee、engineering exit、工程收尾、准备提审、开 MR 前收束、ship this change，或要求把 plan 转为终态 docs/ADR 后开 MR。"
+description: "Close out implemented source, docs, verification evidence and MR preparation. Use for ee, engineering exit, 工程收尾, 准备提审, 开 MR 前收束, ship this change, or turning a plan into final docs/ADR before opening an MR."
 disable-model-invocation: true
 ---
 
@@ -53,7 +53,7 @@ disable-model-invocation: true
 4. **Review**：`l1/l2/unknown` 读取 `../review-router/SKILL.md`，以 `caller=engineering-exit` 从 simple 开始，最多升级一次；`l3` 仅执行用户或项目指定评审。修复 blocking findings 并重跑相关检查；非阻塞扩展记录 follow-up。
 5. **Sync docs**：行为、契约、runtime 或入口变化同步 owner；结构变化检查 source map。按 Conditional References 执行命中的 docs gates，不扩为全仓审计。
 6. **Prepare delivery**：`l1/l2` 或 release-ready 请求执行 preflight；准备 MR 时校验 `mr-template.md` headings。仅对当前项目 exact ledger/final-form 按 `state-closeout.md` 收口，报告 ledger path，不派发 audit。
-7. **Git exit**：复核 staged scope、branch、flow、checks 和 target freshness，按上述 authority 提交交付。MR 写后按 `mr-template.md` 回读 identity、保护段、CI attachment 并遵循等待边界。
+7. **Git exit**：复核 staged scope、branch、flow、checks 和 target freshness，按上述 authority 提交交付。push 前对交付范围内未推送的提交运行 `git rebase --autosquash <upstream>` 并入 fixup，确认每个提交对应一个 concern。MR 写后按 `mr-template.md` 回读 identity、保护段、CI attachment 并遵循等待边界。
 8. **Settle findings**：scope 对应的维护 finding 已验证并 commit 后，主动按 GTD「修复交付收尾」结算；缺少 exact binding、commit 或证据则报告原因，不把部分修复标为完成。
 
 ## Exit Criteria

@@ -33,7 +33,7 @@ tags: [distributed-systems, consistency]
 
 ## Pattern
 
-为每个外部可观察操作维护以下契约，不用系统级标签代替字段。
+为当前变更涉及的操作说明调用方需要的保证，相同保证可以合并描述。只展开适用维度，不因本清单增加会话、分区或恢复能力。
 
 ### 1. Operation 与不变量
 
@@ -49,15 +49,17 @@ tags: [distributed-systems, consistency]
 
 ### 4. Session guarantees
 
-逐项选择需要的保证。严格 RYW 通常需要 commit version、`min_version`、等待投影或回源 authority；write-through 和 sticky session 只能在其失败边界内提供 fast path。
+业务需要会话保证时再选择。严格 RYW 通常需要 commit version、`min_version`、等待投影或回源 authority；write-through 和 sticky session 只能在其失败边界内提供 fast path。
 
 ### 5. Partition 与 latency
 
-对客户端、authority、quorum 和读副本之间的分区，分别声明继续、等待、拒绝或陈旧读，并暴露版本或降级状态。同时说明正常路径是否跨区、等待 projection 或访问 quorum。
+说明当前调用跨越的边界及失败响应。承诺分区可用性时，再展开对应断连关系。版本或降级信息由调用方契约决定；正常路径注明实际跨区、等待或回源成本。
 
 ### 6. Convergence 与 repair
 
-为非权威视图定义 source version、checkpoint、gap、幂等 apply、delete barrier、lag SLO 和 reconcile owner。最终一致必须能说明停止写入且通信恢复后如何证明收敛。
+先选择全量刷新、按需重建或增量维护。全量刷新或重建能满足契约时，复用现有读取和替换能力。采用增量、乱序输入或存在删除复活风险时，再选择版本、checkpoint、gap 检测和删除屏障。
+
+承诺有界陈旧时明确可验证上界。承诺最终一致时说明收敛前提和修复责任；允许人工修复时可复用已有查询与补做入口。Best-effort 视图如实声明限制，不自动增加 lag SLO 或后台 reconcile。
 
 ## Failure Modes
 
@@ -70,20 +72,23 @@ tags: [distributed-systems, consistency]
 
 ## Implementation Checklist
 
-- 为每个操作填写事实 owner、不变量和 commit point。
+- 为当前操作或同类操作组明确事实 owner、不变量和 commit point。
 - 分开定义成功、明确失败与 unknown outcome。
-- 为 read 指定来源、版本范围和 session guarantee。
-- 对每种分区关系声明继续、等待、拒绝或陈旧读。
+- 为 read 指定来源与可见性，只提供业务要求的会话保证。
+- 存在分区可用性承诺时，说明对应断连关系下的行为。
 - 同时声明正常路径的 latency / consistency 取舍。
-- 为 projection 定义 lag、checkpoint、gap、delete barrier 与 reconcile。
+- 按刷新方式和失败后果选择 projection 的版本、恢复和时限机制。
 
 ## Verification
 
-- 构造并发读写 history，验证承诺的可见性模型。
-- 写入后切换节点、区域和 session，验证 RYW 与 monotonic guarantees。
-- 制造 projection lag 并超过上界，验证等待、回源或明确降级。
-- 在提交前后和响应前断网，验证 unknown outcome 与幂等重试。
-- 停止新写并恢复通信，证明 eventual view 在声明条件下收敛。
+验证当前承诺的主路径与最大真实风险，不因清单增加保证。
+
+- 并发会影响可见性契约时，构造对应读写顺序并核对结果。
+- 承诺 RYW 或 monotonic guarantees 时，再切换对应节点、区域或 session 验证。
+- 承诺有界陈旧时，制造超过上界的 lag，验证等待、回源或降级。
+- 写入存在响应丢失风险时，验证结果查询或既有重试契约，避免把未知结果当作确定失败。
+- 全量刷新或重建时，验证更新与失败后的行为；增量维护时，验证适用的重复、缺口或删除处理。
+- 承诺最终一致时，证明视图在声明条件下收敛。
 
 ## References
 

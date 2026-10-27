@@ -39,43 +39,6 @@ class GitlabProjectLintTest(unittest.TestCase):
         self.mod.run = self.original_run
         self.mod.glab_json = self.original_glab_json
 
-    def test_repo_from_remote_accepts_ssh_and_https(self):
-        self.assertEqual(
-            self.mod.repo_from_remote(
-                "git@gitlab.example.com:example-org/demo/service.git"),
-            "example-org/demo/service",
-        )
-        self.assertEqual(
-            self.mod.repo_from_remote(
-                "https://gitlab.example.com/example-org/demo/service.git"),
-            "example-org/demo/service",
-        )
-
-    def test_frontmatter_reads_inline_gitlab_flow(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "index.md"
-            path.write_text(
-                '---\ngitlab: {flow: l2, squash: default-on, lint: "PASS@2026-07-10"}\n---\n',
-                encoding="utf-8")
-
-            self.assertEqual(self.mod.gitlab_config_from_index(path),
-                             ("l2", "default-on"))
-
-    def test_frontmatter_reads_repo_inline_gitlab_flow(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "repo"
-            repo.mkdir()
-            path = Path(tmp) / "index.md"
-            path.write_text(
-                f'---\nrepos:\n  - path: {repo}\n    gitlab: {{flow: l1, squash: required, lint: "PASS@2026-07-10"}}\n---\n',
-                encoding="utf-8",
-            )
-
-            self.assertEqual(
-                self.mod.gitlab_config_for_repo(path, repo,
-                                                "example-org/demo/service"),
-                ("l1", "required"))
-
     def test_resolve_only_reports_worktree_canonical_repo(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

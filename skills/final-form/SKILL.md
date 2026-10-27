@@ -1,6 +1,6 @@
 ---
 name: final-form
-description: Turn a request, context next step, GTD item, or follow-up into an executable final-form for Codex, Symphony, or a human. Use when the user says ff, final form, work order, clarify the requirement, make this dispatchable, prepare for Symphony, or asks whether a next step is ready to execute.
+description: Turn a request, context next step, GTD item, or follow-up into an executable final-form for Codex, Symphony, or a human. Use for ff, final form, work order, clarify the requirement, make this dispatchable, prepare for Symphony, or asking whether a next step is ready to execute.
 ---
 
 # final-form

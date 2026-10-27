@@ -1,6 +1,6 @@
 ---
 name: loop-ledger
-description: "Start or resume an authorized, recoverable Codex goal backed by one loop-ledger file. Use automatically for authorized execution needing durable phase tracking, progress reporting, or recovery across turns; also for ll, loop, /ll, a confirmed goal offer, or an exact loop-ledger-bound goal."
+description: "Start or resume an authorized, recoverable Codex goal backed by one loop-ledger file. Use for ll, loop, /ll, a confirmed goal offer, or an exact loop-ledger-bound goal; also use automatically for authorized execution needing durable phase tracking, progress reporting, or recovery across turns."
 ---
 
 # loop-ledger

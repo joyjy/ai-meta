@@ -2,12 +2,14 @@
 
 ## Verify
 
-- 执行 Gradle 命令前先解析本机工具：优先 `./gradlew`，其次 PATH 中的 `gradle`，最后才用 `$HOME/.asdf/shims/gradle`；`asdf` 只是个人环境 fallback，不是团队项目硬依赖。
-- 仅在本机可用 `asdf` 且 `asdf where java` 成功时设置 `JAVA_HOME`；不要让团队项目依赖用户必须安装 asdf。
-- Li Xiang 项目必须通过 `./gradlew` 使用 wrapper 自带 Gradle 7.4 / 7.5.1；SonarLint 插件与 Gradle 8.x 不兼容，会触发 `tried to access private field AbstractCodeQualityPlugin.extension`。
-- 每次修改 Java 文件后，先跑 `$GRADLE compileJava compileTestJava`，确认无编译错误再继续。
-- slice 完成时运行项目已有 Gradle gate；若项目已有覆盖率或静态分析任务，一并执行，不额外发明覆盖率门槛。
-- format 由 Spotless / pre-commit hook 处理；除非项目要求，agent 不需要手动跑格式化命令。
+- 项目已提供 Gradle Wrapper 时，本地开发和 CI 统一使用 Wrapper。Gradle 版本以 `gradle/wrapper/gradle-wrapper.properties` 为准。
+- 将 `gradlew`、`gradlew.bat`、`gradle/wrapper/gradle-wrapper.jar` 和 `gradle/wrapper/gradle-wrapper.properties` 纳入 Git。
+- 项目未提供 Wrapper 时，按项目约定确认构建入口和 Gradle 版本。缺少约定时，先验证构建脚本与本机 Gradle 的兼容性。
+- 使用理想项目共用构建脚本时，沿用项目已验证的 Gradle 7.4 或 7.5.1。升级前验证共用构建脚本的兼容性。
+- 使用项目要求的 JDK。不要让团队项目依赖个人工具链。
+- 修改 Java 文件后，使用已确认的 Gradle 入口运行 `compileJava compileTestJava`。确认无编译错误后再继续。
+- 阶段完成时，运行项目已有的 Gradle 检查。项目已有覆盖率或静态分析任务时，一并执行。不要新增未经项目约定的覆盖率门槛。
+- 项目使用 Spotless 或 pre-commit hook 时，通过现有入口完成格式化。项目另有格式化要求时，按项目要求执行。
 
 ## Project Shape
 

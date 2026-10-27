@@ -1,6 +1,6 @@
 ---
 name: review-router
-description: Route rr code/MR/PR, module, whole-repository, simplification and explicit design reviews. Excludes ordinary document requests and feedback triage.
+description: Route code/MR/PR, module, whole-repository, simplification and explicit design reviews, plus concise change overviews for domain-boundary inspection. Use for rr. Excludes ordinary document requests and feedback triage.
 ---
 
 # review-router
@@ -27,6 +27,10 @@ description: Route rr code/MR/PR, module, whole-repository, simplification and e
 绑定 acceptance/spec、适用标准、diff/snapshot、context 与验证证据。Evolution 还需 caller-owned revision、fingerprint、round 和 prior findings。
 
 显式 `design` 绑定 file/section/proposal、problem、constraints、current anchors 与 decision question；无需 diff。根据现实验证 rationale，缺少关键 decision 可判 `not-ready`。
+
+## 变更导读
+
+用户要求解释变更、统计改动构成或查看业务功能的职责分布时，读取 `references/change-overview.md`。仅请求导读时，按导读格式回复。完整评审先完成导读，再按所选 strategy 判断。15 行上限只约束导读，完整评审仍保留实质 findings。
 
 ## Strategy
 

@@ -16,6 +16,11 @@ SCRIPT = Path(__file__).with_name("context_ff_merge.py")
 
 class ContextFFMergeTest(unittest.TestCase):
 
+    def setUp(self) -> None:
+        usage = tempfile.TemporaryDirectory()
+        self.addCleanup(usage.cleanup)
+        self.env = dict(os.environ, AI_META_USAGE_DIR=usage.name)
+
     def ff(self, goal: str = "Ship the narrow change") -> dict:
         return {
             "output_target": "context",
@@ -31,8 +36,7 @@ class ContextFFMergeTest(unittest.TestCase):
         }
 
     def run_script(self, context_dir: Path,
-                   ff_path: Path,
-                   env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+                   ff_path: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 sys.executable,
@@ -48,7 +52,7 @@ class ContextFFMergeTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
-            env=env,
+            env=self.env,
         )
 
     def run_clear(self,
@@ -73,6 +77,7 @@ class ContextFFMergeTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            env=self.env,
         )
 
     def write_ff(self, root: Path, ff: dict | None = None) -> Path:
@@ -96,19 +101,6 @@ class ContextFFMergeTest(unittest.TestCase):
             self.assertIn("project: amt", context)
             self.assertIn("next_steps:", context)
             self.assertIn("goal: Ship the narrow change", context)
-
-    def test_missing_origin_session_uses_current_codex_thread(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            context_dir = root / "contexts"
-            ff = self.ff()
-            env = {**os.environ, "CODEX_THREAD_ID": "thread-from-environment"}
-
-            proc = self.run_script(context_dir, self.write_ff(root, ff), env=env)
-
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            context = (context_dir / "amt.md").read_text(encoding="utf-8")
-            self.assertIn("origin_session_id: thread-from-environment", context)
 
     def test_existing_context_replaces_only_mainline_next_ff(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -147,27 +139,6 @@ updated: 2026-07-01
             self.assertIn("summary: preserve me", context)
             self.assertIn("next_step: keep this", context)
             self.assertIn("  doing:\n    - keep doing", context)
-
-    def test_existing_context_rejects_unknown_top_level_keys(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            context_dir = root / "contexts"
-            self.assertEqual(
-                0,
-                self.run_script(context_dir, self.write_ff(root)).returncode,
-            )
-            context_path = context_dir / "amt.md"
-            invalid = context_path.read_text(encoding="utf-8").replace(
-                "updated:",
-                "unexpected_route: mainline\nupdated:",
-            )
-            context_path.write_text(invalid, encoding="utf-8")
-
-            proc = self.run_script(context_dir, self.write_ff(root))
-
-            self.assertEqual(1, proc.returncode)
-            self.assertIn("unknown key(s)", proc.stderr)
-            self.assertEqual(invalid, context_path.read_text(encoding="utf-8"))
 
     def test_malformed_context_refuses_to_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

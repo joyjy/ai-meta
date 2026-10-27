@@ -1,12 +1,12 @@
 # save-context: compatibility and special I/O
 
-仅在非 Codex client、legacy 调用或需要特殊 flags 时读取。所有 filesystem writes 仍只经 `~/.ai/scripts/save-context`。
+仅在 legacy 调用或需要特殊 flags 时读取。所有 filesystem writes 仍只经 `~/.ai/scripts/save-context`。
 
 ## Client I/O
 
-- Codex Desktop 使用主 skill 的 `--orchestrate` + `--context-file` 路径；长 YAML 不走 interactive stdin。
-- 其他 client 能安全提供 stdin 时可用 `--context-stdin`。只能 pipe stdin 时可用 `--context-file -`。
-- Legacy 非 orchestrator 调用保留原 `save_context.py` 参数、输出与 exit codes；不要把它当 Codex 默认入口。
+- 所有 client 默认使用主 skill 的 `--orchestrate` + `--context-file` 路径；长 YAML 不走 interactive stdin。
+- 无法写临时文件、只能 pipe stdin 时，可用 `--context-stdin` 或 `--context-file -`。
+- Legacy 非 orchestrator 调用保留原 `save_context.py` 参数、输出与 exit codes；不要把它当默认入口。
 
 ## Special Flags
 

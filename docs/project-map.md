@@ -26,7 +26,6 @@
 
 | 子模块 | 职责 | 入口 |
 | --- | --- | --- |
-| `agent-assignment` | 为非简单任务选择 direct、RS 或 internal，显式路由子模型并收敛失败接续与验收 | `skills/agent-assignment/SKILL.md` |
 | `browser-buddy` | 在 Draft Fill、Live Copilot 与 Distill CLI 之间路由浏览器人机协作，并持有登录、提交、会话与证据边界 | `skills/browser-buddy/SKILL.md` |
 | `coding-conventions` | 编码规范模板、个人偏好、可复用工程 pattern、模板同步脚本和项目级 `AGENTS.md` 注入规则 | `skills/coding-conventions/SKILL.md`, `skills/coding-conventions/patterns/`, `sync-conventions.sh` |
 | `design-direction` | UI 设计方向初始化、现有视觉基线恢复和 specialist design lens 路由 | `skills/design-direction/SKILL.md` |
@@ -40,7 +39,14 @@
 | `agent-doc-hygiene` | agent-facing 文档治理、加载路径瘦身、context/memory 有效性巡检 | `skills/agent-doc-hygiene/SKILL.md` |
 | `doc-arch-review` | 架构文档、ADR、OKF、doc-root taxonomy 和 durable docs 的质量评审 | `skills/doc-arch-review/SKILL.md` |
 | `engineering-exit` | 实现完成后的源码、验证、文档生命周期、浅 gate、release preflight 和 MR 提审收束 | `skills/engineering-exit/SKILL.md` |
+| `daily-review` | Codex 定时任务的前一日工作回顾、Audit / LL 结算与 skill 验证状态汇报；确定性事实由采集脚本提供 | `skills/daily-review/SKILL.md`, `scripts/daily-review-collect` |
 | `jev-evaluation` | 通用 Jev 结构化判断 skill 与固定 TypeSafe API CLI；业务分类目录和执行策略归调用方 | `skills/jev-evaluation/SKILL.md`, `skills/jev-evaluation/scripts/jev-evaluate` |
+
+## 配套本机工具
+
+| 工具 | 源码 owner | 职责与边界 | Context |
+| --- | --- | --- | --- |
+| `agent-pulse` | `Projects/agent-pulse` | agent 运行环境：`agent-state` 会话 hook 与本机广播、`worknet` 网络控制、`beacon` 桌面看板、Hammerspoon 配置。入口见 [agent-pulse README](../../agent-pulse/README.md)。 | `pulse`、`pulse:network` |
 
 ## snippet-lab 子模块
 
@@ -85,6 +91,8 @@ WorkItem 自动化不建立第三套事实源：GTD 的 `scripts/workitem/` 是�
 Next Steps 和必要锚点；长期事实应回写到对应模块或工作域。
 
 ## 接入规则
+
+个人本机小工具按 [轻量管理约定](architecture/local-tool-management.md) 选择归属、安装和运行形态。
 
 新增模块、工作域或子模块时，先补齐：
 

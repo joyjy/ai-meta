@@ -13,6 +13,12 @@ entire human-authored package belongs under the exact `## User Description`
 heading. The shared `gitlab-mr` helper adds or normalizes that heading and keeps
 Managed PR Agent PR Agent content outside the protected section.
 
+声明 MR 依赖时遵守以下规则：
+
+- 写入前核实目标 MR 的 host、完整仓库路径、IID、标题和状态。无法确认目标时标为待确认，不猜测链接。
+- 依赖项使用 `[仓库名 !IID](完整 MR URL)`。跨仓引用禁止只写 `!IID`，也不能只加仓库简称。裸 `!IID` 会指向当前仓库。
+- 正文、依赖列表、合并顺序和发布顺序中的引用遵守同一规则。只有已有依据时才声明依赖及先后顺序。
+
 以下为无项目模板时的候选段落；只保留与本次变更相关的部分，GitLab 的保护 heading 始终保留。
 
 ```markdown
@@ -21,6 +27,9 @@ Managed PR Agent PR Agent content outside the protected section.
 ## 变更摘要
 - <改了什么>
 - <为什么改>
+
+## 依赖与合并顺序
+- <完整 MR 链接>：<依赖原因；仅在有依据时写合并或发布顺序>
 
 ## 验证
 - <验证结论和关键证据；必要时附最小可复现命令>

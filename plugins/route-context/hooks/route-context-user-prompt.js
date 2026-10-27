@@ -13,8 +13,10 @@ function readStdin(done) {
   setTimeout(() => done(input), 1000).unref();
 }
 
+// The Claude adapter lives in a nested plugin dir, so CLAUDE_PLUGIN_ROOT is not
+// always this bundle's root; resolve from the script location instead.
 function pluginRoot() {
-  return process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
+  return path.resolve(__dirname, '..');
 }
 
 function cwdFromPayload(data) {

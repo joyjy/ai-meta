@@ -1,7 +1,7 @@
 ---
 type: Pattern
 title: 以权威存储为提交点的缓存一致性
-description: 先识别权威事实与缓存分叉窗口，再按新鲜度、读写、持久性和修复能力匹配缓存模式及 pitfall。
+description: Cache-aside、read-through、write-through、write-behind / write-back 与 refresh-ahead 的场景选型；先查权威提交和分叉窗口。
 resource: https://gitlab.example.com/example-org/iam/example-device-service/-/merge_requests/68
 tags: [consistency, recovery]
 ---
@@ -15,7 +15,7 @@ tags: [consistency, recovery]
 - Authority 与 cache 不在同一原子边界，读写和删除可能并发。
 - 系统正在选择缓存模式，并需要约束陈旧、RYW、撤权或删除复活风险。
 
-缓存收益不足，或数据能安全留在一个事务存储时，先不加缓存。
+缓存收益不足，或数据能安全留在一个事务存储时，先不加缓存。允许陈旧且能回源重建时，先检查现有过期与失效策略是否已满足要求。撤权、删除或已确认写入的不可接受后果，按具体契约保护。
 
 ## Problem
 
@@ -45,7 +45,7 @@ tags: [consistency, recovery]
 
 ### 1. 先定位不一致窗口
 
-对每类缓存对象写明 authority、commit point、cache role、key scope、允许陈旧度和 repair owner，再检查：
+对当前缓存对象明确 authority、commit point、key scope 和允许陈旧度。只检查实际读写路径涉及的窗口：
 
 - Authority 已提交但 invalidate / set 丢失；或响应丢失后用新 identity 重试。
 - 旧 reader 在 writer 提交并失效后重新填回旧值。
@@ -55,25 +55,37 @@ tags: [consistency, recovery]
 
 ### 2. 按 forces 匹配缓存模式
 
-- **Cache-aside**：数据库是 authority、读多写少时默认选择；miss 回源填充，write 提交后 invalidate。防止 stale refill、失效丢失、key scope 丢失和回源雪崩。
-- **Read-through**：需要统一 loader、TTL、负缓存和 miss 合并时采用。Loader 不读落后副本、不缓存临时错误，旧结果不能覆盖新版本；它不定义写一致性。
-- **Write-through**：所有 writer 收敛到同一 gateway，且当前读路径需要立即可见时采用。同步双写并非原子提交；严格 RYW 仍需版本读屏障或 authority fallback。
-- **Write-behind**：只有前置层具备持久日志、复制、顺序、幂等、checkpoint、backpressure 和恢复时采用。此时 commit point 已前移，易失 cache 不得承载已确认写入。
+此表是缓存模式的选型入口。没有脱离当前约束的统一最佳模式。先说明权威存储、允许陈旧度、writer 覆盖和恢复能力，再选择最简单的可行模式。
 
-### 3. 应用跨模式安全门
+| 模式与检索关键词 | 成立条件与用途 | 决定性边界 |
+| --- | --- | --- |
+| 不加缓存 / no cache | 缓存收益不足，或权威存储已满足延迟与容量要求 | 不为套用模式新增一致性和恢复成本 |
+| Cache-aside / lazy loading / 旁路缓存 | 权威存储决定事实；未命中时回源，写入提交后按契约失效 | 按允许陈旧度处理旧回填、失效丢失和失效范围；模式名本身不证明一致性 |
+| Read-through / 读穿透 | 缓存组件统一 loader 与读取流程 | 只定义读取归属；写入顺序和失效仍需独立契约 |
+| Write-through / 写穿透 | 所有 writer 经过同一入口；入口同步写入权威存储与缓存 | 双写不是原子提交；明确提交点与部分成功，严格写后读需要版本屏障或权威读取 |
+| Write-behind / write-back / 异步回写 | 允许后续写入权威存储；前置层已有持久日志、复制、顺序、幂等和恢复 | 提交点已前移；易失缓存与进程内队列不能承载已确认写入 |
+| Refresh-ahead / proactive refresh / 提前刷新 | 热数据有可预测的复用，且过期时回源会影响延迟或容量 | 是读取模式的可选补充；刷新遵循已选的新鲜度、失效和容量约束 |
 
-- Fill 与 writer 携带 version / generation；双删只缓解已证明的 stale refill，第二删必须持久、幂等且 delay 有依据。
-- Delete 前固定 key scope；负缓存、列表和派生 key 共享 generation 或 tombstone。
-- 提交后的缓存动作进入 durable retry / outbox / CDC，并记录 lag 与修复结果。
-- Cache 不可用时，回源有容量预算、限流、热点保护和降级策略。
+Cache-aside client 内部封装 loader 时，也具有 read-through 的读取形式。两者描述的边界不同，可以组合。不能据此推导写一致性。
+
+当业务要求读取最新已提交数据时，loader 必须使用满足该要求的数据源。读取落后副本可能在失效后再次填入旧值。Loader 错误不能当作数据不存在缓存。
+
+负缓存、进程内并发回源合并（single-flight）、分布式锁、过期时间随机偏移与多级缓存均为可选机制。只有真实风险或容量证据支持时才采用。进程内回源合并不提供跨实例保护。
+
+### 3. 按契约选择保护与恢复措施
+
+- 旧回填或乱序写会突破新鲜度要求时，选择版本比较、条件写入或权威读取。采用延迟双删时，说明第二删的可靠性与延迟依据。
+- 删除或撤权要求覆盖派生缓存时，固定 key scope，并选择失效、版本屏障或权威校验。已有过期策略满足契约时直接复用。
+- 提交后的缓存动作必须可靠完成时，复用已有的 durable retry / outbox / CDC。允许过期后重建时，沿用已认可的过期和回源路径。
+- Cache 故障回源可能超过容量时，再选择限流、热点保护或降级。已有存储容量和流量控制足够时直接复用。
 
 ## Failure Modes
 
 - 只写模式名，没有 authority、步骤顺序和失败响应。
 - DB 提交后 cache 失败，却返回普通失败并诱发重复写。
-- 无版本比较地 `set`，让慢 writer 或旧 loader 覆盖新事实。
+- 需要防止旧值覆盖时，缺少版本比较或等效保护。
 - 把延迟双删或长 TTL 当成严格一致性证明。
-- Delete 只清对象 key，遗漏列表、负缓存与派生 key。
+- 删除契约要求同步失效，却遗漏列表、负缓存或派生 key。
 - Write-through 存在绕行 writer，或 write-behind 使用易失 cache。
 - Cache 故障时无保护地全量回源，放大为 authority 故障。
 
@@ -81,22 +93,21 @@ tags: [consistency, recovery]
 
 - 先绑定访问粒度、重复间隔和容量约束；每项额外机制说明它解决的独立缺口。
 - 标出 authority、commit point、key scope 与 repair owner，再按 forces 选模式。
-- Cache-aside 默认 authority commit 后 invalidate，并保存删除前 key scope。
-- Read-through 定义 loader 来源、错误分类、miss 合并和旧回填防护。
+- Cache-aside 按失效契约处理 authority commit 与 key scope。
+- Read-through 明确 loader 来源与错误分类，按风险选择回源合并和旧回填防护。
 - Write-through 收敛 writer；write-behind 具备 durable log、顺序、重放和 backpressure。
-- 为 refill、delete、negative cache 和 retry 建立版本屏障。
-- 定义 TTL、lag SLO、持久修复、告警和缓存故障回源容量。
+- 每项版本、投递、持久修复或容量保护措施对应一个实际缺口。
+- 只承诺必要的新鲜度和恢复时限，并选择可验证的过期、回源或修复路径。
 
 ## Verification
 
 - 只验证选中机制的真实风险，不因本清单补齐未采用机制。
 - 使用同类流量比较修改前后的命中、回源、写入和容量；多实例准入要验证跨实例重复访问。
-- 重现 stale refill 顺序，验证旧填充被版本拒绝或最终失效。
+- 需要防止 stale refill 时，重现对应顺序并验证选中的保护措施。
 - 在 authority commit 后终止进程或让 cache 失败，验证结果与修复契约。
-- 打乱并发 writer、loader 与 retry 的完成顺序，验证旧版本不能覆盖新版本。
-- Delete 后重放旧 fill、列表和负缓存，再 recreate，验证屏障与新版本语义。
-- 暂停失效 consumer，验证 lag 告警、回放和 reconcile。
-- 关闭 cache 并施加真实读流量，验证回源容量与降级边界。
+- 契约要求防止乱序或删除复活时，验证对应 writer、loader 和删除路径。
+- 采用可靠失效投递时，验证失败后的回放或修复；采用过期重建时，验证过期与回源路径。
+- 回源容量是当前风险时，验证 cache 故障下的容量与降级边界。
 - 对 write-behind 注入故障，验证已确认写不丢失且顺序不反转。
 
 ## Evidence

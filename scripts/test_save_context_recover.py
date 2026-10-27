@@ -3,14 +3,19 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).with_name("save_context_recover.py")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from save_context_recover import build_packet, locate_rollout  # noqa: E402
+
+PACKET_ARGS = argparse.Namespace(max_messages=8, max_tool_calls=30, max_paths=25,
+                                 max_context_blocks=3, max_text_chars=1200,
+                                 max_context_chars=12000)
 
 
 class SaveContextRecoverTest(unittest.TestCase):
@@ -129,34 +134,26 @@ class SaveContextRecoverTest(unittest.TestCase):
                            encoding="utf-8")
         return rollout
 
-    def test_recovery_packet_from_rollout_path(self) -> None:
+    def test_recovery_packet_dedupes_mirrored_messages_and_omits_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             codex_home = Path(tmp)
             rollout = self.write_rollout(codex_home)
 
-            proc = subprocess.run(
-                [sys.executable,
-                 str(SCRIPT), "--rollout",
-                 str(rollout)],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            packet = build_packet(rollout, PACKET_ARGS)
 
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertIn("session_id: `thread-1`", proc.stdout)
-            self.assertIn("git status --short", proc.stdout)
-            self.assertEqual(1, proc.stdout.count("save context"))
-            self.assertIn("call=call-status status=success", proc.stdout)
-            self.assertIn("exit_code=0", proc.stdout)
-            self.assertIn("result_chars=11", proc.stdout)
-            self.assertNotIn(" M file.py", proc.stdout)
-            self.assertIn("exec_command: python3 -m unittest", proc.stdout)
-            self.assertIn("call=call-wrapper status=success", proc.stdout)
-            self.assertIn("result_chars=19", proc.stdout)
-            self.assertNotIn("secret test details", proc.stdout)
-            self.assertIn("project=amt", proc.stdout)
-            self.assertIn("turn_aborted: 1", proc.stdout)
+            self.assertIn("session_id: `thread-1`", packet)
+            self.assertIn("git status --short", packet)
+            self.assertEqual(1, packet.count("save context"))
+            self.assertIn("call=call-status status=success", packet)
+            self.assertIn("exit_code=0", packet)
+            self.assertIn("result_chars=11", packet)
+            self.assertNotIn(" M file.py", packet)
+            self.assertIn("exec_command: python3 -m unittest", packet)
+            self.assertIn("call=call-wrapper status=success", packet)
+            self.assertIn("result_chars=19", packet)
+            self.assertNotIn("secret test details", packet)
+            self.assertIn("project=amt", packet)
+            self.assertIn("turn_aborted: 1", packet)
 
     def test_recovery_packet_groups_same_turn_and_reports_failed_tool_span(
             self) -> None:
@@ -214,21 +211,15 @@ class SaveContextRecoverTest(unittest.TestCase):
                 json.dumps(event) + "\n" for event in events),
                                encoding="utf-8")
 
-            proc = subprocess.run(
-                [sys.executable, str(SCRIPT), "--rollout", str(rollout)],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            packet = build_packet(rollout, PACKET_ARGS)
 
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertEqual(1, proc.stdout.count("### 2026-07-27T01:00:00Z"))
-            self.assertIn("first\nsecond", proc.stdout)
-            self.assertIn("call=call-fail status=failed", proc.stdout)
-            self.assertIn("exit_code=1", proc.stdout)
-            self.assertNotIn("sensitive failure details", proc.stdout)
+            self.assertEqual(1, packet.count("### 2026-07-27T01:00:00Z"))
+            self.assertIn("first\nsecond", packet)
+            self.assertIn("call=call-fail status=failed", packet)
+            self.assertIn("exit_code=1", packet)
+            self.assertNotIn("sensitive failure details", packet)
 
-    def test_recovery_packet_locates_archived_thread(self) -> None:
+    def test_locate_rollout_finds_archived_thread(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             codex_home = Path(tmp)
             archived = codex_home / "archived_sessions"
@@ -245,22 +236,8 @@ class SaveContextRecoverTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--codex-home",
-                    str(codex_home),
-                    "--thread-id",
-                    "thread-2",
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            self.assertEqual(rollout, locate_rollout(codex_home, None, "thread-2"))
 
-            self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertIn(str(rollout), proc.stdout)
 
 if __name__ == "__main__":
     unittest.main()

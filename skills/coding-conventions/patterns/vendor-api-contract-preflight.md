@@ -1,14 +1,14 @@
 ---
 type: Pattern
 title: 厂商 API 契约预检与适配隔离
-description: 首次接入外部厂商 API 时，先用官方契约、社区风险信号和最小原始响应探针查明真实边界，再把非标准行为隔离在 vendor adapter 内。
+description: 首次接入或改变厂商 API 契约时，先复用当前官方契约和 SDK 能力，只对证据缺口增加定向探针与必要适配。
 resource:
 tags: []
 ---
 
 # 厂商 API 契约预检与适配隔离
 
-外部厂商 API 的官方文档通常足以描述 happy path，却未必完整表达 HTTP status、`Content-Type`、错误 body、长度边界、环境差异和 SDK 隐式归一化。首次接入前应先完成 bounded contract preflight，并让厂商特有行为止于 adapter；社区“踩坑”用于发现探针方向，原始响应和官方材料才用于确认契约。
+先核对当前版本的官方契约、SDK 和项目已有适配。证据已覆盖本次调用时直接复用。只有成功、错误或媒体语义仍不明确时，再补定向取证和最小适配。
 
 ## Context
 
@@ -18,7 +18,7 @@ tags: []
 - 社区 SDK、博客或 issue 中出现自定义解析、魔数判断、重试补丁或特殊 header 处理。
 - 厂商响应不能直接作为本系统面向客户端的稳定契约。
 
-如果项目已经有经过生产验证、覆盖当前版本和调用方式的 adapter 与 contract test，只需核对变更域，不必为每次普通调用重复完整预检。
+已有文档、SDK 契约或项目验证证据覆盖当前版本和调用方式时，只核对变更域。标准 JSON 接口沿用既有解析与错误处理，不因首次接入而新增媒体判别层。
 
 ## Problem
 
@@ -29,7 +29,7 @@ tags: []
 ## Forces
 
 - **文档与运行时存在时差**：官方文档是首要来源，但可能遗漏网关、SDK、环境或历史兼容行为。
-- **社区信号覆盖真实失败**：issue、博客和 SDK workaround 能暴露高频坑，但可能过时、错误或只适用于特定语言栈。
+- **补充取证成本**：官方契约或 SDK 仍有具体缺口时，再查询 issue 或原始响应。社区 workaround 可能过时或只适用于特定版本。
 - **探针应当有界**：需要覆盖真实分支，又不能为验证配额、风控或破坏性行为制造生产影响。
 - **HTTP 与业务语义可能分离**：status、header、body media type 和业务错误码必须组合解释。
 - **内部契约需要稳定**：上层调用方不应理解某厂商特有的响应分支、错误命名和传输细节。
@@ -39,15 +39,15 @@ tags: []
 
 ### 1. 建立契约清单
 
-从官方文档和当前使用的 SDK 版本列出 method、URL、鉴权位置、request media type、成功与失败 status、`Content-Type`、body schema、字符集与长度限制、超时、配额、幂等、环境和版本差异。把“文档明确声明”和“尚待实测”分开，不用示例响应替代错误分支契约。
+从官方文档和当前 SDK 确认本次 method、URL、鉴权与成功、错误语义。限制、幂等和环境差异只检查当前用例涉及的部分。区分已知契约与证据缺口，先复用现有解析、错误映射和验证结果。
 
-### 2. 做定向社区侦察
+### 2. 仅对证据缺口补充侦察
 
-用 exact endpoint、SDK method、错误码和关键响应特征搜索官方 issue、SDK issue、博客与问答，例如组合“接口名 + 坑 / 生产 / 超限 / Buffer / JSON / timeout”。社区材料只生成风险假设和探针项；它能证明问题真实发生，不为文章中的原因判断或解决方案背书。至少回到官方材料、SDK 源码或原始 HTTP 证据确认后，才能把结论写进 adapter。
+存在具体缺口时，用 endpoint、SDK method 或错误码查询官方材料、SDK 源码或 issue。社区材料只生成候选解释，不作为当前版本的实现依据。已有证据足够时停止取证。
 
-### 3. 运行最小原始响应探针
+### 3. 按缺口选择最小探针
 
-在安全测试环境对正常成功、非法参数、无效凭证和一个关键边界分别发起最小请求，记录 HTTP status、headers、raw body 类型、长度、前几个 magic bytes、错误 schema 和 request ID。不要只观察 SDK 反序列化后的对象；SDK 可能已经吞掉 status、改写异常或统一响应。
+先复用已有响应样本、SDK 测试和项目验证。仍有缺口时，在获准的安全环境验证对应成功或错误路径。只记录判断所需的 status、media type、错误字段与 request ID。只有需要核对 SDK 转换或混合媒体时，才检查原始响应。
 
 限流、扣费、消息发送、支付、删除或风控等分支不为了“覆盖完整”主动触发；优先使用官方 sandbox、已存在 evidence 或无副作用的边界 probe，并明确仍未证明的行为。
 
@@ -59,22 +59,22 @@ tags: []
 
 ### 5. 对混合响应逐层判别
 
-优先使用 HTTP status 和可信的 `Content-Type` 分流。若厂商在同一 2xx endpoint 中混合返回二进制成功和 JSON 错误，且 header 缺失或不可靠，则按当前契约增加内容判别：已知成功媒体可检查完整 magic signature；JSON object 候选在去除允许的 BOM 与前后空白后，应同时满足首字符 `{`、尾字符 `}`，随后必须实际 parse 并校验预期错误字段与类型。
+只在接口实际混合返回成功媒体与错误对象时使用本节。优先复用 SDK 或 HTTP status 与可信的 `Content-Type`。Header 不可靠时，再按已知媒体签名或 JSON 解析及预期错误 schema 判别，不新增无契约依据的启发式分支。
 
 任何分支无法匹配已知 media signature 或错误 schema 时，返回 `unexpected_vendor_response` 并保留脱敏诊断，不把未知 body 当作成功资源。不要使用固定字节长度、单个首字符、字符串包含 `errmsg` 或 JSON parse 是否抛错作为唯一判据。
 
 ### 6. 在 adapter 终止厂商语义
 
-把原始响应转换为本系统的稳定结果，例如 `VendorResult<BinaryAsset, VendorError>`、内部 media resource 或明确的 domain error。上层只接收结构化成功、结构化失败和未知响应，不传播厂商的混合 body、错误码命名、Base64 偏好或临时存储策略。
+复用现有客户端或 adapter，把厂商特有行为限制在已有接口边界。上层使用明确的成功结果或错误语义。现有 SDK 返回值和异常已满足内部契约时直接使用，不为接口隔离再建泛型结果框架或转发层。
 
 如果标准协议已有字段语义，厂商专有能力作为独立资源或显式扩展存在，不覆盖标准字段。资源的存储、代理、缓存和过期策略由本系统生命周期决定，不由厂商原始响应形状倒推。
 
 ## Failure Modes
 
-- 只读官方 happy-path 示例，没有验证非法参数、凭证失效和关键边界。
+- 成功或错误契约仍有具体缺口，却仅凭示例补全实现。
 - 把 HTTP 200 直接解释为业务成功，忽略 body 中的错误对象。
 - 按 body 小于固定字节数判断 JSON 错误；较长错误或较短、截断的二进制会被误判。
-- 只检查首字符 `{`，没有处理 BOM、空白、尾界、JSON parse 和错误 schema。
+- 混合响应仅凭首字符或 JSON 可解析就推断业务结果，未核对预期 schema。
 - 任何可解析 JSON 都被当成预期错误，掩盖代理错误页、网关响应或厂商契约漂移。
 - 只看 SDK 返回对象，不保留 status、headers、raw media type 和 request ID 的诊断能力。
 - 把图片 Buffer 无条件转成 Base64 塞进业务 JSON，放大体积并破坏缓存与流式传输。
@@ -84,26 +84,25 @@ tags: []
 
 ## Implementation Checklist
 
-- 列出 method、鉴权、status、media type、schema、限制、配额、幂等、环境和版本契约。
-- 搜索 exact endpoint、SDK method、错误码和异常响应特征，把社区命中转成 probe 清单。
-- 确认当前 SDK 是否改写 status、headers、异常和 raw body。
-- 有界验证正常成功、非法参数、无效凭证与一个关键边界，并保留脱敏 raw evidence。
-- 对混合响应先使用 status 和 `Content-Type`，必要时再使用完整 media signature 与 JSON object 边界、parse、schema 校验。
+- 确认本次调用和错误契约，复用当前文档、SDK 与项目证据。
+- 只对具体缺口补查资料、检查 SDK 转换或运行获准的最小探针。
+- 混合响应先复用 SDK、status 和 `Content-Type`，必要时再检查媒体签名与错误 schema。
 - 未知响应 fail closed，输出稳定内部错误并保留 request ID，不猜测为成功。
-- 用 vendor adapter 转换为内部 typed result，不让厂商 body 形状进入上层契约。
+- 复用现有适配边界，不让厂商特殊响应分支进入上层业务。
 - 为二进制资源明确代理、存储、缓存、过期和清理策略，不默认 Base64。
 - 对标准协议保留原字段语义，把厂商能力建模为独立资源或显式扩展。
 - 对未能安全触发的配额、风控和破坏性分支标记“未证明”，不伪造完成证据。
 
 ## Verification
 
-- Contract test 分别回放成功媒体、标准 JSON 错误、带 BOM / 空白的 JSON 错误、长错误 body、截断媒体和未知 body。
-- 验证错误响应即使为 HTTP 2xx 也会进入结构化失败，而不会保存或展示为图片。
-- 验证合法成功媒体不依赖固定长度，并通过当前声明的 media signature 或可信 header 识别。
-- 验证可解析但不符合错误 schema 的 JSON 被归类为未知厂商响应。
-- 验证 adapter 之外的 service、controller 和客户端 fixture 不包含厂商 raw body 分支。
-- 验证日志和保存的 probe evidence 已移除 secret、token、个人数据和可复用授权信息。
-- 在 SDK 或厂商 API 版本升级时重跑最小 probe，比较 status、headers、schema 和边界差异。
+选择当前调用的主路径和最大真实风险，已有证据覆盖时直接复用。
+
+- 标准 JSON 接口验证实际成功与错误处理，不增加二进制媒体测试矩阵。
+- 实际存在混合媒体或不可靠 header 时，再选择错误对象、截断媒体或未知响应场景。
+- 自建内容判别时，验证已知成功、错误和未知类型不会混淆。
+- 改变适配边界时，核对厂商特殊响应分支仍停留在该边界。
+- 保存日志或 probe evidence 时，检查凭据与个人信息已移除。
+- SDK 或 API 升级时核对契约差异，仅重验受影响路径与未解决缺口。
 
 ## Relationships
 

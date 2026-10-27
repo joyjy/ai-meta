@@ -1,0 +1,14 @@
+{
+  "name": "ai-meta",
+  "description": "Personal ai-meta plugins for Claude Code.",
+  "owner": {
+    "name": "joyjy"
+  },
+  "plugins": [
+    {
+      "name": "ai-meta-route-context",
+      "source": "./plugins/route-context/claude",
+      "description": "Prompt-time route facts for Claude Code."
+    }
+  ]
+}

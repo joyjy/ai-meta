@@ -31,12 +31,10 @@
   `docs/plan/`；只有已经实现、验证并沉淀为当前有效事实的内容，才进入源码 repo 的
   `docs/` 架构、ADR、runbook 或 change guidance。
 - 命令文件只做薄入口，具体流程收敛到对应 skill、script 或 durable docs。
-- 新增、重命名或实质修改会发布的 `commands/*.md` 时，必须让 `scripts/check-codex-command-entries`
-  通过；`install.sh` 发布前会执行该检查。不要只因为 `~/.ai/commands/<name>.md` 软链存在就认为
-  Codex 可用。
-- 仅允许用户显式调用的 skill 必须同时维护 Claude 的 `disable-model-invocation: true` 和 Codex 的 `agents/openai.yaml` → `policy.allow_implicit_invocation: false`；若 Claude 还发布同名 command，command frontmatter 也必须声明前者。修改后运行 `scripts/check-skill-invocation-policies`。
+- `commands/*.md` 只承载 skill 缩写（如 `ee`、`dd`），不得与 skill 同名，且只引用一个存在的 `skills/<id>/SKILL.md`；`scripts/check-skill-invocation-policies` 在 `install.sh` 发布前校验。
+- 仅允许用户显式调用的 skill 必须同时维护 Claude 的 `disable-model-invocation: true` 和 Codex 的 `agents/openai.yaml` → `policy.allow_implicit_invocation: false`；若缩写 command 指向该 skill，command frontmatter 也必须声明前者。修改后运行 `scripts/check-skill-invocation-policies`。
 - 每个发布给 Codex 的 skill 都必须在 `agents/openai.yaml` 维护 `interface.display_name` 和 `interface.short_description`；是否允许隐式调用仍由独立的 `policy.allow_implicit_invocation` 决定。
-- 发布 skill 的 canonical identity 必须是描述性 kebab-case，且 `skills/<id>/`、frontmatter `name`、首个 H1 和 `agents/openai.yaml` 的 `display_name` 完全一致；不另建 Title Case 展示名。`cc`、`dd`、`ee`、`ff`、`ll`、`rr` 等缩写只作为用户调用 alias 或 command 入口，不进入 canonical path、标题或普通 agent 文案。
+- 发布 skill 的 canonical identity 必须是描述性 kebab-case，且 `skills/<id>/`、frontmatter `name`、首个 H1 和 `agents/openai.yaml` 的 `display_name` 完全一致；不另建 Title Case 展示名。`bb`、`cc`、`dd`、`ee`、`ff`、`ll`、`rr` 等缩写只作为用户调用 alias 或 command 入口，不进入 canonical path、标题或普通 agent 文案。
 - `~/.ai/agent-frictions.md` 是本机跨项目工具摩擦 inbox；维护时按 `tool-routes.md` 的「Agent 执行摩擦」入口读取，纯恢复按 `load-context` 的 count-only 规则执行；详情仅在修复或 triage 时展开。
 - 维护跨客户端入口前先确认目标客户端发现机制。Codex 没有本地自定义 agents / slash commands 目录概念；需要桥接工作域能力时，使用可发现 skill、MCP tool 或脚本入口，不能只落 `commands/*.md` / `~/.ai/commands/*.md`，也不机械套用 Claude / OpenCode 的 subagent 结构。
 - 个人 l3 项目的测试优先覆盖主路径 smoke / integration；确认 CLI / command 调用的接口和

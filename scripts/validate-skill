@@ -81,7 +81,6 @@ def validate(path: Path, upstream_validator: Path) -> int:
 
     gates = [
         REPO_ROOT / "scripts" / "check-skill-invocation-policies",
-        REPO_ROOT / "scripts" / "check-codex-command-entries",
     ]
     for gate in gates:
         if not run_checked("ai-meta", [str(gate)]):

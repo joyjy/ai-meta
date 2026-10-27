@@ -8,6 +8,7 @@ tmp/
 /index.md
 docs/plan/
 agent-frictions.md
+agent-frictions.md.lock
 
 # Codex local plugin marketplace manifest for this repo.
 !.agents/

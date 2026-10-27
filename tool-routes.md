@@ -40,7 +40,6 @@
 
 - skill 校验：`~/.ai/scripts/validate-skill <skill-dir>`。
 - context 保存：`~/.ai/scripts/save-context --orchestrate <abbr> ...`。
-- context 恢复证据：`~/.ai/scripts/save-context-recover`。
 - timeline：`~/.ai/scripts/save-context-timeline`。
 
 ## Local extensions

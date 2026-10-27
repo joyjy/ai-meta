@@ -8,11 +8,17 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_usage  # noqa: E402
+
+CLI = "context-ff-merge"
+COMMANDS = ["merge", "clear-completed", "usage"]
 CONTEXT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 ALLOWED_CONTEXT_KEYS = {
     "schema", "project", "goal", "mainline", "workstreams", "updated"
@@ -50,7 +56,9 @@ def read_ff(path: Path) -> dict[str, Any]:
 
     ff = unwrap_ff(loaded)
     if "origin_session_id" not in ff:
-        ff["origin_session_id"] = os.environ.get("CODEX_THREAD_ID") or None
+        ff["origin_session_id"] = (os.environ.get("CODEX_THREAD_ID")
+                                   or os.environ.get("CLAUDE_CODE_SESSION_ID")
+                                   or None)
     validate_ff(ff)
     return ff
 
@@ -302,7 +310,8 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Merge a final-form ff block into a context.v3 file.")
+        description=("Merge a final-form ff block into a context.v3 file. "
+                     "`usage` prints local call statistics."))
     parser.add_argument("abbr",
                         help="Context abbr, optionally abbr:workstream")
     action = parser.add_mutually_exclusive_group(required=True)
@@ -321,7 +330,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = parse_args(argv)
+    args = sys.argv[1:] if argv is None else argv
+    if args == ["usage"]:
+        print(json.dumps(cli_usage.summarize(CLI, COMMANDS), ensure_ascii=False,
+                         indent=2))
+        cli_usage.record(CLI, "usage", time.monotonic(), 0)
+        return 0
+    parser = parse_args(args)
+    command = "clear-completed" if parser.clear_completed else "merge"
+    started = time.monotonic()
     try:
         abbr, spec_route = split_spec(parser.abbr)
         route = parser.route or spec_route or "mainline"
@@ -347,9 +364,11 @@ def main(argv: list[str] | None = None) -> int:
         atomic_write_text(path, render_context(data, body))
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
+        cli_usage.record(CLI, command, started, 1)
         return 1
     action = "cleared completed ff from" if parser.clear_completed else "merged ff into"
     print(f"{action} {path} route {route}")
+    cli_usage.record(CLI, command, started, 0)
     return 0
 
 

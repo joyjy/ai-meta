@@ -1,15 +1,10 @@
 ---
-description: 启动或恢复由单个 loop-ledger 文件支撑的 Codex goal
+description: loop-ledger：启动或恢复由单个 ledger 文件支撑的 Codex goal
 ---
 
 input = $ARGUMENTS
 
-读取下列 source-of-truth skill，并按其中定义执行工作流。
+读取并执行 source-of-truth skill：
+`~/.ai/skills/loop-ledger/SKILL.md`
 
-Source of truth:
-- `~/.ai/skills/loop-ledger/SKILL.md`
-
-执行要求：
-- 将 `$ARGUMENTS` 作为输入，读取 source-of-truth 文件并按其中定义执行完整工作流
-- 不在本 command 文件中复制或追加 architecture、verifier、contract 编译、checkpoint、反馈记录、git flow 或输出格式
-- 若本文件与 source-of-truth 文件冲突，以 source-of-truth 文件为准，并优先修正本文件保持薄入口
+将 `$ARGUMENTS` 作为任务补充；为空时使用当前对话和已加载 context。不在本文件复制 skill 流程；与 skill 冲突时以 skill 为准，并修正本文件。
