@@ -17,6 +17,7 @@ ai-meta/
 ├── commands/               # Claude / OpenCode 等客户端的薄入口
 ├── scripts/                # validator、同步器和本机运维入口
 ├── release/private/        # 私有发行副本的脱敏 overlay
+├── release/redactions.json # 脱敏替换表与禁用标识，只留在 maintenance
 ├── plugins/                # plugin bundle 源文件；Claude Code 直接引用其中的 hook 脚本
 ├── .agents/plugins/        # Codex personal marketplace 注册源
 ├── docs/
@@ -34,7 +35,7 @@ ai-meta/
 - `commands/` 不复制 skill 工作流；ai-meta 自有 workflow 留在 `skills/`，项目能力的 canonical skill 留在 owner repo。Codex 可发现性由 skill、MCP tool 或脚本桥接承担。
 - `plugins/` 拥有 bundle 源码，`.agents/plugins/marketplace.json` 拥有 Codex 的 marketplace 注册；`~/.codex` 中的缓存、启用状态和 trust，以及 `~/.claude/settings.json` 中指向本 checkout 的 hook 引用，是本机运行态。
 - `mcp/` 和 `runtime/` 只保存可版本管理的结构；真实 endpoint、token、状态和运行结果位于本机运行态。
-- `scripts/private-release` 只允许从 `maintenance` checkout 生成脱敏 `distribution` checkout。发行副本不是第二个维护事实源。禁止发行副本反向覆盖工作源。
+- `scripts/private-release` 只允许从 `maintenance` checkout 生成脱敏 `distribution` checkout。发行副本不是第二个维护事实源。禁止发行副本反向覆盖工作源。脱敏替换表与禁用标识只放在 `release/redactions.json`，不随发行副本发布；脚本源码不得内联这些值，`check` 会把拆分拼接的字符串合并后再扫描。
 
 ## Shared Contracts
 

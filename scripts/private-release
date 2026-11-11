@@ -28,9 +28,10 @@ OMIT_PATHS = {
     "agent-frictions.md",
     "agent-frictions-archive.md",
     "manual/ai-external-memory-sharing.md",
+    "release/redactions.json",
 }
-REPLACEMENTS = ()  # maintenance-only list, not published
-FORBIDDEN = ()  # maintenance-only list, not published
+REDACTIONS = ROOT / "release" / "redactions.json"
+SPLIT_LITERAL = re.compile(r"""["']\s*\+\s*["']""")
 SECRET_PATTERNS = (
     re.compile(r"BEGIN (?:RSA |OPENSSH )?PRIVATE KEY"),
     re.compile(r"Bearer\s+(?!<)[A-Za-z0-9._=-]{20,}"),
@@ -50,6 +51,23 @@ LOCAL_HOME_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+
+
+def load_redactions(*, required: bool) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
+    """Read the maintenance-only redaction list; a distribution has none."""
+    try:
+        value = json.loads(REDACTIONS.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        if required:
+            raise RuntimeError(f"redaction list is missing: {REDACTIONS}") from None
+        return (), ()
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot read redaction list: {REDACTIONS}: {exc}") from exc
+    if not isinstance(value, dict) or value.get("schema") != "ai-meta.release-redactions.v1":
+        raise RuntimeError(f"invalid redaction list: {REDACTIONS}")
+    replacements = tuple((str(old), str(new)) for old, new in value["replacements"])
+    forbidden = tuple(str(marker) for marker in value["forbidden"])
+    return replacements, forbidden
 
 
 def read_role(root: Path) -> dict[str, object]:
@@ -132,11 +150,11 @@ def text_files(root: Path) -> Iterable[Path]:
         yield path
 
 
-def sanitize_text(root: Path) -> None:
+def sanitize_text(root: Path, replacements: tuple[tuple[str, str], ...]) -> None:
     for path in text_files(root):
         content = path.read_text(encoding="utf-8")
         updated = content
-        for old, new in REPLACEMENTS:
+        for old, new in replacements:
             updated = updated.replace(old, new)
         if updated != content:
             path.write_text(updated, encoding="utf-8")
@@ -194,7 +212,10 @@ def check_release(root: Path) -> dict[str, object]:
     if read_role(root).get("role") != "distribution":
         raise RuntimeError(f"not a distribution checkout: {root}")
 
+    _, forbidden = load_redactions(required=False)
     findings: list[str] = []
+    if (root / "release/redactions.json").exists():
+        findings.append("maintenance redaction list is present in the distribution")
     agent_frictions_launcher = root / "scripts/agent-frictions"
     agent_frictions_module = root / "scripts/agent_frictions.py"
     if not agent_frictions_launcher.is_file():
@@ -227,8 +248,10 @@ def check_release(root: Path) -> dict[str, object]:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        for marker in FORBIDDEN:
-            if marker.casefold() in content.casefold():
+        # Join split literals such as "a" + "b" so source code cannot spell a marker.
+        folded = (content + "\n" + SPLIT_LITERAL.sub("", content)).casefold()
+        for marker in forbidden:
+            if marker.casefold() in folded:
                 findings.append(f"forbidden marker {marker!r}: {relative}")
         for pattern in SECRET_PATTERNS:
             if pattern.search(content):
@@ -255,11 +278,12 @@ def build_release(target: Path, *, allow_dirty: bool) -> dict[str, object]:
     if dirty and not allow_dirty:
         raise RuntimeError("maintenance worktree is dirty; inspect it and pass --allow-dirty explicitly")
     revision = git_output("rev-parse", "HEAD")
+    replacements, _ = load_redactions(required=True)
 
     stage = Path(tempfile.mkdtemp(prefix=".ai-meta-release-", dir=target.parent))
     try:
         copy_source(stage)
-        sanitize_text(stage)
+        sanitize_text(stage, replacements)
         apply_overlay(stage)
         write_distribution_role(stage, revision, dirty)
         receipt = check_release(stage)

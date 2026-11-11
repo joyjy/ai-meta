@@ -53,6 +53,7 @@ class PrivateReleaseTest(unittest.TestCase):
             self.assertFalse((target / ".DS_Store").exists())
             self.assertTrue((target / "release/private/route-context.json").exists())
             self.assertTrue((target / "scripts/private-release").exists())
+            self.assertFalse((target / "release/redactions.json").exists())
             checked = subprocess.run(
                 [str(COMMAND), "check", str(target)],
                 cwd=ROOT,
