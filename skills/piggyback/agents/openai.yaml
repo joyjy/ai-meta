@@ -1,0 +1,4 @@
+interface:
+  display_name: "piggyback"
+  short_description: "Deepen a request with expert practice before design work"
+  default_prompt: "Use $piggyback to deepen this request with what a domain expert would do, then rewrite it."

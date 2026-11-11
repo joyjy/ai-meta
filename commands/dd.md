@@ -1,5 +1,5 @@
 ---
-description: design-direction：建立或恢复 UI 视觉方向
+description: design-direction：设定 UI 视觉方向或评审已有界面
 ---
 
 input = $ARGUMENTS

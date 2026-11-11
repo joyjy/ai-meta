@@ -160,5 +160,6 @@ fi
 check_implicit_skill "grill" "semantic and proactive invocation"
 check_implicit_skill "review-router" "semantic and proactive invocation"
 check_implicit_skill "steelman" "semantic and proactive invocation"
+check_implicit_skill "piggyback" "semantic and proactive invocation"
 
 exit "$status"

@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | UserPromptSubmit | `hooks/route-context-user-prompt.js`、`scripts/route_context_resolve.py` | 将项目路径与工具路由解析为 additionalContext；规则来自 `route-context.json` |
 
-Claude Code 通过 `.claude-plugin/marketplace.json` 安装 `plugins/route-context/claude/`。该目录只声明 UserPromptSubmit，复用同一 `route-context-user-prompt.js` 与解析器。Codex 的普通任务续轮 Stop 检查见 [runbook](../runbook/codex-task-continuation.md)，不在 Claude 启用。
+Claude Code 不安装本插件。`~/.claude/settings.json` 的 UserPromptSubmit hook 用 node 直接运行本 checkout 的 `hooks/route-context-user-prompt.js`，复用同一解析器。仓库内修改无需重装，新会话即可生效。
 
 套件不会创建业务任务、联网查询 MR、发送评论或改写会话文件。
 
@@ -18,7 +18,7 @@ Claude Code 通过 `.claude-plugin/marketplace.json` 安装 `plugins/route-conte
 
 ## 安装与验收
 
-插件更新使用 plugin-creator 的 cachebuster 工具，然后通过 `codex plugin add ai-meta-route-context@ai-meta` 更新安装缓存。Claude Code 用 `claude plugin marketplace add <ai-meta root>` 与 `claude plugin install ai-meta-route-context@ai-meta` 安装；目录型 marketplace 直接读取源码，`claude plugin details` 应只列出 UserPromptSubmit。`install.sh` 继续只发布共享配置/软链，不直接复制 plugin cache 或写 hook 信任状态。配置按当前 Codex 的 hook review/trust 流程批准；旧文件路径或旧 hash 的信任不能证明新 hook 已启用。
+插件更新使用 plugin-creator 的 cachebuster 工具，然后通过 `codex plugin add ai-meta-route-context@ai-meta` 更新安装缓存。Claude Code 不走插件安装；验收时用 `jq` 确认 `~/.claude/settings.json` 的 UserPromptSubmit 指向本 checkout 的脚本，并用示例 payload 运行该命令。`install.sh` 继续只发布共享配置/软链，不直接复制 plugin cache 或写 hook 信任状态。配置按当前 Codex 的 hook review/trust 流程批准；旧文件路径或旧 hash 的信任不能证明新 hook 已启用。
 
 验收必须区分源码、安装与实际执行：
 

@@ -34,7 +34,7 @@ load-context
   `gitlab.flow` 仍由项目 `index.md`、context / exit skills 与 tool routes 持有，它不写入恢复 context。
 - `load-context` 只恢复当前项目 / 分线的最小上下文和健康信号。
 - `final-form` 把模糊需求收束成 sparse work order；默认只保留 Goal、Scope、Acceptance，其他字段按 gate 出现。
-- `loop-ledger` 按主 skill 的 Admission 规则自动选择或接受显式调用。平台要求的 goal 授权成立后，从已授权请求或 final-form 编译单个 session 文件。显式 `/ll <task>`、`/loop <task>` 或携带任务的 `loop-ledger` skill invocation 本身就是 dispatch authorization；若无结构性阻塞，agent 在同一轮内部编译 sparse final-form 并直接启动，不展示第二次确认。文件前 8 行保留初始化 hot，随后嵌入 `ll.contract.v0`，尾部追加 checkpoint、evidence、feedback、focus、结构化 reply 和 exit 事件。普通 turn 通过 `ll-hot-block` 读取事件投影后的当前 8 行 Focus，并用通用 `ll-turn` 编译结构化结果和下一 Focus；`ll-workitem` 只负责把 WorkItem final-form 初始化为同一种 loop-ledger 文件。恢复、人工 gate、状态迁移和最终审计才由 agent 读取完整文件和相关尾部事件。Codex goal adapter 从 verified exact path 生成准确 objective；Symphony 复用同一 contract/ledger 语义管理 WorkItem session，不改变 `/ll` 的交互行为。
+- `loop-ledger` 按主 skill 的 Admission 规则自动选择或接受显式调用。平台要求的 goal 授权成立后，从已授权请求或 final-form 编译单个 session 文件。显式 `/ll <task>` 或携带任务的 `loop-ledger` skill invocation 本身就是 dispatch authorization；若无结构性阻塞，agent 在同一轮内部编译 sparse final-form 并直接启动，不展示第二次确认。文件前 8 行保留初始化 hot，随后嵌入 `ll.contract.v0`，尾部追加 checkpoint、evidence、feedback、focus、结构化 reply 和 exit 事件。普通 turn 通过 `ll-hot-block` 读取事件投影后的当前 8 行 Focus，并用通用 `ll-turn` 编译结构化结果和下一 Focus；`ll-workitem` 只负责把 WorkItem final-form 初始化为同一种 loop-ledger 文件。恢复、人工 gate、状态迁移和最终审计才由 agent 读取完整文件和相关尾部事件。Codex goal adapter 从 verified exact path 生成准确 objective；Symphony 复用同一 contract/ledger 语义管理 WorkItem session，不改变 `/ll` 的交互行为。
 - `loop-ledger` 普通启动和普通 turn 只加载薄主 skill 并调用确定性 helper；架构文档只在修改 `ll.contract.v0`、compiler、verifier、session format 或 adapter 时读取，`runtime-control` 只处理 fast path 被拒、恢复、人工 / 安全 gate 和非普通状态迁移，checkpoint、feedback、terminal audit 与 archive 只在收尾时加载 `closeout` reference。
 - 当前任务主 skill 负责本轮实际执行，例如 `coding-conventions`、`agent-doc-hygiene`、
   `doc-arch-review` 或项目外部 skill。
@@ -72,8 +72,9 @@ load-context
   unclaimed；不通过“最新文件”推断 active owner，也不把 event body 复制进 context。
 - 单文件 loop-ledger 的普通轮次只读 `ll-hot-block` 输出的 8 行事件投影；agent 直接读取完整 contract 或 ledger tail 必须命中恢复、gate、状态迁移或最终审计。
 - 多轮工作细分是 loop-ledger core：同时只有一个 Active Focus，agent 只能提议 `next_focus`，`ll-turn` 校验并追加状态事件；子 Focus 完成不等于 Root 完成，子队列耗尽后必须回到 Root 对照验收。
-- 热读块不得按字符静默截断 Goal、Scope、Done 或 Guardrails。contract 编译器为新 run 绑定 `runtime_binding.hot_packet` / `ll-turn@1`，在写入前确定性归一化空白、移除 scope / acceptance 精确重复项，并对包含字段名和固定控制文本的完整 8 行 packet 使用 1200 字符软目标与 1800 字符硬上限；各字段共享总预算，报告总长和逐字段贡献，仍超出硬上限时初始化失败，不得丢失要求。既有 `800/1200` contract 保持可读并继续执行其内嵌旧预算；没有 packet policy 的 contract 也保持可读，但不宣称满足预算。普通 packet 只携带协议版本和 goal 已绑定的 exact path 语义，不重复完整 reply schema、命令或绝对路径。
-- 当前 loop-ledger runtime 支持从显式用户请求或已确认 final-form 创建 Codex goal；前者不得被 final-form 的普通展示确认边界重复拦截。其他 adapter 值仅保留 legacy contract 验证兼容，不代表可 dispatch。
+- `ll-turn@2` 的验收状态和人工决定由事件投影持有。reply 的 `acceptance_met` 累积 Root `done_when` 的满足状态；任一项未满足时，投影拒绝结束 Root，覆盖 `compile-reply`、`complete-focus`、`supersede-focus` 和 `exit done`。门禁证明每项都声明了证据，不证明证据为真。`human_decision` 文本进入热读块的 `Decisions:` 行，按从新到旧显示完整条目，预算不足时写明隐藏数量。`ll-turn@1` 和没有 packet policy 的 contract 保持原渲染，不受门禁约束。
+- 热读块不得按字符静默截断 Goal、Scope、Done 或 Guardrails。contract 编译器为新 run 绑定 `runtime_binding.hot_packet` / `ll-turn@2`，在写入前确定性归一化空白、移除 scope / acceptance 精确重复项，并对包含字段名和固定控制文本的完整 8 行 packet 使用 1200 字符软目标与 1800 字符硬上限；各字段共享总预算，报告总长和逐字段贡献，仍超出硬上限时初始化失败，不得丢失要求。既有 `800/1200` contract 保持可读并继续执行其内嵌旧预算；没有 packet policy 的 contract 也保持可读，但不宣称满足预算。普通 packet 只携带协议版本、子命令名、reply 字段名和 goal 已绑定的 exact path 语义，不重复完整 reply schema、命令行或绝对路径。
+- 当前 loop-ledger runtime 支持从显式用户请求或已确认 final-form 启动 host goal；前者不得被 final-form 的普通展示确认边界重复拦截。Codex 由 agent 创建 goal；Claude Code 的 agent 无法执行 `/goal`，由 `ll-goal-objective --host claude` 确定性生成一行，用户粘贴后启动。模型无法清除 Claude Code 的 goal，所以条件把账本的全部非 `active` 状态算作满足；Claude Code 在人工 gate 也显示 goal 已达成，完成判定仍以账本状态为准。两个 host 共用 `codex_goal` adapter 值，其他 adapter 值仅保留 legacy contract 验证兼容，不代表可 dispatch。
 - `engineering-exit` 编排浅 gate，但不递归执行 broad specialist workflow。
 
 ## Change Guidance

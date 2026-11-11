@@ -11,6 +11,7 @@
 #   <!-- coding-conventions:end general -->
 #
 # begin marker 同时声明启用的模板 ID；同步器幂等更新块内容。
+# 个人父级 ~/Documents/projects/AGENTS.md 用 `preferences` 块装载 preferences/*，不放模板。
 # 旧的 `<!-- coding-conventions: <id> -->` 声明会在同步时迁移并移除。
 
 set -euo pipefail
@@ -48,6 +49,7 @@ PREFERENCES_ROOT = os.path.realpath(os.path.join(os.path.dirname(TEMPLATE_ROOT),
 PREFERENCES_AGENTS = os.path.realpath(os.path.join(home, 'Documents/projects/AGENTS.md'))
 IS_PREFERENCES_AGENTS = os.path.realpath(agents_file) == PREFERENCES_AGENTS
 DEFAULT_PREFERENCE_FILES = ('general.md', 'java.md', 'review.md')
+PREFERENCES_BLOCK = 'preferences'
 CONVENTIONS_SECTION = '## 编码规范'
 KNOWN_TEMPLATES = {
     'general',
@@ -84,8 +86,8 @@ def remove_managed_block(content, name):
         flags=re.DOTALL,
     )
 
-def preference_paths(tpl_name):
-    if not IS_PREFERENCES_AGENTS or tpl_name != 'general':
+def preference_paths(spec):
+    if not IS_PREFERENCES_AGENTS or spec != PREFERENCES_BLOCK:
         return []
     if not os.path.isdir(PREFERENCES_ROOT):
         return []
@@ -173,11 +175,19 @@ def parent_has_general(path):
             ))
         current = parent
 
-if decl_specs and not has_general and not parent_has_general(agents_file):
+if (decl_specs and not IS_PREFERENCES_AGENTS and not has_general
+        and not parent_has_general(agents_file)):
     decl_specs.insert(0, 'general')
     print(f'  added [general block]: {agents_file}')
 
 for spec in decl_specs:
+    prefs = preference_paths(spec)
+    if prefs:
+        content, action = inject(content, spec, preference_content(prefs))
+        print(f'  {action} [{spec}]: {agents_file}')
+        changed = True
+        continue
+
     tpl_path, tpl_name = resolve(spec, home)
 
     if spec in DEPRECATED_TEMPLATES or tpl_name in DEPRECATED_TEMPLATES:
@@ -191,9 +201,8 @@ for spec in decl_specs:
         print(f'  [WARN] 模板不存在，跳过: {tpl_path}')
         continue
 
-    prefs = preference_paths(tpl_name)
-    tpl_content = preference_content(prefs) if prefs else open(tpl_path).read()
-    if not prefs and not IS_PREFERENCES_AGENTS:
+    tpl_content = open(tpl_path).read()
+    if not IS_PREFERENCES_AGENTS:
         tpl_content = demote_headings(tpl_content, 2)
     content, action = inject(
         content,

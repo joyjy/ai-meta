@@ -20,10 +20,10 @@
 
 - 执行 `git commit` / `git push` 前必须先确认当前分支、仓库 default branch 和当前源码对应项目 `index.md` 中匹配 `repos[]` 条目的 `gitlab.flow`；该字段不属于源码 repo，不能因 checkout 内找不到而报告“仓库未声明”。已有 context route 时直接复用；缺失时按 `~/.ai/tool-routes.md` 解析，仍无法绑定才记为 unknown。`l1`、`l2` 或 flow 缺失 / unknown 时，禁止在 default branch（通常是 `main` / `master` 或 `origin/HEAD` 指向的分支）上直接 commit / push；`l3` 允许在 default branch 执行已授权的 Git 动作。detached HEAD 或无法可靠判断 default branch 时，先创建明确的非 default branch 再写入 Git 历史。
 - 用户授权实现或修复后，agent 可在当前任务 scope 内自主创建本地 commit，无需逐次确认。提交应对应完整、可独立解释且已通过适用验证的变更；探索、未解决的评审问题和同一轮返工默认留在工作区，不逐次提交。未推送的本地 commit 视为草稿：同一 concern 的后续返工、评审或 gate 修正用 `git commit --fixup=<目标提交>` 并入，只有独立 concern 才新建提交；已推送的历史不改写。提交前核对 staged diff，不得夹带交付 scope 外或来源不明的修改；显式 `ee` 时交付 scope 按 engineering-exit 的 Dirty Closeout 规则确定，不得绕过项目声明的提交流程。
-- `git push` 必须有用户对本次交付的明确授权。实现、验证通过、本地 commit 或保存上下文均不自动授权 push；用户显式调用 `ee` / `engineering-exit` 即授权按该 skill 的交付 scope 和当前 `gitlab.flow` 完成 commit、push 和创建/更新 MR / PR，用户明确限制时按限制执行。授权范围已明确时无需重复询问。执行 merge、force push 或改写远端历史仍需单独明确授权。
+- `git push` 必须有用户对本次交付的明确授权。实现、验证通过、本地 commit 或保存上下文均不自动授权 push；用户显式调用 `ee` / `engineering-exit` 即授权按该 skill 的交付 scope 和当前 `gitlab.flow` 完成 commit、push、创建/更新 MR / PR，以及 `l3` 本地合回 default branch，用户明确限制时按限制执行。授权范围已明确时无需重复询问。其他 merge、force push 或改写远端历史仍需单独明确授权。
 - `save-context` 按本地 commit 边界保存本次会话已授权的变更，不因此获得 push、MR / PR 或处理无关改动的权限。
-- 创建或清理 Git worktree 前，读取 `coding-conventions` 的 `references/worktree-lifecycle.md`。worktree 必须登记后再使用；删除仍遵守本节确认边界。
-- 当 agent 判断用户目标涉及删除文件或目录时，必须先列出将删除的具体路径并二次确认；不得只凭概括性意图直接删除。窄例外：用户调用 `save-context` 时，可按 exact path 删除本轮可证明由 agent 自建的临时文件，或已加载 route 的 `Critical Context` 中登记且 cleanup condition 已满足的 agent 自建临时输出；worktree、他人文件、持久 artifact 和来源不明路径不在此例外内。
+- 创建或清理 Git worktree 前，读取 `coding-conventions` 的 `references/worktree-lifecycle.md`。worktree 必须登记后再使用；删除按该文件的 `wt-sweep` 判定执行。
+- 当 agent 判断用户目标涉及删除文件或目录时，必须先列出将删除的具体路径并二次确认；不得只凭概括性意图直接删除。窄例外：用户调用 `save-context` 时，可按 exact path 删除本轮可证明由 agent 自建的临时文件，或已加载 route 的 `Critical Context` 中登记且 cleanup condition 已满足的 agent 自建临时输出；另一窄例外：`wt-sweep` 判定为 `removable` / `prunable` 的 worktree 可直接用 `wt-sweep remove` 删除，判定为 `ask` 的仍须确认；其余 worktree、他人文件、持久 artifact 和来源不明路径不在例外内。
 - 关键联网命令先申请权限；若因 sandbox / DNS / network 失败，立即申请权限重试一次。
 - Codex 申请命令提权时，若命令高频、低风险且适合长期复用，必须主动提供合理
   `prefix_rule`；优先选择项目脚本或窄命令前缀，不为危险命令、`git commit`、
@@ -39,7 +39,7 @@
 - Runtime freshness：当任务修改 daemon、容器、服务装配、UI runtime binding，或用户要求查看当前运行效果时，在宣称用户可见前必须核对 expected revision、running identity/revision 与 health/readback。无法证明运行实例已加载目标版本时退出为 `runtime_reload_ready`；只读 freshness probe 属正常验证，restart/rebuild 仍遵守既有 authority boundary。
 - 架构治理、重构、拆大文件、KISS / DRY 或 code-health 任务在宣布完成前，必须把完整变更范围路由到 `review-router`；具体 strategy 由 `review-router` skill 决定，测试通过不能替代结构评审。
 - 验证覆盖当前改动主路径和最大真实风险，完成项目必需检查后即收口；只有新改动、失败或未解决的风险才扩大或重复验证。低风险可逆改动不新增与实现同构的测试；不得用泛化的“充分验证”无限扩展工作。
-- 修改 `SKILL.md` 或其直接行为 reference 前，读取 `~/.ai/tool-routes.md` 的「Skill 行为验证」。真实行为验收必须匹配目标版本的客户端加载和行为样本，静态检查不能替代。
+- 修改 `SKILL.md` 或其直接行为 reference 前，读取 `~/.ai/tool-routes.md` 的「Skill 行为验证」。默认静态检查通过即完成，不等待真实样本。
 
 ## 3. Tool Routes
 
@@ -48,8 +48,7 @@
   `~/.ai/tool-routes.md`；不得仅因当前 cwd 存在同名目录就推断目标位置。
 - 文件名搜索默认使用快方法：repo 内优先 `rg --files -g '<name>'`，项目树优先
   `fd`，macOS 用户目录 / 全盘优先 `mdfind`；避免从 `~` 裸跑深度 `find`。
-- GitHub / GitLab 平台操作默认使用官方 CLI：GitHub 用 `gh`，GitLab 用 `glab`；
-  MR / PR 行内评论等细分入口仍优先查 `~/.ai/tool-routes.md`。
+- GitHub / GitLab 平台操作默认使用官方 CLI：GitHub 用 `gh`，GitLab 用 `glab`；GitLab MR 创建、描述更新与 CI 查询走 `~/.ai/scripts/gitlab-mr`、`gitlab-ci`，不直接用 `glab mr create`。MR / PR 行内评论等细分入口仍优先查 `~/.ai/tool-routes.md`。
 - 操作在线文档、电子表格或 Base 前，读取 `~/.ai/tool-routes.md` 的「在线内容编辑」。回填前核对远端版本；源已变化时停止覆盖并处理冲突。
 - 稳定工具入口优先沉淀为 `~/.ai/scripts/*`、skill 或项目原生命令；本文件只保留
   路由规则和高优先级约束。
@@ -65,7 +64,7 @@
 
 - 对话优先使用中文，先给结论，再给行动所需的证据；过程更新只说新发现、关键不确定性和下一步。
 - 代本人拟回复、写作或改写前，读取 `~/Documents/me/Projects/tandem/docs/writing-profile.md`。主动拟稿也适用，不依赖本人说“模仿我”；普通问答不套用本人语气。表达画像和校准由 Tandem 维护，ai-meta 只维护加载入口。
-- 中文技术说明和解释性回答试用简明技术中文常规模式：按需读取 `~/Documents/reference/simplified-technical-chinese/SKILL.md`（本机文件缺失时读取 [GitHub 文件](https://github.com/mzopedia/simplified-technical-chinese/blob/main/SKILL.md)），以该 skill 的规范、词表和适用范围为准，不自行缩减为几条风格原则。写入文件时按 skill 运行检查脚本；本机缺少脚本时报告检查未执行，不自动运行远端代码。用户当轮的写法偏好优先。
+- 中文技术文档，以及 Codex 中的技术说明和解释性回答，试用简明技术中文常规模式。其他客户端（Claude Code、OpenCode、Kimi Code、Pi）的对话回复不使用。按需读取 `~/Documents/reference/simplified-technical-chinese/SKILL.md`（本机文件缺失时读取 [GitHub 文件](https://github.com/mzopedia/simplified-technical-chinese/blob/main/SKILL.md)），以该 skill 的规范、词表和适用范围为准，不自行缩减为几条风格原则。写入文件时按 skill 运行检查脚本；本机缺少脚本时报告检查未执行，不自动运行远端代码。用户当轮的写法偏好优先。
 - 输出前检查：保留关键条件、例外和确定程度。操作说明写明预期结果。交给他人执行变更时，预期结果写到目标行为。交付前确认这一步足以达成；不足时列出其余条件。同一对象使用一致名称，指代有歧义时重复对象名。
 - 排障、研究、评审或交付的关键结论混合证据类型时，读取 `docs/reference/evidence-classification.md`（相对当前 ai-meta checkout）。区分直接证据、计算、推断和待验证项，写明证据范围、关键假设与缺口；不要求每句话贴标签。
 - 解释复杂内容时试用更合适的呈现形式：关系、流程或分支难以看清时，主动给出小图；改变关键条件会影响结论时，提供可调整条件的交互页面；时间顺序是理解重点时，先用动画，必要时制作短视频。只制作有助于当前问题的形式，标明演示中的假设，保持内容与证据一致。
@@ -85,14 +84,12 @@
 - 评审按指定对象检查，代码评审先列 bugs、风险、回归和缺测试并带 file/line。已有授权的纠错直接执行。
 - 有落地意图但执行范围仍不明确时，用 `final-form` 收束并在写入前确认；仅问无法查证且会改变 scope、验收、权限、数据模型、文件布局、兼容或执行目标的第一条阻塞问题，普通细节采用默认。多个耦合的结构性未决点或用户明确要求 grill / stress-test 时，路由 `grill`；连续追问和停止条件由该 skill 持有。
 - 结束判断先于回复措辞：核对全部仍有效的交付项，再决定执行或结束。存在已授权且可执行的未完成项时，直接继续，进展写入过程更新。仅缺新增权限或用户决定时，先完成不受阻的准备，在本轮提出具体可审阅的动作和最小确认。真实外部阻塞时，说明证据、解除条件和恢复动作，不虚构等待或监控。全部完成或用户明确只讨论、暂停、取消时结束，不追加工作或索取授权。状态说明、原因解释、下一步计划和未来承诺都不能替代执行、必要的确认问题或完成证据。文件或 skill 规则导致暂停时，引用 exact path 和原文解释适用原因。
-- 影响结论或交付的信息按风险取证：用户意图、偏好与授权按指令层级执行；普通内容事实在低风险场景直接采用。存在合理替代解释，且会改变 scope、authority、执行对象、副作用、验收或结论时，先在现有授权内定向核验。明显 typo 或唯一合理指代直接纠正；证据与用户预设冲突时说明并以证据为准。已确认且未被新证据推翻的事实不反复询问；来源不可用或定向取证无结果时，报告已查范围、exact 缺口和结论限制。诊断 / 排障 / SQL / MR triage 的结论由这些 probes 支撑。
+- 影响结论或交付的信息按风险取证：用户意图、偏好与授权按指令层级执行；普通内容事实在低风险场景直接采用。存在合理替代解释，且会改变 scope、authority、执行对象、副作用、验收或结论时，先在现有授权内定向核验。明显 typo 或唯一合理指代直接纠正；证据与用户预设冲突时说明并以证据为准。已确认且未被新证据推翻的事实不反复询问；来源不可用或定向取证无结果时，报告已查范围、exact 缺口和结论限制。诊断 / 排障 / SQL / MR triage 的结论由这些 probes 支撑。下列 5 类结论必须写出来源：数值阈值、根因、代码或发布现状、改动归属、写入位置。来源可以是命令输出、file:line 或数据。例如“已在 master”是代码现状，“用户的改动”是改动归属。没有来源时标“未核实”，不据此产生副作用。
 - 规则冲突与事实缺口分别处理：定位冲突条款、来源及适用条件，先按指令层级、明确修订关系和适用范围裁决；能确定当前有效规则时直接继续，不默认采用最严或最方便的一条。保留已确认事实和仍有效的授权，在有效约束内寻找满足原验收的路径，并推进不受阻工作；不得为绕过门禁改写规则、自授权限或降低验收。仍无法消解时，只询问会改变下一步的最小政策、权限或目标决定，说明受阻动作与可解锁路径，不把政策未对齐说成事实未知。当前任务收口与规则修复分别验收；已获修复授权的缺陷回到原 owner 完成，未授权的具体修复交由 `agent-doc-hygiene` 或既有回顾结算，不以再记一条 memory 代替修复。
 - 仅在用户明确要求，或任务包含边界清晰、可独立验收且有可观察净收益的子任务时使用 agent。
 - 日常研究、开发、检索、评审和任务处理中的有界语义判断，默认按 `jev-evaluation` 的准入交给 Jev，包括分类、候选选择、相关性排序和证据适用性检查；具体判断设计、调用与降级规则只由该 skill 持有。
 - 使用 `jev-evaluation` 时，可向 `https://api.typesafe.ai/v1/systemone` 发送当前任务判断所必需且不含真实敏感信息的内容，无需逐次确认；可包括案例摘要、snippet 候选、判定标准及内部业务语义。不得发送凭据或个人身份信息；先移除或脱敏内容中的真实敏感信息。遵守平台自动审批与联网权限要求，不得绕过平台审批。
-- 默认不扩 scope：一针见血意味着避免无依据的过度设计、过度防御、过度测试和过度兼容；
-  但当前 scope 的风险闭环必须完成。至少回答：主路径是否被证明、最大真实风险是否识别、
-  上线 / 提审 / 回滚下一步需要人知道什么。
+- 默认不扩 scope：一针见血意味着避免无依据的过度设计、过度防御、过度测试和过度兼容；但当前 scope 的风险闭环必须完成。至少回答：主路径是否被证明、最大真实风险是否识别、上线 / 提审 / 回滚下一步需要人知道什么。下列改动不在请求里时，只在答复中用一行列为提议，不实施，其余工作照常完成。这类改动包括：新增开关、配置项、对外行为或流程步骤，扩大操作范围，删除现有功能。实现请求所需的内部代码和文件不在此列。
 
 ## 5. Durable Docs
 
@@ -119,3 +116,7 @@
   受控块，可按技术栈读取个人 coding-conventions 模板作为本 session 执行偏好。
 - 项目入口、coding-conventions、agent / skill / command 软链细则，详见 ai-meta 的
   `AGENTS.md` 与 `docs/architecture/index.md`。
+
+## 7. Compact Instructions
+
+- 生成上下文压缩摘要时，正文使用中文；压缩提示要求的章节标题可以保留英文。命令、路径、代码、标识符、错误原文和用户原话保持原样，不翻译。

@@ -15,6 +15,7 @@ Compile nearly executable intent into the smallest specification preserving scop
 - Fill known facts. Ask only about scope, acceptance, destructive/remote action, data model, file layout, compatibility, responsibility, or dispatch target.
 - Any deletion stays blocked until its exact paths are listed and the user confirms that exact list; conceptual cleanup approval is not dispatch authorization.
 - Default ordinary naming, formatting, paths, and implementation details.
+- Bind verification commands to observed project entrypoints; for Gradle, follow the Gradle section in `~/.ai/tool-routes.md`. Keep an unavailable command as a verification gap rather than inventing an entrypoint.
 - Resolve “这些” or “全部问题” to exact antecedents. Ambiguity blocks; machine scope/acceptance must cover every item before chat groups them.
 
 ## Effect-delta Admission
@@ -34,7 +35,7 @@ Use this only when a known target admits materially different terminal effects, 
 - Route automatically to loop-ledger when its Admission rules fit, or when selected by the user/project. loop-ledger owns selection and platform goal-authority checks; ordinary work returns ready to the caller without another permission round.
 - Show one action line: while blocked show only `Blocking question`; when Ready show only `Next`.
 - One question may confirm both exact effects and `/ll` handoff only when those are the sole remaining boundary and execution is requested; details live in the dispatch reference.
-- Explicit `/ll`, `/loop`, or loop-ledger invocation supplies dispatch authorization. Compile internally and return control when structurally ready; do not show another confirmation screen.
+- Explicit `/ll` or loop-ledger invocation supplies dispatch authorization. Compile internally and return control when structurally ready; do not show another confirmation screen.
 
 ## References
 
@@ -68,7 +69,7 @@ final-form:
 - Next: <only when Ready>
 ```
 
-Only when loop-ledger identifies missing goal authorization: `Next: 是否按此范围启动 loop-ledger 和 Codex goal？` Already-authorized dispatch needs no repeat offer.
+Only when loop-ledger identifies missing goal authorization: `Next: 是否按此范围启动 loop-ledger 和 goal？` Already-authorized dispatch needs no repeat offer.
 
 When routing to grill, state that structural ambiguity remains and ask one structural question.
 

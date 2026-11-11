@@ -6,7 +6,7 @@ Read this reference only after a persistence, dispatch, post-ready correction, v
 
 - Context output nests the sparse `ff` object under the selected route's `Next Steps` and sets `output_target: context`.
 - Do not write context from final-form alone. Use `~/.ai/scripts/context-ff-merge <abbr[:route]> --ff-file <file>` after persistence is requested.
-- Preserve unrelated routes. If a new final-form would replace an unrelated active next step, ask one blocking question.
+- Preserve unrelated routes. When mainline already has different next steps, `context-ff-merge` saves the new final-form in the first unused `ff-N` workstream and reports that route. Repeating the exact same work order reuses its existing route. An empty mainline still accepts the work order. For an explicitly selected workstream, ask one blocking question before replacing an unrelated active next step.
 - A missing context may be initialized as context.v3 with an active mainline and no workstreams.
 - Invalid abbr or route names stop before writing.
 - Ordinary recovery notes, unfinished Doing, candidate follow-ups, and recurring automation stay prose rather than becoming final-form.
@@ -17,7 +17,7 @@ Read this reference only after a persistence, dispatch, post-ready correction, v
 - Follow loop-ledger's Admission rules for automatic selection and platform goal authority. Ask about starting a goal only when that authority is missing. An ordinary ready task returns to its caller; complexity alone does not mandate a ledger.
 - The displayed final-form action supplies the explicit `/ll` boundary. A short user reply such as `OK`, `可以`, or `实施` confirms that displayed dispatch, and the agent routes into `/ll` on the user's behalf; do not require the user to repeat `/ll`.
 - When a fully displayed exact destructive/effect list is the only blocker and `/ll` is the sole execution route, one question may authorize both effect and immediate handoff. A short affirmative clears the blocker; compile unchanged goal, scope, acceptance, effect, and constraints with `ready_for_dispatch: true`, then hand off without replaying a Ready version. Keep the boundaries separate if any of them remains unresolved or the user asked only to prepare.
-- An explicit `/ll <task>`, `/loop <task>`, or loop-ledger skill invocation supplies that boundary up front. Compile final-form internally and dispatch in the same turn when ready; do not display a second authorization prompt.
+- An explicit `/ll <task>` or loop-ledger skill invocation supplies that boundary up front. Compile final-form internally and dispatch in the same turn when ready; do not display a second authorization prompt.
 - Do not present direct implementation as the dispatch action for controlled Codex work. A short confirmation is authorization for the displayed `/ll` dispatch, never permission to bypass it.
 - final-form never creates a goal. Authorized `/ll` dispatch owns compilation, verification, and adapter selection.
 - When `/ll` is selected, the first execution evidence is loop-ledger startup, an exact session path, successful contract verification, and Codex goal creation or a concrete `needs_human` result, before implementation edits.

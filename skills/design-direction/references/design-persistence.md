@@ -12,23 +12,14 @@ Use only after the user explicitly asks to lock or save an accepted direction.
 
 ## Confirmation And Write
 
-Show this compact proposed contract and obtain confirmation before writing `<project-root>/DESIGN.md`. An explicit request to save the already displayed and accepted contract is sufficient; ask again only when the target or contract changes:
+Read the Google Stitch DESIGN.md specification from `~/Documents/reference/design.md/docs/spec.md` ([official upstream](https://github.com/google-labs-code/design.md/blob/main/docs/spec.md) if absent). [Impeccable uses the same specification](https://impeccable.style/docs/document/). Show the proposed contract and obtain confirmation before writing `<project-root>/DESIGN.md`. An explicit request to save the already displayed and accepted contract is sufficient; ask again only when the target or contract changes.
 
-```markdown
-# Design
+- Put structured tokens in YAML frontmatter. Use confirmed values from the project's canonical tokens or components. Omit unknown values and empty groups. Impeccable's structured reader extracts tokens from frontmatter, so keep token YAML out of fenced blocks in the body.
+- Use the spec's canonical section headings and order. Omit irrelevant sections. Put the audience, primary job, and visual intent in `Overview`. Put observable rules in the relevant sections or `Do's and Don'ts`. Link the original token or component source where it explains a rule.
+- Keep the document focused on durable design decisions. Leave task plans, audits, historical versions, and exact implementation behavior in their owning artifacts.
 
-## Direction
-<one short paragraph>
+Read an existing candidate completely. Update an already conforming file in place and keep one current statement per rule. If an existing file needs conversion, show the mapping and include the conversion in the confirmed scope before writing. Preserve unrelated content and keep one authoritative file.
 
-## Invariants
-- <three to five durable constraints>
-
-## Sources of truth
-- <tokens, components, screenshots, prototype, or live reference>
-```
-
-Read an existing candidate completely. Preserve its purpose and unrelated content, then patch only the confirmed contract section.
-
-The durable artifact is a human-controlled design map: long-term intent, three to five invariants, and links to real sources of truth. Do not copy tokens, component specifications, task plans, the runtime audit, or exact implementation behavior into it.
+After writing, verify that the saved file matches the confirmed contract and the spec. Run the official linter if available. If the project also uses Impeccable, verify its resolved `designPath` before claiming it auto-loads this file. An Impeccable session started in a separate source checkout may resolve a different context root.
 
 `coding-conventions` may point relevant frontend sessions to this personal artifact, but must not copy this workflow or inject its personal path/content into team instructions. Keep human-facing explanation in README/design docs and agent execution constraints in `AGENTS.md`.

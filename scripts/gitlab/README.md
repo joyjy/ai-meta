@@ -25,6 +25,11 @@
 - `gitlab-mr reviewers add <mr> --user <username> [--expected-head-sha <sha>]`
 - `gitlab-mr comments list <mr> [--state unresolved] [--author <username>]`
 - `gitlab-mr comments add --inline <mr> --file <path> --line <line> --message-file <file>`
+- `gitlab-mr comments add --general <mr> --message-file <file>`：发布顶层、可解决的 discussion（如阻塞性评审），写后核对 `resolvable: true`；不要改用 Notes API，它创建的是不可解决的普通评论。
+- `gitlab-mr comments reply <mr> --discussion <discussion_id> --message-file <file>`：在已有 discussion 里回复，不改变 resolved 状态；写入前先读取该 discussion，ID 不属于这个 MR 时直接失败。`--dry-run` 只核对并打印请求。
+- `gitlab-mr usage`：输出本机调用统计 JSON。
+
+`<mr>` 可以是 MR URL、分支名或 IID。只给 IID 时必须同时传 `-R/--repo`，否则 helper 在任何查询前报错；IID 只在单个项目内唯一，不从 shell 当前目录推断项目。
 
 它负责 file-backed MR 描述、reviewer 合并、紧凑 discussions 读取和 positioned discussion；不负责 pipeline。`reviewers add` 按 exact active username 解析用户，保留写入前 readback 到的全部既有 reviewer，可用 `--expected-head-sha` 固定 revision，并使用 JSON `reviewer_ids` 写入后再次 readback；重复调用返回 `already_present` 且不发 PUT。写前确定失败返回 `not_applied`，写请求或写后验证无法定论时返回 `ambiguous`，调用方不得盲重试。创建和更新 description 时，输入文件只包含人工正文；helper 将其规范化到唯一的 `## User Description` 保护段，更新时保留从 `## PR Type` 开始且带 Managed PR Agent 自动生成脚注的管理尾段，并在写后 readback。既有 Managed PR Agent 尾段前若出现无法归属的未保护正文，helper 会停止而不猜测。当前任务已绑定某个 MR 时，首次 push 前先读取其 `source_branch`，再显式推送 `HEAD:<source_branch>`。MR 子命令不支持的 hostname 通过 `--repo https://<host>/<repo>` 传递，API 则使用 `glab api --hostname`。
 
@@ -55,6 +60,7 @@
 - `l2` 允许 0 人审批（无 All Members 规则也符合）；当项目 pipeline 列表确认为空时，不要求开启成功流水线门禁。已有 pipeline 或适用性未知时仍检查；查询失败不按无 CI 处理。`l1` 保持至少 1 人审批及成功流水线要求。
 - `gitlab.squash` 只在 `l1` / `l2` 使用，缺失时按 `default-on` 检查。没有 `index.md` 或未声明 `gitlab.flow` 时，不从其他文档或 remote namespace 推断。
 - 写回项目索引使用 `--write-index`；手动检查时显式传 `--flow` 和 `--squash`。
+- 修改 push rule（如 `branch_name_regex`）时先 `glab api projects/<id>/push_rule` 读取：已存在用 `PUT` 只改目标字段，不存在才 `POST`（已存在时 POST 返回 422）；写后复跑本 lint。
 
 ## 低频 workflow
 

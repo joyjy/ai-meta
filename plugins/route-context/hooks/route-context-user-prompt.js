@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// route-context - UserPromptSubmit adapter for Codex/Claude-style plugin hooks.
+// route-context - UserPromptSubmit adapter for the Codex plugin hook and the
+// Claude Code settings.json hook.
 
 const { execFileSync } = require('child_process');
 const path = require('path');
@@ -13,8 +14,8 @@ function readStdin(done) {
   setTimeout(() => done(input), 1000).unref();
 }
 
-// The Claude adapter lives in a nested plugin dir, so CLAUDE_PLUGIN_ROOT is not
-// always this bundle's root; resolve from the script location instead.
+// Claude Code runs this script straight from settings.json without
+// CLAUDE_PLUGIN_ROOT, so resolve the bundle root from the script location.
 function pluginRoot() {
   return path.resolve(__dirname, '..');
 }

@@ -148,16 +148,29 @@ def minimal_context(abbr: str) -> dict[str, Any]:
 
 
 def merge_ff(data: dict[str, Any], route: str, ff: dict[str, Any],
-             updated: str) -> None:
+             updated: str) -> str:
     data["updated"] = updated
     if route == "mainline":
         mainline = data.setdefault("mainline", {})
         if not isinstance(mainline, dict):
             raise ValueError("context mainline must be a mapping")
-        if mainline.get("state") in {None, "idle"}:
-            mainline["state"] = "active"
-        mainline["next_steps"] = [{"ff": ff}]
-        return
+        existing = mainline.get("next_steps")
+        if not existing or existing == [{"ff": ff}]:
+            if mainline.get("state") in {None, "idle"}:
+                mainline["state"] = "active"
+            mainline["next_steps"] = [{"ff": ff}]
+            return route
+        workstreams = data.setdefault("workstreams", {})
+        if not isinstance(workstreams, dict):
+            raise ValueError("context workstreams must be a mapping")
+        # A retry must not create another route for the exact same work order.
+        for name, item in workstreams.items():
+            if isinstance(item, dict) and item.get("next_step") == {"ff": ff}:
+                return name
+        number = 1
+        while f"ff-{number}" in workstreams:
+            number += 1
+        route = f"ff-{number}"
 
     workstreams = data.setdefault("workstreams", {})
     if not isinstance(workstreams, dict):
@@ -177,6 +190,7 @@ def merge_ff(data: dict[str, Any], route: str, ff: dict[str, Any],
     if workstream.get("state") in {None, "idle"}:
         workstream["state"] = "active"
     workstream["next_step"] = {"ff": ff}
+    return route
 
 
 def mainline_has_recovery(mainline: dict[str, Any]) -> bool:
@@ -360,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
         else:
             ff = read_ff(parser.ff_file)
-            merge_ff(data, route, ff, parser.date)
+            route = merge_ff(data, route, ff, parser.date)
         atomic_write_text(path, render_context(data, body))
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

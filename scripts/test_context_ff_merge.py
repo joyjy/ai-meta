@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 SCRIPT = Path(__file__).with_name("context_ff_merge.py")
 
 
@@ -102,7 +104,7 @@ class ContextFFMergeTest(unittest.TestCase):
             self.assertIn("next_steps:", context)
             self.assertIn("goal: Ship the narrow change", context)
 
-    def test_existing_context_replaces_only_mainline_next_ff(self) -> None:
+    def test_existing_mainline_gets_new_workstream_without_losing_work(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             context_dir = root / "contexts"
@@ -121,7 +123,7 @@ mainline:
   next_steps:
   - ff: {goal: Old goal}
 workstreams:
-  other: {state: active, summary: preserve me, doing: [], blocked: [], next_step: keep this}
+  ff-1: {state: active, summary: preserve me, doing: [], blocked: [], next_step: keep this}
 updated: 2026-07-01
 ---
 
@@ -135,10 +137,19 @@ updated: 2026-07-01
             self.assertEqual(0, proc.returncode, proc.stderr)
             context = (context_dir / "amt.md").read_text(encoding="utf-8")
             self.assertIn("goal: New goal", context)
-            self.assertNotIn("goal: Old goal", context)
+            self.assertIn("goal: Old goal", context)
             self.assertIn("summary: preserve me", context)
             self.assertIn("next_step: keep this", context)
             self.assertIn("  doing:\n    - keep doing", context)
+            self.assertIn("route ff-2", proc.stdout)
+            self.assertIn("active:ff-2", context)
+            # Retry the same CLI request: no duplicate branch or changed state.
+            retry = self.run_script(context_dir,
+                                    self.write_ff(root, self.ff("New goal")))
+            self.assertEqual(0, retry.returncode, retry.stderr)
+            self.assertIn("route ff-2", retry.stdout)
+            self.assertEqual(yaml.safe_load(context.split("---")[1]),
+                             yaml.safe_load((context_dir / "amt.md").read_text().split("---")[1]))
 
     def test_malformed_context_refuses_to_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

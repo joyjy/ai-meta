@@ -9,12 +9,20 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_usage  # noqa: E402
 
+
+CLI = "gitlab-mr"
+COMMANDS = [
+    "create", "update", "reviewers add", "comments list", "comments add", "comments reply", "usage",
+]
 MR_URL_RE = re.compile(r"^/(?P<repo>.+?)/-/merge_requests/(?P<iid>\d+)(?:/.*)?$")
 USER_DESCRIPTION_HEADING = "## User Description"
 LICLOUD_TAIL_HEADING = "## PR Type"
@@ -112,6 +120,10 @@ def resolve_mr(target: str, repo: str, hostname: str) -> MrRef:
                 hostname=hostname or parsed.hostname,
             )
         if target.isdigit():
+            # A bare IID is only unique within a project; never take the project from the shell cwd.
+            if not repo:
+                raise RuntimeError(
+                    f"MR IID {target} needs --repo or a full MR URL to bind the project")
             return MrRef(iid=target, repo=repo, hostname=hostname)
         cmd = ["glab", "mr", "view", target, "--output", "json"]
         add_repo(cmd, repo, hostname)
@@ -408,7 +420,7 @@ def build_inline_payload(
     return {"body": comment_body(args), "position": position}
 
 
-def post_discussion(project: str, iid: str, payload: dict[str, Any], hostname: str) -> Any:
+def post_json(endpoint: str, payload: dict[str, Any], hostname: str) -> Any:
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as tmp:
         json.dump(payload, tmp, ensure_ascii=False)
         tmp.flush()
@@ -417,7 +429,7 @@ def post_discussion(project: str, iid: str, payload: dict[str, Any], hostname: s
             "api",
             "--method",
             "POST",
-            f"{project}/merge_requests/{iid}/discussions",
+            endpoint,
             "--header",
             "Content-Type: application/json",
             "--input",
@@ -428,10 +440,16 @@ def post_discussion(project: str, iid: str, payload: dict[str, Any], hostname: s
         return json.loads(run(cmd))
 
 
+def post_discussion(project: str, iid: str, payload: dict[str, Any], hostname: str) -> Any:
+    return post_json(f"{project}/merge_requests/{iid}/discussions", payload, hostname)
+
+
 MERGE_OPTION_FLAGS = {
     "--squash-before-merge": "squash",
     "--remove-source-branch": "should_remove_source_branch",
 }
+# GitLab returns the create option as force_remove_source_branch; should_remove_source_branch stays null until merge.
+MERGE_OPTION_READBACK = {"should_remove_source_branch": "force_remove_source_branch"}
 
 
 def split_merge_options(values: list[str]) -> tuple[list[str], dict[str, bool]]:
@@ -520,9 +538,10 @@ def cmd_create(args: argparse.Namespace) -> int:
     if mr.repo != project["path_with_namespace"] or readback.get("project_id") != project["id"]:
         raise RuntimeError(f"MR !{mr.iid} was created but target identity mismatched; do not retry creation")
     for field, expected in options.items():
-        if readback.get(field) is not expected:
+        returned = MERGE_OPTION_READBACK.get(field, field)
+        if readback.get(returned) is not expected:
             raise RuntimeError(
-                f"MR !{mr.iid} was created but {field} readback differs from {expected}; do not retry creation")
+                f"MR !{mr.iid} was created but {returned} readback differs from {expected}; do not retry creation")
     if protected:
         verify_description_readback(str(readback.get("description") or ""), protected)
     print(json.dumps({"mr": mr.iid, "user_description_verified": bool(protected),
@@ -733,18 +752,50 @@ def cmd_comments_list(args: argparse.Namespace) -> int:
 
 
 def cmd_comments_add(args: argparse.Namespace) -> int:
-    if not args.inline:
-        raise RuntimeError("Only inline comments are supported for now; pass --inline")
+    if args.inline and (not args.file or (args.line is None and args.old_line is None)):
+        raise RuntimeError("--inline needs --file and --line or --old-line")
     mr = resolve_mr(args.target or "", args.repo or "", args.hostname or "")
     project = project_endpoint(mr.repo)
-    version = latest_version(project, mr.iid, mr.hostname)
-    diff_file = find_diff_file(diff_paths(project, mr.iid, mr.hostname), args.file)
-    payload = build_inline_payload(args, diff_file, version)
+    if args.general:
+        # A discussion without position is a top-level thread; the Notes API would create a non-resolvable note.
+        payload: dict[str, Any] = {"body": comment_body(args)}
+    else:
+        version = latest_version(project, mr.iid, mr.hostname)
+        diff_file = find_diff_file(diff_paths(project, mr.iid, mr.hostname), args.file)
+        payload = build_inline_payload(args, diff_file, version)
     if args.dry_run:
         print(json.dumps({"mr": mr.__dict__, "endpoint": project, "payload": payload}, ensure_ascii=False, indent=2))
         return 0
     discussion = post_discussion(project, mr.iid, payload, mr.hostname)
+    notes = discussion.get("notes") if isinstance(discussion, dict) else None
+    if args.general and not (notes and notes[0].get("resolvable") is True):
+        raise RuntimeError(
+            f"discussion {discussion.get('id') if isinstance(discussion, dict) else '?'} was created "
+            "but is not resolvable; do not retry, check it on the MR")
     print(json.dumps(discussion, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_comments_reply(args: argparse.Namespace) -> int:
+    mr = resolve_mr(args.target or "", args.repo or "", args.hostname or "")
+    project = project_endpoint(mr.repo)
+    endpoint = f"{project}/merge_requests/{mr.iid}/discussions/{quote(args.discussion, safe='')}"
+    # Read the thread first so a wrong MR/discussion pair fails before any write.
+    discussion = glab_api(endpoint, hostname=mr.hostname)
+    notes = (discussion.get("notes") if isinstance(discussion, dict) else None) or []
+    if not notes:
+        raise RuntimeError(f"discussion {args.discussion} has no notes on MR !{mr.iid}")
+    payload = {"body": comment_body(args)}
+    if args.dry_run:
+        print(json.dumps({
+            "mr": mr.__dict__,
+            "discussion_id": discussion.get("id"),
+            "thread": {"notes": len(notes), "resolved": bool(notes[0].get("resolved"))},
+            "endpoint": f"{endpoint}/notes",
+            "payload": payload,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    print(json.dumps(post_json(f"{endpoint}/notes", payload, mr.hostname), ensure_ascii=False, indent=2))
     return 0
 
 
@@ -802,7 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resolve users and print the proposed reviewer set without writing.")
     add_reviewers.set_defaults(func=cmd_reviewers_add)
 
-    comments = subparsers.add_parser("comments", help="List or add MR comments.")
+    comments = subparsers.add_parser("comments", help="List, add, or reply to MR comments.")
     comment_subparsers = comments.add_subparsers(dest="comments_command", required=True)
 
     list_comments = comment_subparsers.add_parser("list", help="List MR comments as JSON.")
@@ -817,13 +868,18 @@ def build_parser() -> argparse.ArgumentParser:
     list_comments.add_argument("--output", choices=("json", "ndjson"), default="json")
     list_comments.set_defaults(func=cmd_comments_list)
 
-    add = comment_subparsers.add_parser("add", help="Add an MR comment.")
+    add = comment_subparsers.add_parser(
+        "add", help="Add a positioned diff discussion or a top-level resolvable discussion.")
     add.add_argument("target", nargs="?", help="MR IID, branch, or MR URL.")
     add.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
     add.add_argument("--hostname", help="GitLab hostname for glab api.")
-    add.add_argument("--inline", action="store_true", help="Create a positioned diff discussion.")
-    add.add_argument("--file", required=True, help="Path in the MR diff.")
-    side = add.add_mutually_exclusive_group(required=True)
+    kind = add.add_mutually_exclusive_group(required=True)
+    kind.add_argument("--inline", action="store_true", help="Create a positioned diff discussion.")
+    kind.add_argument(
+        "--general", action="store_true",
+        help="Create a top-level resolvable discussion, e.g. a blocking review comment.")
+    add.add_argument("--file", help="Path in the MR diff (--inline only).")
+    side = add.add_mutually_exclusive_group()
     side.add_argument("--line", type=int, help="Line number on the new side.")
     side.add_argument("--old-line", type=int, help="Line number on the old side.")
     add.add_argument("-m", "--message", help="Comment body.")
@@ -831,12 +887,49 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--dry-run", action="store_true", help="Print request JSON without posting.")
     add.set_defaults(func=cmd_comments_add)
 
+    reply = comment_subparsers.add_parser(
+        "reply", help="Reply inside an existing discussion; the thread is not resolved.")
+    reply.add_argument("target", nargs="?", help="MR IID, branch, or MR URL.")
+    reply.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
+    reply.add_argument("--hostname", help="GitLab hostname for glab api.")
+    reply.add_argument(
+        "--discussion", required=True, help="Discussion ID from comments list (discussion_id).")
+    reply.add_argument("-m", "--message", help="Reply body.")
+    reply.add_argument("--message-file", help="Read reply body from this file.")
+    reply.add_argument(
+        "--dry-run", action="store_true",
+        help="Verify the discussion and print the request without posting.")
+    reply.set_defaults(func=cmd_comments_reply)
+
+    usage = subparsers.add_parser("usage", help="Print local call statistics as JSON.")
+    usage.set_defaults(func=cmd_usage)
+
     return parser
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    print(json.dumps(cli_usage.summarize(CLI, COMMANDS), ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_name(args: argparse.Namespace) -> str:
+    sub = getattr(args, "reviewers_command", None) or getattr(args, "comments_command", None)
+    return f"{args.command} {sub}" if sub else args.command
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    started = time.monotonic()
+    code = 1
+    try:
+        code = run_parsed(args)
+    finally:
+        cli_usage.record(CLI, command_name(args), started, code)
+    return code
+
+
+def run_parsed(args: argparse.Namespace) -> int:
     try:
         return int(args.func(args) or 0)
     except ReviewerOperationError as exc:

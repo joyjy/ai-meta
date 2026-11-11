@@ -32,8 +32,8 @@ skill 采用浅链路：默认只读取当前主 skill 和最多一层直接 ref
 
 - `l1`：严格工程项目；需要分支、MR 和 release 质量 gate，发布影响未知会阻塞。
 - `l2`：过渡工程项目；需要分支、MR 和 release 风险提示，非关键风险可由用户确认放行。
-- `l3`：个人 / no GitLab settings lint；用户确认 commit & push 后可按当前 scope 执行，
-  不默认要求 release 兼容。
+- `l3`：个人 / no GitLab settings lint；用户授权 push 后本地合回 default branch 并直接 push，
+  不建 MR，不默认要求 release 兼容。
 
 ## Relationships
 
@@ -54,6 +54,6 @@ skill 采用浅链路：默认只读取当前主 skill 和最多一层直接 ref
 
 - `gitlab.flow` 语义是否仍为 `l1|l2|l3`。
 - `coding-conventions`、`engineering-exit`、`load-context` 和 `tool-routes` 是否一致。
-- `l3` 是否仍允许用户确认后按当前 scope 直接 commit & push。
+- `l3` 是否仍在用户授权后本地合回 default branch 并直接 push。
 - `l1/l2` 是否仍通过分支、MR 和 release preflight 收束。
 - 是否把 arch-hub release workflow 的最终发布编排复制进 `engineering-exit`。

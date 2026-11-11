@@ -76,15 +76,8 @@ Check release-quality dimensions when relevant:
 
 - Validation evidence: changed cases, relevant regression slice, CI or manual
   path, and skipped checks with reason.
-- Version and artifact metadata: decide whether the project release policy
-  requires a version bump. When the project uses SemVer, select `major` for an
-  incompatible API or contract change, `minor` for backward-compatible
-  functionality, and `patch` for a backward-compatible fix. When the repository
-  owns the release version, complete the bump in the current delivery and verify
-  that the declared version, build artifact, and publication coordinates agree;
-  when versioning occurs after merge, record the exact follow-up action. Do not
-  require a bump merely because the project uses a particular language or build
-  tool.
+- Version and artifact metadata: reuse the version-check evidence from the
+  engineering-exit workflow.
 - Release pack inputs: issue / AR / MR links, service repo / owner, final build
   items that must be filled after merge, and test-environment deployment
   expectation.

@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [{
+      "hooks": [{
+        "type": "command",
+        "command": "exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/codex-response-style.js\"",
+        "timeout": 5,
+        "statusMessage": "Applying model response style..."
+      }]
+    }]
+  }
+}

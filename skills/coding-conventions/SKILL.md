@@ -11,7 +11,7 @@ description: Proactively identify engineering templates and reusable patterns du
 - 实现或修复业务行为时，先读 `templates/general/AGENTS.md` 的业务切面检查和 `templates/testing/AGENTS.md`。即使未计划修改测试或日志，也要检查现有结构。仅选择验证方式、新增或保留测试、执行测试减法时，仍先读 testing 模板的准入与保留标准。项目明确要求的检查继续执行。
 - 已有 `coding-conventions:begin <template-id>`：读取对应模板作为受控块事实源；用户明确指令与更高层执行边界优先。报告 unsupported ID 或缺失模板。
 - 无受控块但要实现、调试、验证或评审：按技术栈读模板；团队 / 外部项目不加载 `preferences/*`。
-- 用户提到 `consumer pattern`、`consumer replay` 或“消费后内部重放”时，先读取 `patterns/consumer-owned-retryable-execution-unit.md`，按其定义判断当前实现与适用性；用户明确指定其他定义时遵从该定义。普通 `consumer` 一词仍按下方场景信号路由。
+- 用户提到 `consumer pattern`、`consumer replay` 或“消费后内部重放”时，先走 `patterns/consumer-delivery-failure-isolation.md` 的恢复图；路径到达 R1／R2 时，再用 `patterns/consumer-owned-retryable-execution-unit.md` 判断执行契约与适用性。用户明确指定其他定义时遵从该定义。普通 `consumer` 一词仍按下方场景信号路由。
 - 按 Pattern Routes 用当前任务场景定位 SOP。先检查事实和约束，再选择解法；不等识别出缺陷或选好技术才加载，不预读无关正文或递归 Related。
 - 新建、复制或扩展 Kubernetes integration 测试环境：读取 `templates/lintest/AGENTS.md` 的资源基线约束。
 - 代码实现：读取 `references/structural-checkpoints.md`，按行为阶段执行结构检查。
@@ -32,7 +32,7 @@ description: Proactively identify engineering templates and reusable patterns du
 
 ## Template Routes
 
-模板位于 `templates/<id>/AGENTS.md`：`general`、`api`、`testing`、`git`、`node-test-kit`、`java-gradle`、`python`、`cli`、`frontend`、`lintest`。`general` 是默认基线；父级已有受控块时子项目不重复，只加载有 repo 证据的模板。
+模板位于 `templates/<id>/AGENTS.md`：`general`、`api`、`testing`、`git`、`node-test-kit`、`java-gradle`、`python`、`cli`、`frontend`、`lintest`。`general` 是默认基线；父级已有 `general` 受控块时子项目不重复，个人父级的 `preferences` 块不算；只加载有 repo 证据的模板。
 
 ## Pattern Routes
 
@@ -45,9 +45,10 @@ description: Proactively identify engineering templates and reusable patterns du
 
 ### 条件必查 SOP
 
+- 新增或改变 Kafka / RocketMQ consumer 的确认、重试、异常传播、并发或顺序：`patterns/consumer-delivery-failure-isolation.md`。从影响范围节点开始走决策图，不默认先处理后确认，不改变无关 topic。仅改业务字段不触发。
 - 改变线程池、后台队列或 consumer / listener 的资源装配、准入或启停：`patterns/graceful-shutdown-anti-leak.md`。先查资源归属与退出边界；仅改业务字段不触发。
 - 多阶段 UI、连续输入请求协调、并发或后台回写、乐观更新及 Undo：`patterns/ui-interaction.md`。先查交互冲突；纯布局和简单提交不触发。
-- 同时存在软删除与业务唯一键，且本次改变其创建、删除、重建或恢复：`patterns/lifecycle-safe-soft-delete-uniqueness.md`。先定标识复用政策，不预选 delete token。
+- 同时存在软删除与业务唯一键，且本次改变其创建、删除、重建或恢复：`patterns/lifecycle-safe-soft-delete-uniqueness.md`。从 Q0 开始走决策图，先回答历史与标识复用偏好，不预选 delete token。
 - 新增或改变分布式锁／租约保护的任务：`patterns/renewable-owner-checked-lease.md`。先查库的续期、释放与失锁语义，已覆盖时复用。
 - 建设或调整分析模型、共享指标、数仓层或回刷：`patterns/business-process-first-warehouse-modeling.md`。先定粒度和消费契约，不要求完整分层。
 - 改变 Java / JDBC 时间持久化、跨时区展示或本地周期调度：`patterns/explicit-wall-time-and-instant-boundaries.md`。先定时间语义；普通时间类型引用不触发。
@@ -62,9 +63,20 @@ description: Proactively identify engineering templates and reusable patterns du
 
 以下 SOP 用来作选择，不表示必须采用同名实现。先完成前提检查；不适用时沿用已有简单方案，不为匹配 pattern 改造需求。
 
-- Consumer 业务动作需要按对象补做、重试或 backfill：`patterns/consumer-owned-retryable-execution-unit.md`。先查现有恢复入口和最小业务输入，不默认增加人工 API 或 Inbox。
+- Consumer 业务动作需要按对象补做、重试或 backfill：先走 `patterns/consumer-delivery-failure-isolation.md` 的恢复图，记录接受的风险；路径到达 R1／R2 时读 `patterns/consumer-owned-retryable-execution-unit.md`。不默认增加人工 API 或 Inbox。
 - 批量清理持久数据、调整扫描／删除／checkpoint：`patterns/primary-key-sweep-for-destructive-cleanup.md`。先查索引与执行边界；已有合适索引优先使用，不预设全表主键扫描。
 - 多区域统一入口、各区本地读，同时不允许冲突合并：`patterns/single-writer-forwarding-edge-replica.md`。先比较现有事务／托管存储能力和分区要求；不预设单写转发拓扑。
+- 多个请求或实例同时为同一个 key 调用昂贵或受限的下游（缓存回源、第三方校验、token 获取）：`patterns/inflight-request-coalescing.md`。先量化同 key 重叠次数和单次成本；重复少时保持现状，不预设共享存储屏障。
+
+## 决策图 pattern
+
+部分 pattern 的 Pattern 节是 Mermaid 决策图。按图执行时：
+
+- `{问题}` 是事实问题，`{{偏好}}` 是业务偏好问题。`[策略]` 的动作、收益、风险和不变量查节点说明表。`[[pattern-id]]` 在路径到达时才读取。虚线是叠加约束，不是分支。
+- 每个问题都有「未知」分支。事实未知走 `S0`：查代码、配置和版本后回到原问题。偏好未知走 `S1`。
+- 偏好答案只有三类来源：本次用户的明确要求、已记录的业务契约、现有行为。只有 agent 判断时视为未知。改变现有行为需要用户本次要求或确认。
+- `S1` 向用户列出各分支的收益、接受的风险／成本和推荐，确认前保留现有行为。用户选择用风险换收益时照做，不追加更可靠的方案。风险超出来源原话的范围时，也走 `S1`。
+- 结束时记录 `path`（按顺序的节点与答案）和 `basis`（每个偏好节点的来源）。
 
 ## Safety Gates
 

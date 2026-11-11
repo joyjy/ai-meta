@@ -35,7 +35,7 @@ PROJECTS = {
 }
 
 DRAFT_DIR = ME_ROOT / "_Drafts"
-SNIPPETS_DIR = REFERENCE_ROOT / "snippet-lab"
+SNIPPETS_DIR = HOME / "Documents" / "projects" / "tandem" / "knowledge"
 
 FORUM_SNIPPET_46 = {
     "id": "gitlab-project-snippet-46",

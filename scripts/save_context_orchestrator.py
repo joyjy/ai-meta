@@ -6,14 +6,20 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from typing import Any, Callable
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+import cli_usage  # noqa: E402
+
+CLI = "save-context"
+COMMANDS = ["save", "orchestrate", "usage"]
+HELP_FLAGS = {"-h", "--help"}
 RunCommand = Callable[[list[str], str | None], subprocess.CompletedProcess[str]]
 ADMISSION_SCHEMA = "save-context.admission.v1"
 ADMISSION_DECISIONS = {"checkpoint_ready", "continue_work"}
@@ -209,10 +215,10 @@ def context_stage(
     lines = [line for line in completed.stdout.splitlines() if line.strip()]
     return ({
         "status": "succeeded",
-        "timeline": (
-            "appended"
-            if any(line.startswith("appended ") for line in lines)
-            else "unchanged"
+        "timeline": next(
+            (line.split(" ", 1)[0] for line in lines
+             if line.startswith(("appended ", "replaced "))),
+            "unchanged",
         ),
         "output": lines[-3:],
     }, completed)
@@ -301,7 +307,14 @@ def orchestrate(
 
 
 def orchestration_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = argparse.ArgumentParser(
+        prog="save-context --orchestrate",
+        usage=(
+            "save-context --orchestrate <abbr> --admission-file FILE "
+            "[audit options] [context options]"
+        ),
+        add_help=False,
+    )
     parser.add_argument("--orchestrate", action="store_true")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--audit-thread-id")
@@ -313,14 +326,44 @@ def orchestration_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def print_orchestrated_help(parser: argparse.ArgumentParser) -> int:
+    parser.print_help()
+    print("\nContext options after <abbr> are forwarded to save_context.py:\n", flush=True)
+    return subprocess.run(
+        [sys.executable, str(SCRIPT_DIR / "save_context.py"), "--help"], check=False
+    ).returncode
+
+
 def main() -> int:
+    argv = sys.argv[1:]
+    command = "usage" if argv == ["usage"] else "orchestrate" if "--orchestrate" in argv else "save"
+    started = time.monotonic()
+    code = 1
+    try:
+        if command == "usage":
+            print(json.dumps(cli_usage.summarize(CLI, COMMANDS), ensure_ascii=False, indent=2))
+            code = 0
+        else:
+            code = run_cli()
+    except SystemExit as exit_:
+        code = exit_.code if isinstance(exit_.code, int) else 1
+        raise
+    finally:
+        cli_usage.record(CLI, command, started, code)
+    return code
+
+
+def run_cli() -> int:
     parser = orchestration_parser()
     args, context_args = parser.parse_known_args()
     if not args.orchestrate:
-        os.execv(
-            sys.executable,
+        return subprocess.run(
             [sys.executable, str(SCRIPT_DIR / "save_context.py"), *sys.argv[1:]],
-        )
+            check=False,
+        ).returncode
+    # Help must exit before admission, audit dispatch or context writes, never as a checkpoint receipt.
+    if HELP_FLAGS & set(context_args):
+        return print_orchestrated_help(parser)
     if not context_args or context_args[0].startswith("-"):
         parser.error("orchestrated save requires <abbr> before context options")
     if not args.admission_file:

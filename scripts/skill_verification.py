@@ -26,7 +26,6 @@ SUMMARY_SCHEMA = "skill.verification.summary.v1"
 CHANGE_ID_RE = re.compile(r"^[a-f0-9]{16}$")
 CHECK_STATES = {"passed", "failed"}
 SAMPLE_RESULTS = {"passed", "failed", "inconclusive"}
-OPEN_VERDICTS = {"pending", "inconclusive"}
 COMMANDS = ["begin", "check", "load", "sample", "status", "usage"]
 
 
@@ -242,14 +241,10 @@ def evaluate(record: dict[str, Any]) -> dict[str, Any]:
         verdict, reason = "falsified", "post_load_sample_failed"
     elif not checks:
         verdict, reason = "pending", "no_static_check"
-    elif required_samples == 0:
-        verdict, reason = "static_validated", "all_latest_checks_passed"
-    elif passed_samples >= required_samples:
+    elif required_samples > 0 and passed_samples >= required_samples:
         verdict, reason = "validated", "required_post_load_samples_passed"
-    elif samples:
-        verdict, reason = "inconclusive", "post_load_samples_incomplete"
     else:
-        verdict, reason = "pending", "no_post_load_sample"
+        verdict, reason = "static_validated", "all_latest_checks_passed"
 
     return {
         "verdict": verdict,
@@ -475,6 +470,12 @@ def compact(record: dict[str, Any], superseded_by: str | None = None) -> dict[st
     }
 
 
+def is_open(summary: dict[str, Any]) -> bool:
+    return (summary["evaluation"]["verdict"] == "pending"
+            and summary["superseded_by"] is None
+            and not summary["source_drift"])
+
+
 def status(args: argparse.Namespace) -> dict[str, Any]:
     records_all = all_records(args.root)
     later = successors(records_all)
@@ -487,7 +488,7 @@ def status(args: argparse.Namespace) -> dict[str, Any]:
     records = []
     for record in records_all:
         summary = compact(record, later.get(record["change_id"]))
-        if args.open_only and summary["evaluation"]["verdict"] not in OPEN_VERDICTS:
+        if args.open_only and not is_open(summary):
             continue
         records.append(summary)
     records.sort(key=lambda item: str(item.get("updated_at") or ""),
@@ -517,7 +518,7 @@ def build_parser() -> argparse.ArgumentParser:
     begin_parser.add_argument("--summary", required=True)
     begin_parser.add_argument("--acceptance", action="append", required=True)
     begin_parser.add_argument("--artifact", action="append", default=[])
-    begin_parser.add_argument("--required-samples", type=int, required=True)
+    begin_parser.add_argument("--required-samples", type=int, default=0)
     begin_parser.add_argument("--at")
     begin_parser.set_defaults(handler=begin)
 

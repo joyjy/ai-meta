@@ -37,6 +37,12 @@ class GitlabMrTest(unittest.TestCase):
             "https://gitlab.example.com/group/project",
         )
 
+    def test_bare_iid_without_repo_fails_before_any_lookup(self):
+        with mock.patch.object(self.mod, "run") as run:
+            with self.assertRaisesRegex(RuntimeError, "needs --repo"):
+                self.mod.resolve_mr("24", "", "")
+        run.assert_not_called()
+
     def test_create_rejects_description_bypass_flags(self):
         for flag in ["--description=raw", "--fill", "--template=bug_fix", "--web"]:
             with self.subTest(flag=flag), self.assertRaisesRegex(
@@ -85,7 +91,8 @@ class GitlabMrTest(unittest.TestCase):
                 mock.patch.object(
                     self.mod, "glab_api",
                     return_value={"description": protected, "project_id": 1,
-                                  "squash": True, "should_remove_source_branch": True}) as api,
+                                  "squash": True, "force_remove_source_branch": True,
+                                  "should_remove_source_branch": None}) as api,
                 redirect_stdout(io.StringIO()),
             ):
                 self.mod.cmd_create(args)
@@ -118,7 +125,8 @@ class GitlabMrTest(unittest.TestCase):
                         "https://gitlab.example.com/group/project/-/merge_requests/12\n",
                     ]) as run, mock.patch.object(self.mod, "glab_api", return_value={
                         "description": "## User Description\n\nchange", "project_id": 1,
-                        "squash": not squash if mismatch else squash, "should_remove_source_branch": delete,
+                        "squash": not squash if mismatch else squash, "force_remove_source_branch": delete,
+                        "should_remove_source_branch": None,
                     }), redirect_stdout(io.StringIO()):
                     if mismatch:
                         with self.assertRaisesRegex(RuntimeError, "was created.*do not retry"):
@@ -222,6 +230,24 @@ class GitlabMrTest(unittest.TestCase):
         self.assertEqual(payload, observed["payload"])
         self.assertIn("Content-Type: application/json", observed["command"])
         self.assertEqual({"id": "discussion-1"}, result)
+
+    def test_general_comment_posts_unpositioned_discussion_and_checks_resolvable(self):
+        args = SimpleNamespace(
+            target="12", repo="group/project", hostname="gitlab.example.com",
+            inline=False, general=True, file=None, line=None, old_line=None,
+            message="Blocking: missing guard", message_file=None, dry_run=False)
+        with mock.patch.object(
+                self.mod, "post_discussion",
+                return_value={"id": "d1", "notes": [{"resolvable": True}]}) as post, \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(0, self.mod.cmd_comments_add(args))
+        self.assertEqual({"body": "Blocking: missing guard"}, post.call_args.args[2])
+
+        with mock.patch.object(
+                self.mod, "post_discussion",
+                return_value={"id": "d2", "notes": [{"resolvable": False}]}):
+            with self.assertRaisesRegex(RuntimeError, "not resolvable; do not retry"):
+                self.mod.cmd_comments_add(args)
 
     def test_reviewer_add_preserves_latest_reviewers_and_verifies_readback(self):
         args = SimpleNamespace(

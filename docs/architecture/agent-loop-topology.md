@@ -99,7 +99,7 @@ state 或遇到必须叫人的 checkpoint。
   不存在全局 active contract，也不得扫描“最新 contract”猜目标。
 - contract 拥有 scope、authorization、checkpoints、acceptance evidence、self-repair budget
   和 exit state。
-- 当前 runtime adapter 只支持 Codex goal：exact contract 写入并验证后，由显式授权的 `create_goal` 续轮。其他 adapter 值只保留 legacy contract 验证兼容，不代表当前 loop-ledger 可以 dispatch；Symphony、GTD 或 manual runtime 后续需要独立适配。
+- 当前 runtime adapter 支持 Codex goal 和 Claude Code `/goal`。exact contract 写入并验证后，Codex 由显式授权的 `create_goal` 续轮；Claude Code 的 agent 无法执行 `/goal`，由用户粘贴 `ll-goal-objective --host claude` 输出的一行启动。两者共用 `codex_goal` adapter 值。其他 adapter 值只保留 legacy contract 验证兼容，不代表当前 loop-ledger 可以 dispatch；Symphony、GTD 或 manual runtime 后续需要独立适配。
 - pre-prompt hook 可以注入 surface 和 capability 事实，但不能创建 goal、分发 WorkItem 或
   绕过 contract verifier 与用户授权。
 - goal loop 只在已授权范围内自修复；scope change、remote write、destructive action、

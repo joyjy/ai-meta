@@ -86,9 +86,9 @@ class SyncConventionsTest(unittest.TestCase):
             projects.mkdir(parents=True)
             agents = projects / "AGENTS.md"
             agents.write_text(
-                "<!-- coding-conventions:begin general -->\n"
+                "<!-- coding-conventions:begin preferences -->\n"
                 "stale\n"
-                "<!-- coding-conventions:end general -->\n",
+                "<!-- coding-conventions:end preferences -->\n",
                 encoding="utf-8",
             )
             skill_dir = home / ".ai" / "skills" / "coding-conventions"
@@ -115,6 +115,9 @@ class SyncConventionsTest(unittest.TestCase):
             self.assertNotIn("# IDaaS lintest MR Walkthrough", content)
             self.assertNotIn("# Pitfall Watch", content)
             self.assertNotIn("# Temporary Pitfalls", content)
+            self.assertNotIn("stale", content)
+            self.assertNotIn("<!-- coding-conventions:begin general -->", content)
+            self.assertNotIn("# 通用工程约定", content)
 
 
 if __name__ == "__main__":

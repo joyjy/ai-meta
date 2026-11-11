@@ -2,7 +2,7 @@
 
 ## Branch 命名
 
-- 功能分支默认以 `feat-` 开头，例如：`feat-add-vehicle-bind`；项目入口或服务端 branch regex 有声明时以更具体的策略为准
+- 功能分支默认以 `feat-` 开头，例如：`feat-add-vehicle-bind`；项目入口或服务端 branch regex 有声明时以更具体的策略为准。要推送的新分支在命名前读取远端规则（GitLab：`glab api projects/<encoded-path>/push_rule` 的 `branch_name_regex`；没有规则时参照远端现有分支前缀），不要推送被拒后再改名
 - 修复分支以 `fix-` 开头，例如：`fix-vin-validation-npe`
 - 分支名不要带 agent/client 前缀，例如 `codex/`、`claude/`、`opencode/`
 

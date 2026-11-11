@@ -11,11 +11,16 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_usage
+import amt_branch_review as review_docs
 
 
 DEFAULT_ROOTS = [Path.home() / "Documents/projects", Path.home() / "Documents/reference"]
@@ -40,20 +45,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=120)
     parser.add_argument("--once-per-day", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--apply-review", type=Path, help="Read a saved scan and preview selected branch deletions.")
+    parser.add_argument("--select", action="append", default=[], help="Exact entry_id from the review; repeat for multiple branches.")
+    parser.add_argument("--scope", choices=("local", "remote", "both"), help="Which refs to delete from selected entries.")
+    parser.add_argument("--confirm", action="store_true", help="Execute the selected, freshly revalidated deletions.")
+    parser.add_argument("--discard-unmerged", action="store_true", help="Explicitly approve discarding selected unique/possibly replaced content.")
     parser.add_argument(
         "--cleanup-merged-branches",
         action="store_true",
-        help="Delete safely verified local and remote branches for squash-merged GitLab MRs authored by the current user.",
+        help="Audit GitLab topic branches and generate a review; requires --branch-cleanup-dry-run.",
     )
     parser.add_argument(
         "--branch-cleanup-dry-run",
         action="store_true",
-        help="Report eligible merged-MR branches without deleting them.",
+        help="Generate revision-bound branch reviews without deleting refs.",
     )
     parser.add_argument(
         "--remote-branch-cleanup-dry-run",
         action="store_true",
-        help="Delete eligible local branches but only report remote branch deletion candidates.",
+        help="Legacy flag; scans remain read-only. Use --apply-review --scope to select deletion targets.",
     )
     parser.add_argument(
         "--branch-cleanup-exclude-project-prefix",
@@ -317,32 +327,6 @@ def branch_details(
     return payload
 
 
-def delete_remote_branch(
-    remote: GitLabRemote,
-    project_id: str,
-    branch: str,
-    timeout_seconds: int,
-) -> None:
-    endpoint = (
-        f"projects/{quote(project_id, safe='')}/repository/branches/"
-        f"{quote(branch, safe='')}"
-    )
-    result = run_glab(
-        [
-            "api",
-            endpoint,
-            "--hostname",
-            remote.hostname,
-            "--method",
-            "DELETE",
-            "--silent",
-        ],
-        timeout_seconds,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(command_error(result))
-
-
 def cleanup_repository_branches(
     repo: Path,
     remote: GitLabRemote,
@@ -351,6 +335,8 @@ def cleanup_repository_branches(
     dry_run: bool,
     remote_dry_run: bool = False,
 ) -> dict[str, object]:
+    if not dry_run:
+        raise ValueError("branch inspection is read-only; use --apply-review for selected deletions")
     report: dict[str, object] = {
         "path": str(repo),
         "host": remote.hostname,
@@ -367,7 +353,11 @@ def cleanup_repository_branches(
     local = local_branches(repo, timeout_seconds)
     remote_refs = remote_branches(repo, timeout_seconds)
     checked_out = worktree_branches(repo, timeout_seconds)
-    excluded = {default_branch(repo, timeout_seconds)}
+    default = default_branch(repo, timeout_seconds)
+    excluded = {default}
+    if not default:
+        report["failures"].append({"stage": "default_branch", "error": "origin/HEAD is unknown"})
+        return report
     branches = sorted((set(local) | set(remote_refs)) - excluded - {""})
 
     def skip(candidate: dict[str, object], reason: str) -> None:
@@ -408,6 +398,7 @@ def cleanup_repository_branches(
             == str(mr.get("target_project_id") or "")
             and mr_project_path(mr).lower() == remote.project_path.lower()
         ]
+        base["mrs"] = [{k: mr.get(k) for k in ("iid", "state", "sha", "web_url")} for mr in same_project_mrs]
         if any(str(mr.get("state") or "") == "opened" for mr in same_project_mrs):
             skip(base, "open_mr_exists")
             continue
@@ -479,62 +470,13 @@ def cleanup_repository_branches(
 
         eligible = candidate | {"eligible": True}
         report["candidates"].append(eligible)
-        if dry_run:
-            report["branches"].append(eligible | {"action": "dry_run"})
-            report["skipped"].append(eligible | {"reason": "dry_run"})
-            continue
+        report["branches"].append(eligible | {"action": "dry_run"})
+        report["skipped"].append(eligible | {"reason": "dry_run"})
 
-        action = "no_deletion_needed"
-        if remote_sha:
-            if remote_dry_run:
-                report["remote_dry_run_branches"].append(
-                    {"branch": branch, "mr_iid": mr_iid}
-                )
-                action = "remote_dry_run"
-            else:
-                try:
-                    delete_remote_branch(
-                        remote, remote.project_path, branch, timeout_seconds
-                    )
-                    delete_tracking_ref = run_git(
-                        repo,
-                        ["update-ref", "-d", f"refs/remotes/origin/{branch}"],
-                        timeout_seconds,
-                    )
-                    if delete_tracking_ref.returncode != 0:
-                        raise RuntimeError(command_error(delete_tracking_ref))
-                    report["deleted_remote_branches"].append(
-                        {"branch": branch, "mr_iid": mr_iid}
-                    )
-                    action = "deleted_remote"
-                except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
-                    skip(candidate, "remote_delete_failed")
-                    report["failures"].append(
-                        candidate | {"stage": "delete_remote", "error": str(error)}
-                    )
-                    continue
-
-        if local_sha:
-            delete_local = run_git(
-                repo, ["branch", "-D", "--", branch], timeout_seconds
-            )
-            if delete_local.returncode != 0:
-                report["failures"].append(
-                    candidate
-                    | {"stage": "delete_local", "error": command_error(delete_local)}
-                )
-                skip(candidate, "local_delete_failed")
-                continue
-            report["deleted_local_branches"].append(
-                {"branch": branch, "mr_iid": mr_iid}
-            )
-            action = (
-                "deleted_local_remote_dry_run"
-                if remote_sha and remote_dry_run
-                else "deleted_local"
-            )
-        report["branches"].append(eligible | {"action": action})
-
+    review_docs.enrich_repository(
+        report, local, remote_refs, default, remote_refs.get(default, ""),
+        lambda args: run_git(repo, args, timeout_seconds),
+    )
     return report
 
 
@@ -562,9 +504,17 @@ def cleanup_merged_branches(
         if item.get("status")
         in {"status_failed", "fetch_failed", "timeout", "runtime_failed"}
     }
+    seen_common_dirs: set[str] = set()
     for repo in repositories:
         if str(repo) in failed_paths:
             continue
+        common = run_git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"], timeout_seconds)
+        if common.returncode:
+            continue
+        identity = common.stdout.strip()
+        if identity in seen_common_dirs:
+            continue
+        seen_common_dirs.add(identity)
         remote = gitlab_remote(repo, timeout_seconds)
         if remote is None:
             continue
@@ -632,6 +582,138 @@ def cleanup_merged_branches(
         "excluded_repositories": len(report["excluded_repositories"]),
     }
     return report
+
+
+def audit_worktrees(repositories: list[Path], roots: list[Path], timeout: int) -> dict:
+    if not repositories:
+        return {"items": []}
+    args = [str(Path(__file__).resolve().with_name("wt-sweep")), "list", "--json"]
+    for root in roots:
+        args.extend(["--root", str(root)])
+    for name in sorted({repo.name for repo in repositories}):
+        args.extend(["--repo", name])
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+        if result.returncode:
+            return {"items": [], "error": command_error(result)}
+        payload = json.loads(result.stdout)
+        return {"skipped_outside_roots": payload.get("skipped_outside_roots", 0), "items": [{k: item.get(k) for k in ("path", "branch", "head", "verdict", "reasons", "registrations", "also_deleted")}
+                          for item in payload["items"]]}
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+        return {"items": [], "error": str(error)}
+
+
+def fresh_gitlab_json(remote: GitLabRemote, endpoint: str, timeout: int) -> object:
+    """Write preflights bypass the read broker cache."""
+    result = run_glab(["api", endpoint, "--hostname", remote.hostname], timeout)
+    if result.returncode:
+        raise RuntimeError(command_error(result))
+    return json.loads(result.stdout)
+
+
+def apply_review(args: argparse.Namespace) -> int:
+    if not args.select or not args.scope:
+        raise ValueError("--apply-review requires explicit --select entry_id and --scope local|remote|both")
+    payload = json.loads(args.apply_review.expanduser().read_text())
+    review = payload.get("review", {})
+    if review.get("schema") != review_docs.SCHEMA:
+        raise ValueError("unsupported or missing branch review schema")
+    material = {k: review[k] for k in ("entries", "worktrees", "failures")}
+    if review_docs.digest(material) != review.get("fingerprint"):
+        raise ValueError("review fingerprint mismatch; rescan instead of editing the report")
+    by_id = {e["entry_id"]: e for e in review["entries"]}
+    unknown = set(args.select) - by_id.keys()
+    if unknown:
+        raise ValueError("unknown entry_id: " + ", ".join(sorted(unknown)))
+    selected = [by_id[key] for key in dict.fromkeys(args.select)]
+    prepared = []
+    # Preflight every selection before deleting the first ref.
+    for entry in selected:
+        if entry["classification"] not in {"redundant", "possibly_replaced", "unique_content"}:
+            raise ValueError(f"cannot apply {entry['entry_id']}: {entry['classification']}")
+        if entry["classification"] != "redundant" and not args.discard_unmerged:
+            raise ValueError(f"{entry['entry_id']} requires --discard-unmerged after content review")
+        repo, branch = Path(entry["path"]).resolve(), entry["branch"]
+        valid_name = run_git(repo, ["check-ref-format", f"refs/heads/{branch}"], args.timeout_seconds)
+        if valid_name.returncode:
+            raise ValueError("invalid branch name")
+        remote = gitlab_remote(repo, args.timeout_seconds)
+        if remote != GitLabRemote(entry["host"], entry["project"]):
+            raise ValueError(f"repository identity changed: {repo}")
+        push = run_git(repo, ["remote", "get-url", "--push", "origin"], args.timeout_seconds)
+        if push.returncode or parse_gitlab_remote(push.stdout) != remote:
+            raise ValueError("origin fetch/push identities differ")
+        fetch = run_git(repo, ["fetch", "origin", "--prune"], args.timeout_seconds)
+        if fetch.returncode:
+            raise RuntimeError(command_error(fetch))
+        local, refs = local_branches(repo, args.timeout_seconds), remote_branches(repo, args.timeout_seconds)
+        for field, current in (("local_sha", local.get(branch, "")), ("remote_sha", refs.get(branch, ""))):
+            if current != entry[field]:
+                raise ValueError(f"{branch}: {field} changed; rescan required")
+        if branch in worktree_branches(repo, args.timeout_seconds):
+            raise ValueError(f"{branch}: checked out in a worktree; use wt-sweep first")
+        project = quote(remote.project_path, safe="")
+        project_info = fresh_gitlab_json(remote, f"projects/{project}", args.timeout_seconds)
+        default = project_info.get("default_branch")
+        if not default or branch == default or default != entry["default_branch"]:
+            raise ValueError(f"{branch}: default branch changed or selected")
+        if refs.get(default) != entry["default_sha"]:
+            raise ValueError("default branch advanced; rescan required")
+        query = f"projects/{project}/merge_requests?state=opened&scope=all&per_page=100&source_branch={quote(branch, safe='')}"
+        if fresh_gitlab_json(remote, query, args.timeout_seconds):
+            raise ValueError(f"{branch}: open MR exists")
+        if entry["remote_sha"]:
+            details = fresh_gitlab_json(remote, f"projects/{project}/repository/branches/{quote(branch, safe='')}", args.timeout_seconds)
+            if details.get("protected") is not False or details.get("default") is not False:
+                raise ValueError(f"{branch}: protected/default status prevents deletion")
+            if details.get("commit", {}).get("id") != entry["remote_sha"]:
+                raise ValueError(f"{branch}: remote tip changed")
+        targets = [kind for kind in ("remote", "local") if args.scope in (kind, "both") and entry[kind + "_sha"]]
+        if not targets:
+            raise ValueError(f"{branch}: no {args.scope} ref existed in this review")
+        prepared.append((entry, repo, targets))
+    result = {"schema": "amt.branch-cleanup-result.v1", "review_fingerprint": review["fingerprint"],
+              "confirmed": args.confirm, "results": []}
+    output = args.output.expanduser().resolve()
+    if output == args.apply_review.expanduser().resolve():
+        raise ValueError("cleanup output must not overwrite the reviewed scan")
+    atomic_write_json(output, result)
+    for entry, repo, targets in prepared:
+        row = {"entry_id": entry["entry_id"], "path": str(repo), "branch": entry["branch"], "actions": []}
+        result["results"].append(row)
+        for kind in targets:
+            action = {"scope": kind, "expected_sha": entry[kind + "_sha"], "status": "preview"}
+            row["actions"].append(action)
+            if args.confirm:
+                branch, sha = entry["branch"], entry[kind + "_sha"]
+                command = (["push", f"--force-with-lease=refs/heads/{branch}:{sha}", "origin", f":refs/heads/{branch}"]
+                           if kind == "remote" else ["update-ref", "-d", f"refs/heads/{branch}", sha])
+                action["status"] = "attempting"
+                atomic_write_json(output, result)
+                try:
+                    deleted = run_git(repo, command, args.timeout_seconds)
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    action.update(status="unknown", error=str(error))
+                    atomic_write_json(output, result)
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                    return 1
+                if deleted.returncode:
+                    action.update(status="failed", error=command_error(deleted))
+                    atomic_write_json(output, result)
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                    return 1
+                verify = run_git(repo, ["ls-remote", "--heads", "origin", f"refs/heads/{branch}"] if kind == "remote"
+                                 else ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], args.timeout_seconds)
+                absent = verify.returncode == 0 and not verify.stdout.strip() if kind == "remote" else verify.returncode == 1
+                action["status"] = "deleted" if absent else "readback_failed"
+                if not absent:
+                    action["error"] = command_error(verify)
+                    atomic_write_json(output, result)
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+                    return 1
+            atomic_write_json(output, result)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
 
 
 def discover_repositories(root: Path) -> tuple[list[Path], list[str]]:
@@ -819,6 +901,15 @@ def atomic_write_json(path: Path, payload: dict[str, object]) -> None:
 
 def main() -> int:
     args = parse_args()
+    if args.apply_review:
+        if args.output == DEFAULT_OUTPUT:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            args.output = args.apply_review.with_suffix(f".cleanup-{stamp}.json")
+        return apply_review(args)
+    if args.select or args.scope or args.confirm or args.discard_unmerged:
+        raise ValueError("cleanup selectors require --apply-review")
+    if args.cleanup_merged_branches and not args.branch_cleanup_dry_run:
+        raise ValueError("branch scans require --branch-cleanup-dry-run; execute reviewed entries with --apply-review")
     if args.branch_cleanup_dry_run and not args.cleanup_merged_branches:
         print(
             "--branch-cleanup-dry-run requires --cleanup-merged-branches",
@@ -835,6 +926,7 @@ def main() -> int:
     roots = [root.expanduser().resolve() for root in (args.roots or DEFAULT_ROOTS)]
     excludes = {path.expanduser().resolve() for path in (args.excludes or [])}
     output = args.output.expanduser().resolve()
+    previous = read_existing(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     lock_path = output.with_suffix(output.suffix + ".lock")
 
@@ -847,7 +939,7 @@ def main() -> int:
 
         if args.once_per_day and not args.force and already_refreshed_today(
             output, roots, excludes
-        ):
+        ) and (not args.cleanup_merged_branches or (previous or {}).get("review", {}).get("schema") == review_docs.SCHEMA):
             print(f"amt git refresh already completed today: {output}")
             return 0
 
@@ -900,6 +992,10 @@ def main() -> int:
                 ),
             )
 
+        audit_repos = [Path(r["path"]) for r in branch_cleanup.get("repositories", [])]
+        worktrees = audit_worktrees(audit_repos, roots, args.timeout_seconds) if args.cleanup_merged_branches else {"items": []}
+        review = review_docs.build_review(branch_cleanup, worktrees, previous)
+
         counts = Counter(str(result["status"]) for result in results)
         failure_statuses = {
             "status_failed",
@@ -919,6 +1015,7 @@ def main() -> int:
             sum(counts[status] for status in failure_statuses)
             + len(discovery_errors)
             + cleanup_failure_count
+            + int(bool(worktrees.get("error")))
         )
         if not repositories:
             state = "unhealthy"
@@ -963,12 +1060,38 @@ def main() -> int:
             "ignored_submodules": ignored_submodules,
             "repositories": results,
             "branch_cleanup": branch_cleanup,
+            "review": review,
         }
+        if args.cleanup_merged_branches:
+            snapshot = output.parent / (output.stem + ".reviews") / (review["fingerprint"] + ".json")
+            payload["review_snapshot"] = str(snapshot)
+            if not snapshot.exists():
+                atomic_write_json(snapshot, payload)
         atomic_write_json(output, payload)
-        print(f"amt git refresh {state}: {summary}")
+        review_path = output.with_suffix(".review.md")
+        review_path.write_text(review_docs.render_review(review))
+        if review["attention_required"] or state != (previous or {}).get("state"):
+            print(f"amt git refresh {state}: {summary}")
+            print(f"review changed: {len(review['changed_entries'])} entries; {review_path}")
+        else:
+            print("amt git refresh: review unchanged; no attention required")
         print(f"report: {output}")
         return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    started = time.monotonic()
+    command = "usage" if sys.argv[1:2] == ["usage"] else "apply" if "--apply-review" in sys.argv else "scan"
+    code = 1
+    try:
+        if command == "usage":
+            print(json.dumps(cli_usage.summarize("amt-git-refresh", ["scan", "apply", "usage"]), ensure_ascii=False, indent=2))
+            code = 0
+        else:
+            code = main()
+    except (ValueError, KeyError, OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        print(f"amt git refresh failed: {error}", file=sys.stderr)
+        code = 1
+    finally:
+        cli_usage.record("amt-git-refresh", command, started, code)
+    sys.exit(code)

@@ -133,22 +133,25 @@ class SkillVerificationTest(unittest.TestCase):
             self.load(first["change_id"])
         self.assertTrue(self.load(second["change_id"])["load"]["matches_change"])
         listed = {item["change_id"]: item for item in verification.status(argparse.Namespace(
-            root=self.root, change_id=None, open_only=True, limit=10))["changes"]}
+            root=self.root, change_id=None, open_only=False, limit=10))["changes"]}
         self.assertEqual([str(reference.relative_to(self.repo))], listed[first["change_id"]]["source_drift"])
         self.assertEqual(second["change_id"], listed[first["change_id"]]["superseded_by"])
         self.assertEqual([], listed[second["change_id"]]["source_drift"])
         self.assertIsNone(listed[second["change_id"]]["superseded_by"])
+        open_changes = verification.status(argparse.Namespace(
+            root=self.root, change_id=None, open_only=True, limit=10))["changes"]
+        self.assertEqual([second["change_id"]], [item["change_id"] for item in open_changes])
 
-    def test_behavior_requires_matching_load_and_passed_samples(self) -> None:
+    def test_samples_are_optional_and_only_upgrade_the_verdict(self) -> None:
         record = self.begin(required_samples=2)
         checked = self.check(record["change_id"])
-        self.assertEqual("pending", checked["evaluation"]["verdict"])
+        self.assertEqual("static_validated", checked["evaluation"]["verdict"])
 
         loaded = self.load(record["change_id"])
         load_id = loaded["load"]["load_id"]
         first = self.sample(record["change_id"], load_id, "passed",
                             "task:sample-1")
-        self.assertEqual("inconclusive", first["evaluation"]["verdict"])
+        self.assertEqual("static_validated", first["evaluation"]["verdict"])
         second = self.sample(record["change_id"], load_id, "passed",
                              "task:sample-2")
         self.assertEqual("validated", second["evaluation"]["verdict"])

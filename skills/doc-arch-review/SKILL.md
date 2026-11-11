@@ -12,6 +12,7 @@ Find architecture-doc gaps that could mislead implementation, migration, ownersh
 - Start with the named artifact and minimum adjacent docs. Read only source fragments needed to verify a material claim.
 - Repo-wide architecture or structural ownership review: read `references/repo-architecture-review.md`. Read `../../docs/architecture/source-map-contract.md` directly only for a source-map review or changes to major roots, ownership, generators, or primary entrypoints. A named-document review stays on its claims.
 - ADR admission, placement, or review: read `references/decision-records.md`. Post-implementation history placement additionally reads `references/history-placement.md`.
+- Plan closeout — a `docs/plan/` file that is implemented, superseded by a newer canonical copy, or stale: read `references/history-placement.md`.
 - OKF / knowledge bundle / doc-root taxonomy review: read `references/okf-standard.md`; read `references/okf-spec.md` only for unresolved conformance or claimed conflict.
 - OKF architecture restructuring or BMAD compatibility: directly read `references/okf-architecture-layout.md`.
 - OKF preview / footnote / embed / citation behavior: directly read `references/okf-reference-preset-proposal.md`. New OKF object proposals directly use `templates/okf-knowledge-object.md`.

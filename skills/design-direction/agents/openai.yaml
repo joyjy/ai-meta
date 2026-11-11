@@ -1,4 +1,4 @@
 interface:
   display_name: "design-direction"
-  short_description: "Establish a design direction before building UI-heavy features"
+  short_description: "Set UI design direction or critique an existing interface"
   default_prompt: "Use $design-direction to establish a design direction before implementing a UI-heavy feature."

@@ -31,10 +31,9 @@ owner repositories  可版本管理的源文件层
 instructions.md         全局 agent 指令
 tool-routes.md          任务意图到稳定工具入口的路由
 .agents/plugins/        Codex 本地 plugin marketplace 描述
-.claude-plugin/         Claude Code 本地 plugin marketplace 描述
 plugins/*/.codex-plugin/ Codex plugin manifest
 commands/               缩写 slash command 薄入口；不与 skill 同名
-plugins/                本地 plugin 独立 source 目录；plugins/*/claude/ 为 Claude Code 薄适配
+plugins/                本地 plugin 独立 source 目录
 mcp/                    去敏 MCP 配置模板
 scripts/                共享 helper
 skills/                 ai-meta 自有 skills 和模板；项目能力 skill 留在 owner repo
@@ -72,19 +71,19 @@ install.sh              发布软链到本机运行态
 ~/.claude/skills/             -> ~/.ai/skills/
 ~/.agents/skills/             -> <maintenance-checkout>/skills/ + registered owner-repo skills
 ~/.codex/plugins/cache/       Codex plugin 安装缓存，本机运行态
-~/.claude/settings.json       本机运行态：status line 指向 ~/.ai/scripts/claude-statusline，Notification hook 指向 ~/.ai/scripts/claude-notify，ai-meta marketplace 与插件启用状态
+~/.claude/settings.json       本机运行态：status line 指向 ~/.ai/scripts/claude-statusline，Notification hook 指向 ~/.ai/scripts/claude-notify，UserPromptSubmit hook 直接运行本 checkout 的 route-context 脚本
 ```
 
 Codex 没有本地 slash command / subagent 目录概念，因此共享全局指令，并通过可发现
 skills、MCP tools、单一脚本入口或 Codex plugin lifecycle hooks 桥接能力。repo 可维护本地
 plugin marketplace 和独立 plugin 目录；`~/.codex` 中的安装缓存、启用状态和 hook trust 属于
-本机运行态。Claude Code 通过 `.claude-plugin/marketplace.json` 安装同一插件的 Claude 薄适配目录，只复用输入侧 hook；为弥补 Codex 行为缺口而设的 Stop 检查不在 Claude 启用。各客户端目录和入口细节的维护归属见 [project-map](../project-map.md)。
+本机运行态。Claude Code 不安装该插件。`~/.claude/settings.json` 的 UserPromptSubmit hook 直接运行同一输入侧脚本。为弥补 Codex 行为缺口而设的 Stop 检查不在 Claude 启用。各客户端目录和入口细节的维护归属见 [project-map](../project-map.md)。
 
 项目能力 skill 由能力 owner repo 维护 canonical 包，ai-meta `install.sh` 只登记其 source root，并将同一目录软链到 `~/.ai/skills/` 与 `~/.agents/skills/`。owner repo 不存在时跳过该能力并清理 ai-meta 管理的旧软链，不在 ai-meta 复制 fallback 内容。
 
 显式调用策略属于客户端适配元数据。仅允许用户主动运行的 skill 在共享 `SKILL.md` frontmatter 中声明 `disable-model-invocation: true`。Claude 读取这个字段。command 只承载缩写（如 `ee`、`ll`）；全名入口就是 skill 本身，Claude 与 OpenCode 都把 skill 列为 slash 命令，同名 command 会重复，由 `scripts/check-skill-invocation-policies` 拦截。缩写 command 指向仅显式调用的 skill 时，也声明相同字段。Codex 在 skill 目录的 `agents/openai.yaml` 中声明 `policy.allow_implicit_invocation: false`。
 
-`engineering-exit`、`load-context` 和 `save-context` 始终仅显式调用。`agent-doc-hygiene`、`final-form`、`loop-ledger`、`grill`、`review-router` 和 `steelman` 保留语义触发及 agent 主动路由能力。`loop-ledger` 的自动选择条件与平台 goal 授权检查由其 Admission 规则持有。缩写只存在于用户 command / invocation，不作为第二个 skill identity。
+`engineering-exit`、`load-context` 和 `save-context` 始终仅显式调用。`agent-doc-hygiene`、`final-form`、`loop-ledger`、`grill`、`review-router`、`steelman` 和 `piggyback` 保留语义触发及 agent 主动路由能力。`loop-ledger` 的自动选择条件与平台 goal 授权检查由其 Admission 规则持有。缩写只存在于用户 command / invocation，不作为第二个 skill identity。
 
 ## Relationships
 

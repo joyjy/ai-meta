@@ -13,10 +13,20 @@ import hashlib
 import json
 import os
 import re
+import sys
+import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Iterable
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_usage  # noqa: E402
+
+CLI = "agent-frictions"
+COMMANDS = ["collect", "checkpoint", "claim", "list", "open-summary", "record-occurrence",
+            "status", "settle", "cleanup", "usage"]
 
 SCHEMA_VERSION = "agent.friction.event.v0"
 SETTLED = {"promoted", "resolved", "ignored"}
@@ -485,7 +495,8 @@ def event_summary(path: Path, event: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_events(root: Path, owner_spec: str | None,
-                lifecycles: set[str], source_id: str | None = None) -> dict[str, Any]:
+                lifecycles: set[str], source_id: str | None = None,
+                limit: int | None = 20) -> dict[str, Any]:
     expected_owner = owner_key(
         owner_from_spec(owner_spec)) if owner_spec else ""
     rows = []
@@ -501,7 +512,16 @@ def list_events(root: Path, owner_spec: str | None,
         if lifecycles and event.get("lifecycle") not in lifecycles:
             continue
         rows.append(event_summary(path, event))
-    return {"count": len(rows), "events": rows}
+    # Unfiltered history runs to hundreds of KB; show the newest month buckets unless --all.
+    shown = rows if limit is None else rows[-limit:] if limit else []
+    return {
+        "count": len(rows),
+        "shown": len(shown),
+        "truncated": len(shown) < len(rows),
+        "by_lifecycle": dict(sorted(Counter(
+            str(row.get("lifecycle")) for row in rows).items())),
+        "events": shown,
+    }
 
 
 def open_summary(inbox: Path, limit: int) -> dict[str, Any]:
@@ -1018,6 +1038,9 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--owner")
     list_parser.add_argument("--lifecycle", action="append", default=[])
     list_parser.add_argument("--source-id", "--thread-id", dest="source_id")
+    list_parser.add_argument("--limit", type=int, default=20,
+                             help="events to print (newest month buckets); default 20")
+    list_parser.add_argument("--all", action="store_true", help="print every matching event")
 
     summary_parser = subparsers.add_parser("open-summary")
     summary_parser.add_argument("--inbox", type=Path, default=default_inbox())
@@ -1046,6 +1069,7 @@ def build_parser() -> argparse.ArgumentParser:
                                default="human")
     settle_parser.add_argument("--incident", action="store_true")
 
+    subparsers.add_parser("usage")
     cleanup_parser = subparsers.add_parser("cleanup")
     cleanup_parser.add_argument("--dry-run", action="store_true", required=True)
     return parser
@@ -1054,6 +1078,22 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    started = time.monotonic()
+    code = 1
+    try:
+        code = run_parsed(parser, args)
+    except SystemExit as exit_:
+        code = exit_.code if isinstance(exit_.code, int) else 1
+        raise
+    finally:
+        cli_usage.record(CLI, args.command, started, code)
+    return code
+
+
+def run_parsed(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.command == "usage":
+        print_json(cli_usage.summarize(CLI, COMMANDS))
+        return 0
     now = utc_now()
     try:
         if args.command == "collect":
@@ -1072,7 +1112,8 @@ def main(argv: list[str] | None = None) -> int:
             result = claim(args.root, args.from_owner, args.contract, now)
         elif args.command == "list":
             result = list_events(args.root, args.owner, set(args.lifecycle or
-                                                            []), args.source_id)
+                                                            []), args.source_id,
+                                 None if args.all else max(args.limit, 0))
         elif args.command == "open-summary":
             result = open_summary(args.inbox, args.limit)
         elif args.command == "record-occurrence":

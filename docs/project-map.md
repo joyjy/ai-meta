@@ -15,9 +15,8 @@
 | 名称 | 类型 | 维护边界 | 主要职责 | Context |
 | --- | --- | --- | --- | --- |
 | `ai-meta` | AI 系统模块 | `<maintenance-checkout>` | `~/.ai/` 配置、共享指令、工具路由、ai-meta 自有 skills、项目 skill 注册、commands、软链发布、context 协议 | `amt` |
-| `tandem` | 工作域 | `Projects/tandem` | 工作协作、本人表达画像与真实回复校准；跨客户端加载入口归 ai-meta | `td` |
+| `tandem` | 工作域 | `Projects/tandem` | 工作协作、本人表达画像与真实回复校准、Vikunja snippets 知识库与值班工单分析；跨客户端加载入口归 ai-meta | `td`、`td:snippet` |
 | `gtd` | 工作域 | `Projects/gtd` | 目标、任务、待办、日历、项目推进，以及 WorkItem 投影、tracker lifecycle、持久资源和 source closeout | `gtd` |
-| `snippet-lab` | 工作域 | `reference/snippet-lab` | 个人可复用 snippets 与示例用户值班周期工单分析 | `snippet-lab` |
 | `symphony-lite` | AI 系统模块（待封存） | `Projects/symphony-lite` | 历史 WorkItem 控制核与 Dashboard；冻结新增能力，只保留迁移和封存前的兼容入口，不再拥有 WorkItem lifecycle 或执行自动化 | `sl` |
 | `larkbot` | AI 系统模块 | `Projects/larkbot` | 飞书机器人、消息收发、会议助理、prompt、运行时安全边界，以及 canonical `skills/larkbot` agent workflow | `larkbot` |
 | `rollerskate` | AI 系统模块 | `Projects/rollerskate` | 由中心 Server 与用户设备上的 Local Runtime 组成的 Agent proactive system；Local 负责 WorkItem 所触发的 Agent Run、Session、workspace authority、执行、恢复与 trace，但不拥有 WorkItem lifecycle | `rs` |
@@ -32,6 +31,7 @@
 | `final-form` | 把模糊需求收束为可执行 work order，明确 scope、验收、阻塞问题和分发目标 | `skills/final-form/SKILL.md` |
 | `grill` | 对 plan、设计、规则和协作模式做连续追问压测，达成可执行或可放弃的理解 | `skills/grill/SKILL.md` |
 | `steelman` | 在取证后、裁决前恢复争议观点的最强可行版本，完成有界挑战、分水岭识别与明确裁决 | `skills/steelman/SKILL.md` |
+| `piggyback` | 在不熟悉领域的设计和写作开始前，借领域高手的做法加深请求：补上高手做法、一手材料、方法和外部验证，范围不变 | `skills/piggyback/SKILL.md` |
 | `review-router` | 为代码变更选择 simple、challenge、two-axis、quality、prune 或 evolution review；通过显式 `design` strategy 评审方案语义与可实施性 | `skills/review-router/SKILL.md` |
 | `loop-ledger` | 从 intent、context、`ff` 编译路径显式绑定的可恢复执行契约，并用验证和人工检查点控制推进 | `skills/loop-ledger/SKILL.md`, `commands/ll.md`, `scripts/verify-ll-contract` |
 | `context` | prompt-time 路由注入与 Stop 输出检查；共享插件包装，输入、输出逻辑分离 | `plugins/route-context/`, `docs/architecture/context-suite.md` |
@@ -46,14 +46,16 @@
 
 | 工具 | 源码 owner | 职责与边界 | Context |
 | --- | --- | --- | --- |
-| `agent-pulse` | `Projects/agent-pulse` | agent 运行环境：`agent-state` 会话 hook 与本机广播、`worknet` 网络控制、`beacon` 桌面看板、Hammerspoon 配置。入口见 [agent-pulse README](../../agent-pulse/README.md)。 | `pulse`、`pulse:network` |
+| `agent-pulse` | `Projects/agent-pulse` | agent 运行环境：`agent-state` 会话 hook 与本机广播、`worknet` 网络控制、`beacon` 桌面看板、Hammerspoon 配置，以及 canonical `skills/beacon-say` agent workflow。入口见 [agent-pulse README](../../agent-pulse/README.md)。 | `pulse`、`pulse:network` |
 
-## snippet-lab 子模块
+## tandem knowledge 子模块
+
+源码位于 `~/Documents/projects/tandem/knowledge/`（Tandem 源码仓库，不是 Vault 的 `Projects/tandem`），2026-11-09 由已退役的 snippet-lab 并入。
 
 | 子模块 | 职责 | 入口 |
 | --- | --- | --- |
-| `lark-ticket-insights` | 示例用户值班周期的工单分析方法与输出契约 | `reference/snippet-lab/skills/lark-ticket-insights/SKILL.md` |
-| `vikunja-snippets` | Vikunja snippets 工作区的 agent 发现、读写边界与回读流程 | `reference/snippet-lab/skills/vikunja-snippets/SKILL.md` |
+| `lark-ticket-insights` | 示例用户值班周期的工单分析方法与输出契约 | `~/Documents/projects/tandem/knowledge/skills/lark-ticket-insights/SKILL.md` |
+| `vikunja-snippets` | Vikunja snippets 工作区的 agent 发现、读写边界与回读流程 | `~/Documents/projects/tandem/knowledge/skills/vikunja-snippets/SKILL.md` |
 
 ## rollerskate 子模块
 
@@ -83,6 +85,7 @@ ai-meta 可以生成一个放在 `reference` 层并同步到私有 GitHub 的脱
 - `ai-meta` 负责 AI 工具底座：规则、路由、ai-meta 自有技能、项目 skill 注册、安装和跨客户端一致性；项目能力 skill 的 workflow 由对应 owner repo 维护。
 - `gtd` 负责现实目标和 WorkItem 控制面：从 source 生成可重建投影，维护 tracker lifecycle、资源、执行 binding、dispatch / reconcile adapter 和 source closeout。
 - `rollerskate` 负责 WorkItem 执行面：接收 GTD 固定 revision 的运行请求，拥有 Agent Run、Session、workspace grant / revision、异步 continuation、恢复和 trace；它不读取或推进 WorkItem lifecycle。
+- 本机后台工作按谁持有循环分 owner。自己持有服务或消费循环的常驻进程，由 GTD runtime manager 托管。定时、轮询和文件变化触发的任务，由 Rollerskate Local Runtime 承担。新增任务的注册方式见 [本机工具管理](architecture/local-tool-management.md#运行形态)。
 - `symphony-lite` 进入封存准备状态：不再新增 WorkItem ownership 或自动化能力，只在迁移完成前保留历史实现和兼容入口。
 
 WorkItem 自动化不建立第三套事实源：GTD 的 `scripts/workitem/` 是控制面 owner，Rollerskate 的 Local Runtime 是执行面 owner；`~/.ai/symphony/` 只是既存运行态路径，名称不表示 `symphony-lite` 继续拥有 WorkItem。Rollerskate 的中心 Server 提供跨设备可达的控制面，但不成为用户本地执行数据的事实源；每台电脑上的 Local Runtime 才持有 workspace、权限、secrets、Event/Runtime state 和停止权，并用同一个 loop 接收可信网络 Command / Response 与本地 Event / Schedule，编排 trigger、capability、attention、Agent 和 plugin。它不接管 `gtd` 的个人任务与 WorkItem lifecycle、`ai-meta` 的跨客户端规则、Matrix 的消息历史或 `larkbot` 的飞书消息事实。当前已实现内容全部归 `rollerskate / local`；入口是 `Projects/rollerskate/docs/architecture/index.md`，未实现部分仍以 `Projects/rollerskate/docs/plan/index.md` 为计划入口。

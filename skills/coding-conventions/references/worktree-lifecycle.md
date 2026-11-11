@@ -1,10 +1,22 @@
 # Git worktree 生命周期
 
 - worktree 放在主项目目录旁，使用 `<repo>-wt-<purpose>` 命名。
+- worktree 新分支按 `../templates/git/AGENTS.md`「Branch 命名」命名，要推送时先读远端分支规则。
+- Codex sandbox 中，linked worktree 的 index 在主仓库 `.git/worktrees/<name>/`，可能不在当前写入根内。Git 写操作前用 `git rev-parse --git-common-dir` 确认；越界时首次就为精确的 git 命令申请窄提权。
 - 创建后立即在项目 context 的 `Critical Context` 登记。登记 exact path、branch、purpose 和 cleanup condition。
 - 未完成登记时，禁止继续任务。
 - cleanup condition 写可观察的终态，例如 MR 合并或关闭、交付完成。用户确认是删除步骤，不能写成 cleanup condition。
-- 任务结束时，用 `git worktree list` 对照该项目全部 route 的登记，并回读各 cleanup condition 的当前状态。未登记的 worktree 一并列出。
-- cleanup condition 已满足时，先核验工作区 clean，且本地 HEAD 等于 MR 最终 head 或是其祖先。核验通过后，在本轮最终回复中列出 exact path、branch 和核验结果，请用户确认删除。禁止只登记为保留。
-- cleanup condition 未满足或核验不通过时，保留 worktree，并在登记中写明原因。
-- 用户确认后用 `git worktree remove <path>` 删除，不加 `--force`。squash 合并的分支用 `git branch -D` 删除。删除后同步移除登记。
+- 任务结束和 `load-context` 恢复项目时，运行 `~/.ai/scripts/wt-sweep list --repo <主仓目录名>`；盘点整个工作区时不带 `--repo`。主仓不在默认扫描根 `~/Documents/projects` 下时，`list` 和 `remove` 都加 `--root <工作区路径>`（可重复传入）。对照登记处理结果，未登记的 worktree 补登记。
+- 是否可删以 `wt-sweep` 的判定为准，不另写脚本判断：
+  - `removable`：没有未提交的真实改动，并满足下面一条。直接执行 `wt-sweep remove <path>...`，不再请用户确认。
+    - MR 已合并或关闭，本地 HEAD 等于 MR 最终 head 或是其祖先。
+    - 没有 MR（如 l3 本地合回）：分支 reflog 里有自己的提交，HEAD 已在 `origin/HEAD` 指向的 default branch 上（本地或远端）。新建或固定用途的分支没有自己的提交，判 `keep`。
+  - `ask`：满足下面任一条。把 `wt-sweep list` 对这些条目的输出原样给用户，附上它打印的 `wt-sweep remove` 命令，用户确认后执行。
+    - 含 operations / CLI 执行记录（`runs/`、`outputs/`、`operations/`）。
+    - 含嵌套的 git 仓库。
+    - 登记引用了其中的未跟踪 / 忽略文件。
+    - 没有 MR，且有未跟踪文件。
+  - `keep`：保留，并在登记中写明 `wt-sweep` 给出的原因。
+  - `prunable`：目录已不存在，直接执行 `wt-sweep remove` 清除记录。
+- 删除只移除 worktree 及其中的未跟踪 / 忽略文件，不删除本地或远端分支。删除后同步移除登记。
+- `wt-sweep` 拒绝 `/`、home 及其上级作为扫描根。删除前逐个核对目标都在 worktree 内，有一个不在就整个 worktree 不删。

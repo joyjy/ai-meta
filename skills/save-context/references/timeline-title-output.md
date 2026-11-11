@@ -9,7 +9,7 @@ Role:
 - Context snapshots remain the recovery index; do not put active Doing /
   Blocked / Next Steps in Daily Note unless it is a one-off human-facing note.
 
-Append a timeline entry when the session produced substantive work:
+Write a timeline entry when the session produced substantive work:
 
 - durable file changes, commit, push, MR, issue, document, ADR, or backlog
   update;
@@ -20,6 +20,8 @@ Append a timeline entry when the session produced substantive work:
 Skip when the session only loaded context, refreshed a Codex title, checked
 status, answered a narrow question, rewrote only a context snapshot, or did
 mechanical routing / permission / setup checks recoverable elsewhere.
+
+Always pass `--session-id` with the helper's `thread_id`. The writer keeps one entry per session in each Daily Note: a repeated save replaces that entry's range and text instead of appending, so write the text for the whole session, not only the work since the previous save. After compaction, read the entry above this session's `<!-- session:<thread_id> -->` marker in the Daily Note and extend it. On a repeated save with nothing substantive since the previous entry, omit `--timeline`.
 
 When ambiguous, ask briefly or choose `--skip-timeline` for low-value noise.
 Entries are one compact line:

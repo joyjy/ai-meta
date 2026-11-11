@@ -1,10 +1,14 @@
 import importlib.machinery
 import importlib.util
+import argparse
+import contextlib
+import io
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -117,8 +121,8 @@ class AmtGitRefreshTest(unittest.TestCase):
         self,
         merge_requests: list[dict],
         *,
-        dry_run: bool = False,
-        remote_dry_run: bool = False,
+        dry_run: bool = True,
+        remote_dry_run: bool = True,
     ) -> tuple[dict, list[list[str]], list[dict]]:
         original_broker_json = self.mod.broker_json
         original_run_glab = self.mod.run_glab
@@ -261,52 +265,18 @@ class AmtGitRefreshTest(unittest.TestCase):
             ],
         )
 
-    def test_cleanup_deletes_verified_squash_merged_branches(self) -> None:
+    def test_cleanup_verifies_squash_mr_without_deleting_refs(self) -> None:
         branch = "feat-clean"
         feature_sha = self.create_feature_branch(branch)
-
-        report, delete_calls, broker_requests = self.cleanup_feature(
-            [self.merged_mr(branch, feature_sha)]
-        )
-
-        self.assertEqual(
-            report["deleted_local_branches"],
-            [{"branch": branch, "mr_iid": 12}],
-        )
-        self.assertEqual(
-            report["deleted_remote_branches"],
-            [{"branch": branch, "mr_iid": 12}],
-        )
-        self.assertEqual(git(self.clean, "branch", "--list", branch), "")
-        tracking_ref = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(self.clean),
-                "show-ref",
-                "--verify",
-                f"refs/remotes/origin/{branch}",
-            ],
-            capture_output=True,
-            check=False,
-        )
-        self.assertNotEqual(tracking_ref.returncode, 0)
-        self.assertEqual(len(delete_calls), 1)
-        self.assertIn("DELETE", delete_calls[0])
-        mr_requests = [
-            request for request in broker_requests
-            if request["resource"] == "mr-list"
-        ]
+        report, delete_calls, broker_requests = self.cleanup_feature([self.merged_mr(branch, feature_sha)])
+        self.assertEqual(report["deleted_local_branches"], [])
+        self.assertEqual(report["deleted_remote_branches"], [])
+        self.assertEqual(git(self.clean, "branch", "--list", branch), branch)
+        self.assertEqual(delete_calls, [])
+        mr_requests = [request for request in broker_requests if request["resource"] == "mr-list"]
         self.assertEqual(len(mr_requests), 1)
-        self.assertEqual(
-            mr_requests[0]["query"],
-            {
-                "scope": "all",
-                "state": "all",
-                "source_branch": branch,
-                "per_page": "100",
-            },
-        )
+        self.assertEqual(mr_requests[0]["query"]["source_branch"], branch)
+        self.assertEqual(next(x for x in report["branches"] if x["branch"] == branch)["mr_iid"], 12)
 
     def test_cleanup_skips_branch_with_open_mr(self) -> None:
         branch = "feat-open"
@@ -379,8 +349,8 @@ class AmtGitRefreshTest(unittest.TestCase):
         branch_report = next(
             item for item in report["branches"] if item["branch"] == branch
         )
-        self.assertTrue(branch_report["eligible"])
-        self.assertEqual(branch_report["action"], "dry_run")
+        self.assertFalse(branch_report["eligible"])
+        self.assertEqual(branch_report["classification"], "unique_content")
         self.assertEqual(git(self.clean, "branch", "--list", branch), branch)
         self.assertEqual(
             git(self.clean, "rev-parse", f"origin/{branch}"),
@@ -388,30 +358,93 @@ class AmtGitRefreshTest(unittest.TestCase):
         )
         self.assertEqual(delete_calls, [])
 
-    def test_remote_dry_run_deletes_local_and_preserves_remote_branch(self) -> None:
-        branch = "feat-remote-dry-run"
-        feature_sha = self.create_feature_branch(branch)
+    def review_args(self, report, *, confirm=False):
+        review = self.mod.review_docs.build_review({"repositories": [report]}, {"items": []}, None)
+        plan = self.root / "review.json"
+        plan.write_text(json.dumps({"review": review}))
+        entry = next(e for e in review["entries"] if e["branch"].startswith("feat-"))
+        return argparse.Namespace(apply_review=plan, select=[entry["entry_id"]], scope="both",
+                                  confirm=confirm, discard_unmerged=False,
+                                  timeout_seconds=30, output=self.root / "apply.json")
 
-        report, delete_calls, _broker_requests = self.cleanup_feature(
-            [self.merged_mr(branch, feature_sha)],
-            remote_dry_run=True,
-        )
+    def fresh_api(self, _remote, endpoint, _timeout):
+        if "merge_requests?" in endpoint:
+            return []
+        if "/repository/branches/" in endpoint:
+            branch = endpoint.rsplit("/", 1)[1]
+            return {"protected": False, "default": False,
+                    "commit": {"id": git(self.remote, "rev-parse", f"refs/heads/{branch}")}}
+        return {"default_branch": "main"}
 
-        self.assertEqual(
-            report["deleted_local_branches"],
-            [{"branch": branch, "mr_iid": 12}],
-        )
-        self.assertEqual(
-            report["remote_dry_run_branches"],
-            [{"branch": branch, "mr_iid": 12}],
-        )
-        self.assertEqual(report["deleted_remote_branches"], [])
+    def test_review_preview_and_selected_deletion_use_real_git_refs(self) -> None:
+        branch = "feat-reviewed"
+        self.create_feature_branch(branch)
+        git(self.writer, "switch", "main")
+        git(self.writer, "merge", "--ff-only", branch)
+        git(self.writer, "push", "origin", "main")
+        git(self.clean, "fetch", "origin")
+        report, _, _ = self.cleanup_feature([], dry_run=True)
+        entry = next(e for e in report["branches"] if e["branch"] == branch)
+        self.assertEqual(entry["classification"], "redundant")
+        args = self.review_args(report)
+        remote = self.mod.GitLabRemote("gitlab.example.com", "group/demo")
+        with patch.object(self.mod, "gitlab_remote", return_value=remote), \
+             patch.object(self.mod, "parse_gitlab_remote", return_value=remote), \
+             patch.object(self.mod, "fresh_gitlab_json", side_effect=self.fresh_api), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.mod.apply_review(args), 0)
+            self.assertEqual(git(self.clean, "branch", "--list", branch), branch)
+            self.assertTrue(git(self.remote, "branch", "--list", branch))
+            args.confirm = True
+            self.assertEqual(self.mod.apply_review(args), 0)
         self.assertEqual(git(self.clean, "branch", "--list", branch), "")
-        self.assertEqual(
-            git(self.clean, "rev-parse", f"origin/{branch}"),
-            feature_sha,
-        )
-        self.assertEqual(delete_calls, [])
+        self.assertEqual(git(self.remote, "branch", "--list", branch), "")
+        self.assertTrue(git(self.remote, "branch", "--list", "main"))
+        self.assertEqual(git(self.clean, "branch", "--show-current"), "work")
+
+    def test_unique_content_requires_approval_and_stale_snapshot_is_refused(self) -> None:
+        branch = "feat-unique"
+        self.create_feature_branch(branch)
+        report, _, _ = self.cleanup_feature([], dry_run=True)
+        item = next(e for e in report["branches"] if e["branch"] == branch)
+        self.assertEqual(item["classification"], "unique_content")
+        self.assertEqual(item["evidence"][0]["changed_files"], ["feature.txt"])
+        args = self.review_args(report, confirm=True)
+        with self.assertRaisesRegex(ValueError, "discard-unmerged"):
+            self.mod.apply_review(args)
+        args.discard_unmerged = True
+        git(self.clean, "update-ref", f"refs/heads/{branch}", self.remote_head)
+        remote = self.mod.GitLabRemote("gitlab.example.com", "group/demo")
+        with patch.object(self.mod, "gitlab_remote", return_value=remote), \
+             patch.object(self.mod, "parse_gitlab_remote", return_value=remote):
+            with self.assertRaisesRegex(ValueError, "local_sha changed"):
+                self.mod.apply_review(args)
+        self.assertTrue(git(self.remote, "branch", "--list", branch))
+
+    def test_remote_delete_lease_rejects_tip_changed_after_preflight(self) -> None:
+        branch = "feat-race"
+        old = self.create_feature_branch(branch)
+        report, _, _ = self.cleanup_feature([], dry_run=True)
+        args = self.review_args(report, confirm=True)
+        args.scope, args.discard_unmerged = "remote", True
+        (self.writer / "feature.txt").write_text("new work\n")
+        git(self.writer, "add", "feature.txt")
+        git(self.writer, "commit", "-m", "new work after scan")
+        new = git(self.writer, "rev-parse", "HEAD")
+        original = self.mod.run_git
+        def raced(repo, command, timeout):
+            if command[0] == "push":
+                git(self.writer, "push", "origin", branch)
+            return original(repo, command, timeout)
+        remote = self.mod.GitLabRemote("gitlab.example.com", "group/demo")
+        with patch.object(self.mod, "gitlab_remote", return_value=remote), \
+             patch.object(self.mod, "parse_gitlab_remote", return_value=remote), \
+             patch.object(self.mod, "fresh_gitlab_json", side_effect=self.fresh_api), \
+             patch.object(self.mod, "run_git", side_effect=raced), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.mod.apply_review(args), 1)
+        self.assertNotEqual(old, new)
+        self.assertEqual(git(self.remote, "rev-parse", f"refs/heads/{branch}"), new)
 
 
 if __name__ == "__main__":

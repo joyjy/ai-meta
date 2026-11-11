@@ -40,7 +40,7 @@
 - 个人 l3 项目的测试优先覆盖主路径 smoke / integration；确认 CLI / command 调用的接口和
   参数正确、关键接口能跑通即可。默认不为边界排列、格式细节、help 文案或内部 helper 铺大量
   单测，除非它曾真实导致事故或会造成写操作风险。
-- loop-ledger Python 测试从 repo root 运行 `python3 -m unittest discover -s scripts -p 'test_ll*.py'`；不要把 `scripts/test_*.py` 文件路径直接传给 `python -m unittest`。
+- loop-ledger Python 测试从 repo root 运行 `python3 -m unittest discover -s scripts -p 'test_ll*.py'`；单个文件也可以直接 `python3 -m unittest scripts/test_ll_<name>.py`。
 - 验证投入默认收缩：只保留有独立 oracle 的结构校验、不可逆 / 高风险写操作前的 smoke、
   以及真实事故回归。不要为了证明 agent 理解 skill 文案而写测试；不要为 ignored workpad /
   plan、探索性计划、help 文案、格式细节或模型生成实现后的同构测试投入工程化验证。

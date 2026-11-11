@@ -10,13 +10,13 @@ disable-model-invocation: true
 
 ## Git Exit Authority
 
-显式 `ee` 授权按 flow 对下方交付 scope 执行 commit、push、创建/更新 MR/PR，不重复确认；`prepare-only` 不写 Git，`local-only` 仅本地，其他明确限制优先。gate 失败阻止对应写入。此授权不含破坏性清理、issue/label/release 状态变更、merge、force push 或远端历史改写。
+显式 `ee` 授权按 flow 对下方交付 scope 执行 commit、push、创建/更新 MR/PR，不重复确认；`prepare-only` 不写 Git，`local-only` 仅本地，其他明确限制优先。gate 失败阻止对应写入。此授权不含破坏性清理、issue/label/release 状态变更、force push 或远端历史改写；merge 只含 `l3` 本地合回 default branch。
 
 从项目 `index.md` 核对 `gitlab.flow`：
 
 - `l1`：非 default topic branch 交付；release-impact unknown 阻止远端写入，纯 post-merge unknown 留 exact action。
 - `l2`：非 default topic branch 交付；非关键 release unknown 需用户接受风险。
-- `l3`：当前分支交付；非 default branch 创建/更新 MR，default branch 无 MR。默认免 review-router/GitLab settings lint，用户或项目指定评审与其他 gates 仍执行。
+- `l3`：本地合回 default branch 后直接 push，不建 MR；已在 default branch 时直接 push。合并冲突或 default branch 所在 checkout 有保留的 dirty 时，停在本地并报告。默认免 review-router/GitLab settings lint，用户或项目指定评审与其他 gates 仍执行。
 - missing/unknown：本地 commit 遵循全局分支限制；远端只准备，待 flow 明确。
 
 ## Dirty Closeout
@@ -28,7 +28,7 @@ disable-model-invocation: true
 
 只加载命中 gate 的直接 reference；specialist 也由本入口路由，不继续向下串联：
 
-- plan、durable docs、ADR 或 source comment 生命周期：`references/doc-lifecycle.md`。
+- plan 收尾、实现后历史归属或 source comment：`../doc-arch-review/references/history-placement.md`，删除 plan 前列出 exact path 并确认。ADR 准入：`../doc-arch-review/references/decision-records.md`，ee 中按严格准入执行；不满足任一正向条件时，把理由留在 source comment、架构说明、plan 归档、后续工单或 issue，不创建也不建议 ADR。
 - agent docs：直接运行 `../agent-doc-hygiene/SKILL.md`。
 - architecture/source-map：直接运行 `../doc-arch-review/SKILL.md`。
 - release preflight：`references/review-gates.md`。
@@ -48,18 +48,18 @@ disable-model-invocation: true
 ## Workflow
 
 1. **Resolve scope**：核对 roots、当前/default/target branch、平台、flow 和 plan；按 Dirty Closeout 确定交付 scope。同文件按 hunk 区分 concern，无法分离则保留并说明。首次 push 或已有 MR 时 fetch target、检查分叉；rebase 前保护保留的 dirty。
-2. **Verify implementation**：按项目适用的 coding-conventions walkthrough 完整交付 diff（交付基线后的提交及本次 dirty），只补读当前技术栈模板。范围内遗漏直接修正，超出 scope 的结构调整报告；编译和 lint 不能替代 walkthrough。复用当前 revision 的证据，补齐项目必需 checks 与最窄 acceptance；新改动、失败或未解决风险触发扩大验证。缺口说明依赖与替代证据。
+2. **Verify implementation**：所有 flow 均按 [版本检查](../../docs/reference/release-version-check.md) 比较拟发布内容与线上或已发布版本。先修复 scope 内已确认的版本遗漏，再验证产物。按项目适用的 coding-conventions walkthrough 完整交付 diff（交付基线后的提交及本次 dirty），只补读当前技术栈模板。范围内遗漏直接修正，超出 scope 的结构调整报告；编译和 lint 不能替代 walkthrough。复用当前 revision 的证据，补齐项目必需 checks 与最窄 acceptance；新改动、失败或未解决风险触发扩大验证。缺口说明依赖与替代证据。
 3. **Review test necessity**：所有 flow 均执行，按 `../coding-conventions/templates/testing/AGENTS.md` 的统一保留标准，专门审查完整交付 diff 中新增、修改的测试及直接重复覆盖。逐项说明具体故障后果、已有覆盖缺口和持续保留依据，决定复用、保留、精简或移除；测试通过不能替代必要性判断。范围限于本次交付，不扩为全仓测试减法；文件删除仍遵守确认边界。无相关测试时说明不适用，有相关测试时报告取舍与检测能力损失；未精简时说明保留原因。
 4. **Review**：`l1/l2/unknown` 读取 `../review-router/SKILL.md`，以 `caller=engineering-exit` 从 simple 开始，最多升级一次；`l3` 仅执行用户或项目指定评审。修复 blocking findings 并重跑相关检查；非阻塞扩展记录 follow-up。
 5. **Sync docs**：行为、契约、runtime 或入口变化同步 owner；结构变化检查 source map。按 Conditional References 执行命中的 docs gates，不扩为全仓审计。
 6. **Prepare delivery**：`l1/l2` 或 release-ready 请求执行 preflight；准备 MR 时校验 `mr-template.md` headings。仅对当前项目 exact ledger/final-form 按 `state-closeout.md` 收口，报告 ledger path，不派发 audit。
-7. **Git exit**：复核 staged scope、branch、flow、checks 和 target freshness，按上述 authority 提交交付。push 前对交付范围内未推送的提交运行 `git rebase --autosquash <upstream>` 并入 fixup，确认每个提交对应一个 concern。MR 写后按 `mr-template.md` 回读 identity、保护段、CI attachment 并遵循等待边界。
+7. **Git exit**：复核 staged scope、branch、flow、checks 和 target freshness。确认版本证据仍匹配发布基线和拟发布内容，再按上述 authority 提交交付。push 前对交付范围内未推送的提交运行 `git rebase --autosquash <upstream>` 并入 fixup，确认每个提交对应一个 concern。MR 写后按 `mr-template.md` 回读 identity、保护段、CI attachment 并遵循等待边界。
 8. **Settle findings**：scope 对应的维护 finding 已验证并 commit 后，主动按 GTD「修复交付收尾」结算；缺少 exact binding、commit 或证据则报告原因，不把部分修复标为完成。
 
 ## Exit Criteria
 
 - dirty 全部按 Dirty Closeout 结算，未交付项有具体原因、解除条件和下一步。
-- checks/review/docs/release/MR gates 有结论和证据；skipped 明确原因与替代证据。durable docs 与交付行为一致，state closeout 只处理 exact match。
+- 版本检查有结论和证据。交付内必需的版本变更缺失、错误或不一致时，阻止受影响的 Git 交付和 ready 结论。checks/review/docs/release/MR gates 有结论和证据；skipped 明确原因与替代证据。durable docs 与交付行为一致，state closeout 只处理 exact match。
 - Git 写入只含已验证交付 scope；HEAD 相对 target 的 freshness 已证明，远端动作不超授权。
 
 ## Output

@@ -51,6 +51,7 @@ Label 调整后，同步更新受影响 concept 的 `tags` 和 `coding-conventio
 - [UI Interaction](./ui-interaction.md)
 - [基于主键扫描的破坏性清理](./primary-key-sweep-for-destructive-cleanup.md)
 - [带 owner 校验与主动续期的分布式租约](./renewable-owner-checked-lease.md)
+- [同 key 在途请求合并](./inflight-request-coalescing.md)
 - [拥有异步资源的 graceful shutdown](./graceful-shutdown-anti-leak.md)
 - [业务过程优先的数仓建模](./business-process-first-warehouse-modeling.md)
 - [单写权威下的转发型边缘副本](./single-writer-forwarding-edge-replica.md)

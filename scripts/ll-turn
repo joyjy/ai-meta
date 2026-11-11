@@ -8,12 +8,31 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+import cli_usage
 from ll_contract_file import LLDocument, load_path, render_hot_block, runtime_projection
 
 LEDGER = Path(__file__).with_name("ll-ledger")
+CLI = "ll-turn"
+SCHEMAS = {
+    "compile-reply": (
+        "result JSON: status (continue|completed|blocked|needs_human), "
+        "summary, evidence[], blocker, optional acceptance_met[{index, "
+        "evidence}] where index is the 1-based Root done_when position, and "
+        "optional next_focus{id, goal, done_when[]}"
+    ),
+    "add-focus": "focus JSON: id, goal, and done_when[]",
+    "activate-focus": "transition JSON: focus_id",
+    "complete-focus": "transition JSON: focus_id",
+    "supersede-focus": "transition JSON: focus_id",
+    "reject-hot": "rejection JSON: reason",
+    "human-decision": "decision JSON: decision",
+    "session-rebind": "binding JSON: from_session_id and to_session_id",
+    "amend-root": "human-gated JSON: actor=\"user\" and goal",
+}
 
 
 def fail(message: str) -> int:
@@ -122,21 +141,6 @@ def run(command: str, ledger: Path, input_path: Path) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    schemas = {
-        "compile-reply": (
-            "result JSON: status (continue|completed|blocked|needs_human), "
-            "summary, evidence[], blocker, and optional "
-            "next_focus{id, goal, done_when[]}"
-        ),
-        "add-focus": "focus JSON: id, goal, and done_when[]",
-        "activate-focus": "transition JSON: focus_id",
-        "complete-focus": "transition JSON: focus_id",
-        "supersede-focus": "transition JSON: focus_id",
-        "reject-hot": "rejection JSON: reason",
-        "human-decision": "decision JSON: decision",
-        "session-rebind": "binding JSON: from_session_id and to_session_id",
-        "amend-root": "human-gated JSON: actor=\"user\" and goal",
-    }
     parser = argparse.ArgumentParser(
         description=__doc__,
         epilog=(
@@ -146,20 +150,29 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name, schema in schemas.items():
+    for name, schema in SCHEMAS.items():
         child = subparsers.add_parser(name, help=schema, description=schema)
         child.add_argument("ledger", help="exact segmented .ll path")
         child.add_argument("--input", required=True, help="JSON payload path")
+    subparsers.add_parser("usage", help="report local call statistics")
     return parser.parse_args()
 
 
 def main() -> int:
+    started = time.monotonic()
     args = parse_args()
-    return run(
+    if args.command == "usage":
+        summary = cli_usage.summarize(CLI, [*SCHEMAS, "usage"])
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        cli_usage.record(CLI, "usage", started, 0)
+        return 0
+    code = run(
         args.command,
         Path(args.ledger).expanduser().resolve(),
         Path(args.input).expanduser().resolve(),
     )
+    cli_usage.record(CLI, args.command, started, code)
+    return code
 
 
 if __name__ == "__main__":

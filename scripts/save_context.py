@@ -77,11 +77,29 @@ def ensure_daily_note(path: Path, now: datetime) -> str:
     return f"# {now.month}月{now.day}日\n\n## {now.year} {chinese_weekday(now)}\n\n### Timeline\n\n"
 
 
-def append_timeline(daily: str, entry: str) -> tuple[str, bool]:
+def session_marker(session_id: str) -> str:
+    # Indented under its entry so Obsidian hides it and gtd's `- ` line parsers skip it.
+    return f"  <!-- session:{session_id} -->"
+
+
+def append_timeline(daily: str, entry: str,
+                    session_id: str = "") -> tuple[str, str]:
+    """Return the note and appended / replaced / unchanged; a session keeps one entry per note."""
     if "### Timeline" not in daily:
         daily = daily.rstrip() + "\n\n### Timeline\n\n"
 
     line = f"- {entry}"
+    lines = daily.rstrip("\n").split("\n")
+    start = next(i for i, text in enumerate(lines) if text.strip() == "### Timeline")
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("#")), len(lines))
+    if session_id:
+        marker = session_marker(session_id)
+        for index in range(start + 2, end):
+            if lines[index].strip() == marker.strip() and lines[index - 1].startswith("- "):
+                if lines[index - 1] == line:
+                    return daily, "unchanged"
+                lines[index - 1] = line
+                return "\n".join(lines) + "\n", "replaced"
 
     def normalized_timeline_text(value: str) -> str:
         value = value.strip()
@@ -95,9 +113,13 @@ def append_timeline(daily: str, entry: str) -> tuple[str, bool]:
         for existing_line in daily.splitlines()
     }
     if normalized_timeline_text(line) in existing:
-        return daily, False
+        return daily, "unchanged"
 
-    return daily.rstrip() + "\n" + line + "\n", True
+    # A full daily report adds sections after Timeline; insert before the next heading, not at file end.
+    while end > start + 1 and not lines[end - 1].strip():
+        end -= 1
+    lines[end:end] = [line, session_marker(session_id)] if session_id else [line]
+    return "\n".join(lines) + "\n", "appended"
 
 
 def read_context(args: argparse.Namespace) -> str:
@@ -170,6 +192,26 @@ def fallback_parse_frontmatter(frontmatter: str) -> dict[str, Any]:
     return data
 
 
+def reject_trailing_comments(yaml: Any, text: str, label: str) -> None:
+    """Fail on `value #...`: YAML reads ` #` after a plain scalar as a comment and silently truncates it."""
+    lines = text.splitlines()
+    pending = [yaml.compose(text)]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, yaml.ScalarNode):
+            if node.style is None and node.end_mark.line < len(lines):
+                rest = lines[node.end_mark.line][node.end_mark.column:]
+                if re.match(r"\s+#", rest):
+                    raise ValueError(
+                        f"{label} line {node.end_mark.line + 1}: quote the value; "
+                        "' #' starts a YAML comment and would truncate it")
+        elif isinstance(node, yaml.SequenceNode):
+            pending.extend(node.value)
+        elif isinstance(node, yaml.MappingNode):
+            for key, value in node.value:
+                pending.extend((key, value))
+
+
 def parse_frontmatter(frontmatter: str) -> dict[str, Any]:
     try:
         import yaml  # type: ignore[import-not-found]
@@ -180,6 +222,7 @@ def parse_frontmatter(frontmatter: str) -> dict[str, Any]:
             loaded = yaml.safe_load(frontmatter)
         except yaml.YAMLError as exc:
             raise ValueError(f"context YAML is invalid: {exc}") from exc
+        reject_trailing_comments(yaml, frontmatter, "context YAML")
         if not isinstance(loaded, dict):
             raise ValueError("context YAML frontmatter must be a mapping")
         parsed = loaded
@@ -241,6 +284,7 @@ def parse_workstream_payload(text: str) -> tuple[dict[str, Any], str]:
         loaded = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise ValueError(f"workstream YAML is invalid: {exc}") from exc
+    reject_trailing_comments(yaml, text, "workstream YAML")
     if not isinstance(loaded, dict):
         raise ValueError("workstream payload must be a mapping")
 
@@ -361,6 +405,12 @@ def main() -> int:
         help="One-line Daily Note timeline text without leading '- '",
     )
     parser.add_argument(
+        "--session-id",
+        default="",
+        help=("Client session or thread id; a later save from the same session "
+              "replaces its timeline entry for that date instead of appending"),
+    )
+    parser.add_argument(
         "--date",
         default="",
         help="Daily Note date in YYYY-MM-DD. Defaults to today.",
@@ -437,6 +487,8 @@ def main() -> int:
                 parser.error("--date must be in YYYY-MM-DD format")
         else:
             timeline_now = datetime.now()
+    if args.session_id and not CONTEXT_NAME_RE.fullmatch(args.session_id):
+        parser.error("--session-id must be letters, digits, '.', '_' or '-'")
 
     if args.validate_only:
         print("validation succeeded")
@@ -473,10 +525,10 @@ def main() -> int:
     now = timeline_now
     path = daily_note_path(now)
     daily = ensure_daily_note(path, now)
-    daily, appended = append_timeline(daily, args.timeline.strip())
-    if appended:
+    daily, status = append_timeline(daily, args.timeline.strip(), args.session_id)
+    if status != "unchanged":
         path.write_text(daily, encoding="utf-8")
-        print(f"appended {path}: - {args.timeline.strip()}")
+        print(f"{status} {path}: - {args.timeline.strip()}")
     else:
         print(f"timeline already exists {path}: - {args.timeline.strip()}")
     return 0

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from ll_contract_file import load_path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ll_contract_file import load_path  # noqa: E402
 
 SCRIPT = Path(__file__).with_name("ll-compile")
 

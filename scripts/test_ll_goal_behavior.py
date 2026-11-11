@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).parent
 COMPILER = ROOT / "ll-compile"
 GOAL_RENDERER = ROOT / "ll-goal-objective"
 CASES = ROOT / "fixtures" / "ll-goal-evals.json"
+
+
+def setUpModule():
+    usage = tempfile.TemporaryDirectory()
+    unittest.addModuleCleanup(usage.cleanup)
+    patcher = mock.patch.dict(os.environ, {"AI_META_USAGE_DIR": usage.name})
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 class LLGoalBehaviorEvalTest(unittest.TestCase):

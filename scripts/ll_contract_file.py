@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 FRONT_LINE_COUNT = 8
-HOT_PACKET_PROTOCOL = "ll-turn@1"
+HOT_PACKET_PROTOCOL = "ll-turn@2"
+HOT_PACKET_LEGACY_PROTOCOL = "ll-turn@1"
 HOT_PACKET_SOFT_TARGET = 1200
 HOT_PACKET_HARD_LIMIT = 1800
 HOT_PACKET_LEGACY_LIMITS = {(800, 1200)}
@@ -44,6 +45,8 @@ class LLRuntimeProjection:
     status: str
     revision: str
     last_summary: str | None
+    open_acceptance: list[tuple[int, str]]
+    decisions: list[str]
 
 
 def _merge(target: dict[str, Any], patch: dict[str, Any]) -> None:
@@ -147,6 +150,14 @@ def _validate_runtime_event(event: dict[str, Any]) -> None:
         if result.get("status") == "completed" and not evidence:
             raise ValueError(
                 "reply_compiled completed result requires evidence")
+        acceptance_met = result.get("acceptance_met", [])
+        if not isinstance(acceptance_met, list) or not all(
+                isinstance(item, dict) and type(item.get("index")) is int
+                and _non_empty_text(item.get("evidence"))
+                for item in acceptance_met):
+            raise ValueError(
+                "reply_compiled result.acceptance_met items require integer "
+                "index and non-empty evidence")
         if "blocker" not in result:
             raise ValueError("reply_compiled result.blocker is required")
         blocker = result.get("blocker")
@@ -206,12 +217,33 @@ def _normalized_focus(value: dict[str, Any]) -> dict[str, Any]:
     return focus
 
 
+def _open_acceptance(
+        root_done: list[Any], met: set[int]) -> list[tuple[int, str]]:
+    return [(index, " ".join(str(item).split()))
+            for index, item in enumerate(root_done, start=1)
+            if index not in met]
+
+
 def runtime_projection(document: LLDocument) -> LLRuntimeProjection:
     contract = document.contract
     root_goal = _front_text(
         contract.get("ll_contract", {}).get("target", {}).get("outcome"))
     root_done = contract.get("ll_contract", {}).get("verification", {}).get(
         "done_when", [])
+    tracks_acceptance = hot_packet_protocol(contract) == HOT_PACKET_PROTOCOL
+    met: set[int] = set()
+    decisions: list[str] = []
+
+    def require_root_closable(focus_id: str) -> None:
+        if not tracks_acceptance or focus_id != "root":
+            return
+        unmet = _open_acceptance(root_done, met)
+        if unmet:
+            listed = "; ".join(f"[{index}] {text}" for index, text in unmet)
+            raise ValueError(
+                f"Root has open acceptance items: {listed}; list them in "
+                "acceptance_met with evidence, or report blocked/needs_human")
+
     focuses: dict[str, dict[str, Any]] = {
         "root": {
             "id": "root",
@@ -251,9 +283,13 @@ def runtime_projection(document: LLDocument) -> LLRuntimeProjection:
             focus_id = str(event["focus_id"]).strip()
             if focus_id not in focuses:
                 raise ValueError(f"unknown focus: {focus_id!r}")
+            require_root_closable(focus_id)
             terminal.add(focus_id)
             if active_id == focus_id:
                 active_id = None
+        elif event_type == "exit":
+            if event.get("state") == "done":
+                require_root_closable("root")
         elif event_type == "reply_compiled":
             if active_id is None and status == "active":
                 active_id = next((
@@ -271,6 +307,14 @@ def runtime_projection(document: LLDocument) -> LLRuntimeProjection:
                 focuses[focus_id] = normalized
                 next_focus_id = focus_id
             last_summary = " ".join(str(result["summary"]).split())
+            if tracks_acceptance:
+                for item in result.get("acceptance_met", []):
+                    index = item["index"]
+                    if not 1 <= index <= len(root_done):
+                        raise ValueError(
+                            f"acceptance_met index out of range: {index}; "
+                            f"Root has {len(root_done)} items")
+                    met.add(index)
             result_status = result["status"]
             if result_status in {"blocked", "needs_human"}:
                 status = result_status
@@ -279,6 +323,7 @@ def runtime_projection(document: LLDocument) -> LLRuntimeProjection:
                     terminal.add(active_id)
                 active_id = next_focus_id
             elif result_status == "completed" and active_id:
+                require_root_closable(active_id)
                 terminal.add(active_id)
                 active_id = None
         elif event_type == "hot_rejected":
@@ -286,6 +331,7 @@ def runtime_projection(document: LLDocument) -> LLRuntimeProjection:
             active_id = None
         elif event_type == "human_decision":
             status = "active"
+            decisions.append(" ".join(str(event["decision"]).split()))
         elif event_type == "session_rebind":
             status = "active"
 
@@ -315,6 +361,8 @@ def runtime_projection(document: LLDocument) -> LLRuntimeProjection:
         status=status,
         revision=revision,
         last_summary=last_summary,
+        open_acceptance=_open_acceptance(root_done, met),
+        decisions=decisions,
     )
 
 
@@ -420,7 +468,8 @@ def hot_packet_budget_report(
 def supports_hot_packet_policy(policy: Any) -> bool:
     if not isinstance(policy, dict):
         return False
-    if policy.get("protocol") != HOT_PACKET_PROTOCOL:
+    if policy.get("protocol") not in {
+            HOT_PACKET_PROTOCOL, HOT_PACKET_LEGACY_PROTOCOL}:
         return False
     limits = (policy.get("soft_target"), policy.get("hard_limit"))
     return limits == (HOT_PACKET_SOFT_TARGET, HOT_PACKET_HARD_LIMIT) or \
@@ -437,7 +486,15 @@ def hot_packet_limits(contract: dict[str, Any]) -> tuple[int, int]:
 def uses_bounded_hot_packet(contract: dict[str, Any]) -> bool:
     policy = contract.get("runtime_binding", {}).get("hot_packet")
     return (isinstance(policy, dict) and
-            policy.get("protocol") == HOT_PACKET_PROTOCOL)
+            policy.get("protocol") in {
+                HOT_PACKET_PROTOCOL, HOT_PACKET_LEGACY_PROTOCOL})
+
+
+def hot_packet_protocol(contract: dict[str, Any]) -> str:
+    policy = contract.get("runtime_binding", {}).get("hot_packet")
+    if isinstance(policy, dict) and policy.get("protocol") == HOT_PACKET_PROTOCOL:
+        return HOT_PACKET_PROTOCOL
+    return HOT_PACKET_LEGACY_PROTOCOL
 
 
 def validate_hot_packet_budget(
@@ -502,6 +559,42 @@ def render_front(contract: dict[str, Any], path: Path) -> list[str]:
     return lines
 
 
+def _local_done_line(
+        projection: LLRuntimeProjection, tracks_acceptance: bool) -> str:
+    focus = projection.active_focus
+    done = _front_text(focus.get("done_when")) if focus else "不得继续执行"
+    reconcile = "then reconcile Root before terminal completion"
+    if focus and tracks_acceptance:
+        unmet = projection.open_acceptance
+        if focus["id"] == "root":
+            done = "、".join(
+                f"[{index}] {text}" for index, text in unmet) or "无未满足项"
+        else:
+            indexes = ",".join(str(index) for index, _ in unmet) or "none"
+            reconcile = f"then reconcile Root open=[{indexes}]"
+    return f"Local done: {done}; {reconcile}"
+
+
+def _decisions_line(decisions: list[str], room: int) -> str:
+    """Keep whole decisions, newest first; never cut one mid-text."""
+    prefix = "Decisions: "
+    if not decisions:
+        return f"{prefix}none"
+    shown: list[str] = []
+    used = len(prefix) + len("; +99 more in ledger")
+    for decision in reversed(decisions):
+        cost = len(decision) + (1 if shown else 0)
+        if used + cost > room:
+            break
+        shown.append(decision)
+        used += cost
+    hidden = len(decisions) - len(shown)
+    parts = ["；".join(shown)] if shown else []
+    if hidden:
+        parts.append(f"+{hidden} more in ledger")
+    return prefix + "; ".join(parts)
+
+
 def render_hot_block(document: LLDocument, path: Path) -> list[str]:
     projection = runtime_projection(document)
     contract = document.contract
@@ -509,9 +602,10 @@ def render_hot_block(document: LLDocument, path: Path) -> list[str]:
     target = ll_contract.get("target", {})
     authorization = ll_contract.get("authorization", {})
     runtime = contract.get("runtime_binding", {})
+    protocol = hot_packet_protocol(contract)
+    tracks_acceptance = protocol == HOT_PACKET_PROTOCOL
     focus = projection.active_focus
     focus_goal = _front_text(focus.get("goal")) if focus else "无；等待人工处理"
-    focus_done = _front_text(focus.get("done_when")) if focus else "不得继续执行"
     ask_before: list[str] = []
     for value in [authorization.get("ask_before"), runtime.get("call_user_when")]:
         if isinstance(value, list):
@@ -523,14 +617,24 @@ def render_hot_block(document: LLDocument, path: Path) -> list[str]:
         f"LL: {_front_text(ll_contract.get('id'))} | status={projection.status} | hot={projection.revision}",
         f"Root: {projection.root_goal}",
         f"Focus: {focus_goal}",
-        f"Local done: {focus_done}; then reconcile Root before terminal completion",
+        _local_done_line(projection, tracks_acceptance),
         f"Scope: include={_front_text(target.get('required_artifacts'))}; exclude={_front_text(target.get('out_of_scope'))}",
         "Guardrails: one active focus; Root is final authority; ask before=" +
         _humanize_markers(ask_before),
-        f"Reply: {HOT_PACKET_PROTOCOL}; compile-reply with bound exact LL path; prose is not state.",
-        "Contract: active goal binds exact path; never infer newest.",
     ]
     soft_target, hard_limit = hot_packet_limits(contract)
+    if tracks_acceptance:
+        lines.append(
+            f"Reply: {protocol}; compile-reply with bound exact LL path; "
+            "list met Root items in acceptance_met; record user decisions "
+            "with human-decision; prose is not state.")
+        room = hard_limit - len("\n".join(lines)) - 1
+        lines.append(_decisions_line(projection.decisions, room))
+    else:
+        lines.extend([
+            f"Reply: {protocol}; compile-reply with bound exact LL path; prose is not state.",
+            "Contract: active goal binds exact path; never infer newest.",
+        ])
     validate_hot_packet_budget(
         lines, enforce=uses_bounded_hot_packet(contract),
         soft_target=soft_target, hard_limit=hard_limit)

@@ -229,6 +229,68 @@ class SaveContextTimelineTest(unittest.TestCase):
             self.assertEqual(2, data["user_message_count"])
             self.assertEqual(1, data["excluded_control_turn_count"])
 
+    def test_sessions_range_lists_user_sessions_with_route_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            codex_home = Path(tmp) / "codex"
+            projects = Path(tmp) / "projects"
+            archived = codex_home / "archived_sessions" / "rollout-a.jsonl"
+            self.write_rollout(archived, [
+                {"timestamp": "2026-07-23T00:29:00Z", "type": "session_meta",
+                 "payload": {"id": "thread-a", "source": "vscode",
+                             "thread_source": "user", "cwd": "/repo"}},
+                self.user_message("2026-07-23T00:30:00Z", "Automation: daily",
+                                  turn_id="t0"),
+                self.user_message("2026-07-23T00:45:00Z",
+                                  "Tandem 飞书来源有新变化。先回读最新会话。",
+                                  turn_id="tp"),
+                self.user_message("2026-07-23T01:00:00Z", "do work",
+                                  turn_id="t1"),
+                {"timestamp": "2026-07-23T01:30:00Z", "type": "response_item",
+                 "payload": {"type": "function_call_output", "output":
+                             "merged workstream cn-email into "
+                             "/Users/example/.ai/contexts/hw.md"}},
+                self.user_message("2026-07-24T02:00:00Z", "next day",
+                                  turn_id="t2"),
+            ])
+            # Codex compresses archived rollouts; the range must still read them.
+            subprocess.run(["zstd", "-q", "--rm", str(archived)], check=True)
+            self.write_rollout(codex_home / "archived_sessions" / "rollout-g.jsonl", [
+                {"timestamp": "2026-07-23T01:00:00Z", "type": "session_meta",
+                 "payload": {"id": "guardian", "source": {"subagent": {}},
+                             "thread_source": "guardian_review"}},
+                self.user_message("2026-07-23T01:05:00Z", "review", turn_id="g1"),
+            ])
+            self.write_rollout(projects / "-repo2" / "s1.jsonl", [
+                {"type": "user", "sessionId": "s1", "uuid": "u1",
+                 "cwd": "/repo2", "timestamp": "2026-07-23T02:00:00Z",
+                 "message": {"role": "user", "content": "claude work"}},
+                {"type": "user", "sessionId": "s1", "uuid": "u2",
+                 "timestamp": "2026-07-23T02:01:00Z",
+                 "message": {"role": "user", "content": [{
+                     "type": "tool_result",
+                     "content": '{\n  "schema": "load-context.projection.v1",\n'
+                                '  "route": "gtd"\n}'}]}},
+            ])
+
+            proc = self.run_script("--from", "2026-07-23",
+                                   "--codex-home", str(codex_home),
+                                   "--claude-projects", str(projects))
+
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            data = json.loads(proc.stdout)
+            self.assertEqual("save-context-timeline.sessions.v1", data["schema"])
+            self.assertEqual(1, data["skipped_count"])
+            self.assertEqual(
+                [("codex", "thread-a", "/repo",
+                  ["2026-07-23T09:00:00.000+08:00"],
+                  [("2026-07-23T09:30:00.000+08:00", "hw:cn-email", "save-context")]),
+                 ("claude", "s1", "/repo2",
+                  ["2026-07-23T10:00:00.000+08:00"],
+                  [("2026-07-23T10:01:00.000+08:00", "gtd", "load-context")])],
+                [(s["client"], s["session_id"], s["cwd"], s["user_points"],
+                  [(e["at"], e["route"], e["via"]) for e in s["route_events"]])
+                 for s in data["sessions"]])
+
 
 if __name__ == "__main__":
     unittest.main()

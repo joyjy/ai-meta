@@ -249,6 +249,19 @@ class OrchestratorWorkflowTest(unittest.TestCase):
                 daily_notes[0].read_text(encoding="utf-8").count("orchestrator smoke"),
             )
 
+            # A repeated save from the same session rewrites its entry instead of adding one.
+            session = [*command[:-2], "--session-id", "s-1", "--timeline"]
+            third = subprocess.run([*session, "[09:00-09:20] session first"], text=True,
+                                   capture_output=True, check=False, env=env)
+            fourth = subprocess.run([*session, "[09:00-09:40] session again"], text=True,
+                                    capture_output=True, check=False, env=env)
+
+            self.assertEqual("appended", json.loads(third.stdout)["stages"]["context"]["timeline"])
+            self.assertEqual("replaced", json.loads(fourth.stdout)["stages"]["context"]["timeline"])
+            note = daily_notes[0].read_text(encoding="utf-8")
+            self.assertEqual(1, note.count("<!-- session:s-1 -->"))
+            self.assertNotIn("session first", note)
+
     def test_real_entry_accepts_mainline_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()
@@ -311,6 +324,38 @@ class OrchestratorWorkflowTest(unittest.TestCase):
             self.assertEqual(
                 "preflight_failed", receipt["stages"]["audit"]["reason"]
             )
+            self.assertFalse((Path(tmp) / ".ai" / "audits").exists())
+
+    def test_real_entry_help_exits_before_any_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env["HOME"] = tmp
+            env["AI_META_USAGE_DIR"] = tmp
+            admission_path = Path(tmp) / "admission.json"
+            admission_path.write_text(
+                json.dumps(READY_ADMISSION), encoding="utf-8"
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--orchestrate",
+                    "--admission-file", str(admission_path),
+                    "--audit-thread-id", "thread-that-must-not-dispatch",
+                    "--audit-cwd", "/project",
+                    "amt",
+                    "--help",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+
+            self.assertEqual(0, result.returncode)
+            self.assertIn("save-context --orchestrate <abbr>", result.stdout)
+            self.assertNotIn("save-context.checkpoint.v1", result.stdout)
             self.assertFalse((Path(tmp) / ".ai" / "audits").exists())
 
 

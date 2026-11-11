@@ -26,6 +26,8 @@ description: Route code/MR/PR, module, whole-repository, simplification and expl
 
 绑定 acceptance/spec、适用标准、diff/snapshot、context 与验证证据。Evolution 还需 caller-owned revision、fingerprint、round 和 prior findings。
 
+评审实现变更或发布配置时，按 [版本检查](../../docs/reference/release-version-check.md) 核对受影响的发布单元。此检查适用于所选 strategy，也适用于增量复审。仅当发布基线和拟发布内容一致时，复用 caller 已有的版本证据。把已确认的遗漏或不一致列为 findings，把缺少的证据列为评审缺口。
+
 显式 `design` 绑定 file/section/proposal、problem、constraints、current anchors 与 decision question；无需 diff。根据现实验证 rationale，缺少关键 decision 可判 `not-ready`。
 
 ## 变更导读

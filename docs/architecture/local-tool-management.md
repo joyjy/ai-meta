@@ -31,14 +31,19 @@
 | --- | --- | --- |
 | 按需 CLI / hook | 调用方管理执行，不注册常驻任务 | 真实命令、输出、退出码及所需客户端加载 |
 | 宿主内任务 | 项目声明宿主、加载入口、刷新周期和回执 | 源码版本、已加载版本及回执新鲜度 |
-| 独立 daemon / periodic | 沿用已有运行面；没有运行面时使用 GTD runtime | 声明校验与运行回读 |
+| 独立常驻进程 | 沿用已有运行面；没有运行面时使用 GTD runtime daemon | 声明校验与运行回读 |
+| 独立定时 / 触发任务 | Rollerskate Scheduled Task 或 Subscription；确定性命令注册为 Owner external workflow | Schedule / Subscription 状态与执行回执 |
 
-新增且没有运行面归属的独立后台任务，复用 [GTD runtime 契约](../../../gtd/docs/architecture/runtime-registration.md)。宿主已经负责调度时，保留该调度。GTD 当前只接管 daemon 和 periodic。项目声明宿主内任务，不冒充 GTD 已注册服务，也不为显示状态再起一个任务。
+两种形态按谁持有循环区分。进程自己持有服务、监听或消费循环时（如 HTTP 页面、stream consumer），按 [GTD runtime 契约](../../../gtd/docs/architecture/runtime-registration.md) 注册 daemon。Rollerskate 能观察触发条件时（cron、轮询、文件变化），注册到 Rollerskate，入口见 [Scheduled Task](../../../rollerskate/docs/architecture/scheduled-task.md) 与 [Subscription](../../../rollerskate/docs/architecture/poll-subscription.md)。页面数据的定时生成随页面留在 GTD runtime，其余不再新增 periodic 注册。宿主已经负责调度时，保留该调度。项目声明宿主内任务，不冒充已注册服务，也不为显示状态再起一个任务。
 
 按需事件快照没有固定刷新期限。宿主内周期观察按实际周期声明新鲜度。收到广播、读到旧快照或看到进程，都不能单独证明业务健康。
 
 ## 维护与停用
 
 变更安装入口、协议、宿主装配或运行形态时，同步对应 owner 文档。验证覆盖真实主路径和最大风险，完成后停止扩展。
+
+Rollerskate Schedule 注册时固定 external workflow 的授权字段，包括 executable 路径、参数、cwd、环境变量、超时和重试，不固定 executable 内容。修改内容在下一次执行时生效，每次执行的回执用 `executableDigest` 记录实际运行的内容。规则见 [Scheduled Task runbook](../../../rollerskate/docs/runbook/scheduled-tasks.md)。
+
+修改授权字段后要换版本号重新登记。先用 `rs schedule register-workflow` 登记新 Schedule，新 Schedule 创建后处于暂停状态。核对新登记的 digest 与旧 Schedule 不同后，暂停旧 Schedule，`resume` 新 Schedule。没有外部副作用的 workflow 先 `run-now` 验证；会写外部系统的 workflow 不做 `run-now`，以首次定时运行的回执为准。
 
 停用时更新 owner 的安装入口、客户端 hook 或宿主加载配置。GTD 托管任务通过原 runtime 配置停用。私有配置、快照和备份沿用已有删除边界。

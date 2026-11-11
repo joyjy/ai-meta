@@ -1,6 +1,6 @@
 # Java 个人偏好
 
-这些偏好独立于 `templates/java-gradle/AGENTS.md` 维护；`sync-conventions.sh` 只会把本文件写入 `~/Documents/projects/AGENTS.md` 的 `general` 受控块，不注入具体项目 `AGENTS.md`。
+这些偏好独立于 `templates/java-gradle/AGENTS.md` 维护；`sync-conventions.sh` 只会把本文件写入 `~/Documents/projects/AGENTS.md` 的 `preferences` 受控块，不注入具体项目 `AGENTS.md`。
 
 - Java 方法进入方法体后，第一条语句前保留一个空行。
 - 逻辑复杂时，优先用 early return / guard clause 扁平化。

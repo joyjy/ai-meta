@@ -1,5 +1,5 @@
 ---
-description: loop-ledger：启动或恢复由单个 ledger 文件支撑的 Codex goal
+description: loop-ledger：启动或恢复由单个 ledger 文件支撑的 goal
 ---
 
 input = $ARGUMENTS

@@ -1,8 +1,0 @@
-{
-  "name": "ai-meta-route-context",
-  "version": "0.1.0",
-  "description": "Prompt-time route facts for Claude Code; Codex-only Stop checks are not included.",
-  "author": {
-    "name": "joyjy"
-  }
-}

@@ -108,6 +108,29 @@ mainline:
             self.assertFalse((home / ".ai" / "contexts" /
                               "gtd.md").exists())
 
+    def test_timeline_appends_inside_timeline_after_full_report(self) -> None:
+        daily = ("# 10月26日\n\n## 2026 周一\n\n### Timeline\n- [09:00-10:00] first\n\n"
+                 "### 主要工作\n- 09:00 [amt] first\n\n### 备注\n")
+
+        updated, status = save_context.append_timeline(daily, "[15:22-17:16] late")
+
+        self.assertEqual("appended", status)
+        self.assertIn("- [09:00-10:00] first\n- [15:22-17:16] late\n\n### 主要工作", updated)
+        self.assertTrue(updated.endswith("### 备注\n"))
+
+    def test_timeline_keeps_one_entry_per_session(self) -> None:
+        daily = "# 11月9日\n\n### Timeline\n- [09:00-10:00] legacy\n\n### 主要工作\n- x\n"
+
+        first, s1 = save_context.append_timeline(daily, "[11:00-11:30] fix rs", "s-1")
+        second, s2 = save_context.append_timeline(first, "[11:00-12:10] fix rs; widen tests", "s-1")
+        third, s3 = save_context.append_timeline(second, "[11:05-11:20] other", "s-2")
+
+        self.assertEqual(["appended", "replaced", "appended"], [s1, s2, s3])
+        self.assertIn("- [09:00-10:00] legacy\n- [11:00-12:10] fix rs; widen tests\n"
+                      "  <!-- session:s-1 -->\n- [11:05-11:20] other\n"
+                      "  <!-- session:s-2 -->\n\n### 主要工作", third)
+        self.assertNotIn("[11:00-11:30]", third)
+
     def test_validate_only_checks_context_and_timeline_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -191,6 +214,23 @@ details: finish writer
             self.assertIn("preserve other details", context)
             self.assertIn("finish writer", context)
             self.assertNotIn("old forum details", context)
+
+    def test_unquoted_hash_fails_instead_of_truncating(self) -> None:
+        payload = """schema: context.workstream.v1
+state: active
+summary: fixed #102
+doing: []
+blocked: []
+next_step: null
+details: |
+  ## Heading #kept in block scalars
+"""
+        with self.assertRaisesRegex(ValueError, "line 3: quote the value"):
+            save_context.parse_workstream_payload(payload)
+        route, details = save_context.parse_workstream_payload(
+            payload.replace("fixed #102", "'fixed #102'"))
+        self.assertEqual("fixed #102", route["summary"])
+        self.assertIn("#kept", details)
 
     def test_invalid_workstream_payload_does_not_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
