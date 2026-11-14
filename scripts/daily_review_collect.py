@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect the deterministic fact packet for the daily-review skill; output is analysis data."""
+"""Collect the deterministic fact packet for automations/daily-review.md; output is analysis data."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def window(day: date) -> dict[str, Any]:
 
 
 def threads(db: Path, span: dict[str, Any], gaps: list[str]) -> list[dict[str, Any]]:
-    """Recall rule from the daily-review skill: created before window end, updated within or after it."""
+    """Recall rule from automations/daily-review.md: created before window end, updated within or after it."""
     query = (f"SELECT {', '.join(THREAD_FIELDS)} FROM threads "
              "WHERE created_at_ms < ? AND updated_at_ms >= ? ORDER BY created_at_ms")
     for mode in ("ro", "ro&immutable=1"):
@@ -268,7 +268,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         gaps.append(f"ledger_unreadable:{exc}")
     return {
         "schema": SCHEMA,
-        "contract": "analysis data for skills/daily-review; facts only, no dispositions",
+        "contract": "analysis data for automations/daily-review.md; facts only, no dispositions",
         "window": span,
         "threads": recalled,
         "audit_receipts_unsettled": unsettled_receipts(args.audits),

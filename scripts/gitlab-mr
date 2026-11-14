@@ -291,11 +291,6 @@ def put_mr_json(
     return json.loads(output) if output.strip() else {}
 
 
-def put_mr_description(
-        project: str, iid: str, description: str, hostname: str) -> None:
-    put_mr_json(project, iid, {"description": description}, hostname)
-
-
 def put_mr_reviewers(
         project: str, iid: str, reviewer_ids: list[int], hostname: str) -> None:
     put_mr_json(project, iid, {"reviewer_ids": reviewer_ids}, hostname)
@@ -550,35 +545,51 @@ def cmd_create(args: argparse.Namespace) -> int:
 
 
 def cmd_update(args: argparse.Namespace) -> int:
+    title = args.title
+    if not (args.description_file or args.replace or title is not None):
+        raise RuntimeError("update requires --title, --description-file or --replace OLD NEW")
+    if title is not None and not title.strip():
+        raise RuntimeError("title must not be empty")
     mr = resolve_mr(args.target or "", args.repo or "", args.hostname or "")
     project = project_endpoint(mr.repo)
     endpoint = f"{project}/merge_requests/{mr.iid}"
     current = glab_api(endpoint, hostname=mr.hostname)
     current_description = str(current.get("description") or "")
-    human = read_text_arg(args.description_file, "description")
-    description, managed_tail = compose_updated_description(
-        current_description, human)
+    payload: dict[str, Any] = {}
+    managed_tail = ""
+    if args.description_file:
+        human = read_text_arg(args.description_file, "description")
+        payload["description"], managed_tail = compose_updated_description(current_description, human)
+    elif args.replace:
+        old, new = args.replace
+        if not old or current_description.count(old) != 1:
+            raise RuntimeError("--replace OLD must be non-empty and occur exactly once in the current description")
+        payload["description"] = current_description.replace(old, new, 1)
+    if title is not None:
+        payload["title"] = title
     if args.dry_run:
-        print(json.dumps({
-            "mr": mr.__dict__,
-            "description": description,
-            "preserves_licloud_tail": bool(managed_tail),
-        }, ensure_ascii=False, indent=2))
+        print(json.dumps({"mr": mr.__dict__, **payload,
+                          "preserves_licloud_tail": bool(managed_tail)}, ensure_ascii=False, indent=2))
         return 0
     latest = glab_api(endpoint, hostname=mr.hostname)
-    if normalize_description(str(latest.get("description") or "")) != normalize_description(
-            current_description):
-        raise RuntimeError(
-            "MR description changed while preparing the update; rerun to avoid "
-            "overwriting concurrent Managed PR Agent content")
-    put_mr_description(project, mr.iid, description, mr.hostname)
-    readback = glab_api(endpoint, hostname=mr.hostname)
-    protected = protect_user_description(human)
-    verify_description_readback(
-        str(readback.get("description") or ""), protected, managed_tail)
+    # Compare exact changed fields: normalization would hide concurrent whitespace edits.
+    if any(str(latest.get(key) or "") != str(current.get(key) or "") for key in payload):
+        raise RuntimeError("MR fields changed while preparing the update; rerun to avoid overwriting concurrent content")
+    if all(str(latest.get(key) or "") == value for key, value in payload.items()):
+        outcome = "unchanged"
+    else:
+        try:
+            put_mr_json(project, mr.iid, payload, mr.hostname)
+            readback = glab_api(endpoint, hostname=mr.hostname)
+            if any(str(readback.get(key) or "") != value for key, value in payload.items()):
+                raise RuntimeError("readback differs from the requested fields")
+        except Exception as exc:
+            raise RuntimeError(f"MR update outcome ambiguous; inspect the MR before retrying: {exc}") from exc
+        outcome = "updated"
     print(json.dumps({
-        "mr": mr.iid,
-        "user_description_verified": True,
+        "schemaVersion": "GitLabMrUpdateResult@1", "mr": mr.iid, "repo": mr.repo,
+        "outcome": outcome, "verified_fields": list(payload),
+        "user_description_verified": bool(args.description_file),
         "licloud_tail_preserved": bool(managed_tail),
     }, ensure_ascii=False))
     return 0
@@ -826,9 +837,13 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("target", nargs="?", help="MR IID, branch, or MR URL.")
     update.add_argument("-R", "--repo", help="GitLab repository path, e.g. group/project.")
     update.add_argument("--hostname", help="GitLab hostname for glab api.")
-    update.add_argument(
-        "--description-file", required=True,
-        help="Read human-authored MR description from this Markdown file.")
+    description = update.add_mutually_exclusive_group()
+    description.add_argument(
+        "--description-file", help="Read human-authored MR description from this Markdown file.")
+    description.add_argument(
+        "--replace", nargs=2, metavar=("OLD", "NEW"),
+        help="Replace one exact, unique substring without changing description structure.")
+    update.add_argument("--title", help="Update the title, optionally together with the description.")
     update.add_argument(
         "--dry-run", action="store_true",
         help="Print the composed description without updating GitLab.")

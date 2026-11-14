@@ -15,6 +15,7 @@ ai-meta/
 ├── .ai-meta-repo-role.json # checkout 角色与 source identity
 ├── skills/                 # 可复用 agent workflow、references 和 templates
 ├── commands/               # Claude / OpenCode 等客户端的薄入口
+├── automations/            # Codex 定时任务读取的规则正文；不作为 skill 发布
 ├── scripts/                # validator、同步器和本机运维入口
 ├── release/private/        # 私有发行副本的脱敏 overlay
 ├── release/redactions.json # 脱敏替换表与禁用标识，只留在 maintenance
@@ -46,11 +47,12 @@ ai-meta/
 - `docs/project-map.md`：个人 AI 系统模块、工作域和 context abbr 的归属。
 - `~/.ai/agent-frictions.md`：本机可行动摩擦 inbox，不进入 Git；`agent-frictions-archive.md`：已结算历史。
 - `scripts/skill_verification.py`：skill 改动验证账本的 schema、fingerprint、过期检测、事件写入和 verdict 计算；`scripts/skill-verification` 是薄入口。
-- `scripts/daily_review_collect.py`：`skills/daily-review` 的确定性事实包。内容包括 5 类：Codex 与 Claude Code 会话及逐轮模型与强度、自动化配置、待结算 receipt、open 验证记录、收尾必做事项缺口。`scripts/daily-review-collect` 是薄入口。Codex 定时任务 `~/.codex/automations/automation/automation.toml` 只保留指向该 skill 的入口。
+- `scripts/daily_review_collect.py`：`automations/daily-review.md` 的确定性事实包。内容包括 5 类：Codex 与 Claude Code 会话及逐轮模型与强度、自动化配置、待结算 receipt、open 验证记录、收尾必做事项缺口。`scripts/daily-review-collect` 是薄入口。Codex 定时任务 `~/.codex/automations/automation/automation.toml` 只保留调度和指向该规则文件的入口。
 - `scripts/rule_eval.py`：用冻结场景盲测规则文本或模型配置的新旧版本，经 Rollerskate DAG Run 执行并按预定答案判定；spec 格式与判定规则见 [rule-eval runbook](../runbook/rule-eval.md)，`scripts/rule-eval` 是薄入口。
 - `scripts/claude_session_title.py`：save-context 在 Claude Code 中写入当前会话标题（追加客户端 `custom-title` 记录，属内部格式）；`scripts/claude-session-title` 是薄入口。其中按 `CLAUDE_CODE_SESSION_ID` 定位会话日志的函数也供 `save_context_timeline.py` 复用。
 - `scripts/save_context_timeline.py`：save-context timeline 时间段的确定性来源，读取 Codex rollout 或 Claude Code 会话日志中的用户消息时间；`--from/--to` 输出日期范围内全部用户会话的消息时间点、cwd 与 load-context / save-context 路由证据（`save-context-timeline.sessions.v1`），供 GTD 工时推断消费，本脚本不做时长推断；`scripts/save-context-timeline` 是薄入口。
 - `scripts/load_context.py`：load-context 的只读 route 投影（`load-context.projection.v1`），解析 context.v3 并检查选中段落中临时路径是否存在；省略 route 时通过 `gtd project resolve` 绑定项目；`scripts/load-context` 是薄入口。
+- `scripts/gitlab-ci` 持有 CI 命令分发，`scripts/gitlab_pipeline.py` 持有流水线定位与有界等待。`scripts/gitlab-mr` 持有 MR 读写保护。`scripts/gitlab-project-lint` 持有项目配置检查和可选存量分支命名扫描。接口契约归 `scripts/gitlab/README.md`。
 - `scripts/cli_usage.py`：ai-meta 自有 CLI 共用的本地 usage 记录与汇总，日志位于 `~/.ai/usage/`。
 - `scripts/amt-git-refresh`：仓库刷新、分支扫描和按快照确认清理。`scripts/amt_branch_review.py` 持有内容证据、分类与报告投影；定时任务保持 dry-run，执行契约见 [runbook](../runbook/git-branch-cleanup.md)。
 - `scripts/wt_sweep.py`：worktree 盘点判定（`wt-sweep.list.v1`）与核验后删除，判定语义由 `skills/coding-conventions/references/worktree-lifecycle.md` 持有；`scripts/wt-sweep` 是薄入口。
@@ -59,7 +61,7 @@ ai-meta/
 - `changelog.md`：已完成项目历史。
 - `route-context.json`：context 套件输入侧的可版本管理路由配置；`plugins/route-context/` 保留既存插件身份，包装输入路由和普通任务行动承诺 Stop 检查；Claude Code 不安装插件，由 `~/.claude/settings.json` 直接运行其中的 `hooks/route-context-user-prompt.js`。
 - `scripts/claude-statusline`：Claude Code status line 渲染；`~/.claude/settings.json` 只保存指向 `~/.ai/scripts/claude-statusline` 的本机引用。
-- `plugins/route-context/hooks/codex-response-style.js` 与同目录规则正文、配置模板：Codex 用户级模型表达 hook；精确匹配 `gpt-6.1-sol`，安装与真实验收见 [runbook](../runbook/codex-response-style.md)。
+- `plugins/route-context/hooks/codex-response-style.js` 与同目录规则正文、配置模板：Codex 用户级模型表达 hook；精确匹配 `gpt-6.1-sol`、`gpt-6-astra`、`gpt-6.1-terra`，安装与真实验收见 [runbook](../runbook/codex-response-style.md)。
 - `scripts/claude-notify`：Claude Code Notification hook 适配，把 `idle_prompt` / `permission_prompt` 转为 `larkbot notify send`；投递由 larkbot 负责，`~/.claude/settings.json` 只保存指向 `~/.ai/scripts/claude-notify` 的本机引用。
 - `install.sh`：ai-meta source 与已登记 owner-repo skill 到 `~/.ai`、`~/.agents/skills` 和各客户端最后一跳的发布关系。
 - `.ai-meta-repo-role.json` 与 `scripts/private-release`：checkout source identity、私有发行生成和脱敏校验入口。

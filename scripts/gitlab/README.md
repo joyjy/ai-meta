@@ -21,7 +21,9 @@
 源码：[`../gitlab-mr`](../gitlab-mr)
 
 - `gitlab-mr create --title <title> --description-file <file> --target-branch <branch> --yes`
-- `gitlab-mr update <mr> --description-file <file>`
+- `gitlab-mr update <mr> --description-file <file> [--title <title>]`
+- `gitlab-mr update <mr> --title <title>`
+- `gitlab-mr update <mr> --replace <old> <new> [--title <title>]`
 - `gitlab-mr reviewers add <mr> --user <username> [--expected-head-sha <sha>]`
 - `gitlab-mr comments list <mr> [--state unresolved] [--author <username>]`
 - `gitlab-mr comments add --inline <mr> --file <path> --line <line> --message-file <file>`
@@ -31,7 +33,13 @@
 
 `<mr>` 可以是 MR URL、分支名或 IID。只给 IID 时必须同时传 `-R/--repo`，否则 helper 在任何查询前报错；IID 只在单个项目内唯一，不从 shell 当前目录推断项目。
 
-它负责 file-backed MR 描述、reviewer 合并、紧凑 discussions 读取和 positioned discussion；不负责 pipeline。`reviewers add` 按 exact active username 解析用户，保留写入前 readback 到的全部既有 reviewer，可用 `--expected-head-sha` 固定 revision，并使用 JSON `reviewer_ids` 写入后再次 readback；重复调用返回 `already_present` 且不发 PUT。写前确定失败返回 `not_applied`，写请求或写后验证无法定论时返回 `ambiguous`，调用方不得盲重试。创建和更新 description 时，输入文件只包含人工正文；helper 将其规范化到唯一的 `## User Description` 保护段，更新时保留从 `## PR Type` 开始且带 Managed PR Agent 自动生成脚注的管理尾段，并在写后 readback。既有 Managed PR Agent 尾段前若出现无法归属的未保护正文，helper 会停止而不猜测。当前任务已绑定某个 MR 时，首次 push 前先读取其 `source_branch`，再显式推送 `HEAD:<source_branch>`。MR 子命令不支持的 hostname 通过 `--repo https://<host>/<repo>` 传递，API 则使用 `glab api --hostname`。
+它负责 file-backed MR 描述、reviewer 合并、紧凑 discussions 读取和 positioned discussion；不负责 pipeline。`reviewers add` 按 exact active username 解析用户，保留写入前 readback 到的全部既有 reviewer，可用 `--expected-head-sha` 固定 revision，并使用 JSON `reviewer_ids` 写入后再次 readback；重复调用返回 `already_present` 且不发 PUT。写前确定失败返回 `not_applied`，写请求或写后验证无法定论时返回 `ambiguous`，调用方不得盲重试。使用 `--description-file` 创建和更新 description 时，输入文件只包含人工正文；helper 将其规范化到唯一的 `## User Description` 保护段，更新时保留从 `## PR Type` 开始且带 Managed PR Agent 自动生成脚注的管理尾段，并在写后 readback。既有 Managed PR Agent 尾段前若出现无法归属的未保护正文，helper 会停止而不猜测。当前任务已绑定某个 MR 时，首次 push 前先读取其 `source_branch`，再显式推送 `HEAD:<source_branch>`。MR 子命令不支持的 hostname 通过 `--repo https://<host>/<repo>` 传递，API 则使用 `glab api --hostname`。
+
+`update --replace` 精确替换唯一出现的旧文本。它保留描述中的其他字符，不添加保护标题。旧文本为空、未出现或出现不止 1 次时，命令停止。`--replace` 与 `--description-file` 互斥。含换行或 shell 特殊字符的正文，使用程序参数数组传入，避免 shell 展开。
+
+标题和描述通过同一次请求更新。命令只写指定字段，并逐字段回读。`--dry-run` 读取当前 MR，只输出拟写字段。写前再次检查目标字段是否变化。检查不能提供服务端原子锁，检查后仍可能发生竞争。写入或回读失败时，结果标为 ambiguous；先读远端状态，禁止盲目重试。
+
+`GitLabMrUpdateResult@1` 是执行结果，`verified_fields` 只证明列出的字段。`unchanged` 表示无需写入。
 
 创建 MR 时，helper 读取目标项目的 squash 和删除源分支默认值，并显式传入 glab。调用方通过额外参数指定 `--squash-before-merge=true|false` 或 `--remove-source-branch=true|false` 时，保留显式选择。与项目强制 squash 策略冲突时，在创建前拒绝。
 
@@ -43,10 +51,30 @@
 
 - `gitlab-ci list --ref <branch> [--status failed]`
 - `gitlab-ci get <pipeline-id> [--with-job-details]`
+- `gitlab-ci get --mr <iid-or-url> [-R <repo>] [--with-job-details]`
+- `gitlab-ci get --sha <full-sha> -R <repo> [--with-job-details]`
+- `gitlab-ci wait <pipeline-id> -R <repo> [--timeout 900] [--interval 10]`
+- `gitlab-ci wait --mr <iid-or-url> [-R <repo>]`
+- `gitlab-ci wait --sha <full-sha> -R <repo>`
+- `gitlab-ci usage`
 - `gitlab-ci trace <job-id-or-name> [--pipeline-id <id>]`
 - `gitlab-ci lint --merged --ref <branch> [--include-jobs]`
 
 查询默认使用非交互 JSON 输出。需要检查映射而不执行网络请求时，在子命令前传 `--print-command`。
+
+流水线 ID、`--mr`、`--sha` 三选一。MR IID 和 SHA 要求显式 `-R`。MR URL 自带项目，禁止同时传 `-R`。SHA 必须完整，选择该 SHA 下 ID 最大的流水线。MR 使用 API 的 `head_pipeline`，保留流水线实际所属项目。
+
+MR head pipeline 的 SHA 必须匹配 MR head。合并结果流水线若使用合成 SHA，改用显式 pipeline ID。选择后固定 pipeline ID，不追随新流水线。尚无流水线时，返回明确错误，不等待创建。
+
+`wait` 是同步、有总时限的只读等待。总时限默认 900 秒，包含请求耗时和休眠。轮询默认间隔 10 秒。`manual` 立即返回，禁止当作成功。等待 MR 时会复查 MR SHA 和 head pipeline；变化时返回 `superseded`。长任务的异步接续与回传仍走 tool-routes 的 RS Pipeline 入口。
+
+选择器和 `wait` 输出 `GitLabPipelineResult@1`，供分析使用。`selection` 绑定输入和实际对象，`pipeline` 是最近观察值。`complete` 仅表示已观察到流水线终态，不表示通过。需要通过时，同时核对 `outcome=success` 与目标 SHA。作业摘要分页读取，只包含 jobs，不包含下游 bridge pipelines。结果允许摘录，禁止改写对象身份、状态或完整性。
+
+`get` 查询成功退出 0，不代表流水线通过。`wait` 退出码：0 表示成功，3 表示失败、取消、跳过或手工等待。4 表示 MR 已变化，124 表示超时，1 表示查询错误。参数错误退出 2。旧的直接查询保持原输出。选择器只输出 JSON，且不支持 `--print-command`。
+
+`usage` 复用本地统计，仅记录命令名、耗时和退出码。
+
+API 依据：[Pipelines](https://docs.gitlab.com/api/pipelines/)、[Merge requests](https://docs.gitlab.com/api/merge_requests/)。
 
 下载仍在运行的 pipeline 中已成功 job 的 artifact 时，先解析 exact job ID，再调用 `glab api projects/<project-id>/jobs/<job-id>/artifacts`；不要使用 `glab job artifact <ref> <job>`，它会选择最近一条整体成功 pipeline，可能静默返回旧产物。
 
@@ -60,6 +88,9 @@
 - `l2` 允许 0 人审批（无 All Members 规则也符合）；当项目 pipeline 列表确认为空时，不要求开启成功流水线门禁。已有 pipeline 或适用性未知时仍检查；查询失败不按无 CI 处理。`l1` 保持至少 1 人审批及成功流水线要求。
 - `gitlab.squash` 只在 `l1` / `l2` 使用，缺失时按 `default-on` 检查。没有 `index.md` 或未声明 `gitlab.flow` 时，不从其他文档或 remote namespace 推断。
 - 写回项目索引使用 `--write-index`；手动检查时显式传 `--flow` 和 `--squash`。
+- `--scan-branches` 分页检查既有分支，使用本工具的目标正则 `^(epic|feat|fix|test|doc|proposal)-`。扫描不依赖远端当前正则，可用于配置 push rule 前检查存量；不接受任意 RE2 表达式。默认分支按 [GitLab push rules](https://docs.gitlab.com/user/project/repository/push_rules/) 豁免。仅适用于 `l1` / `l2`，不能与 `--resolve-only` 合用。
+- 扫描 JSON 放在独立的 `branch_scan`，包含 repo、schema、complete、目标正则、默认分支、count 和 violations。settings 的 status / findings 及索引写回含义不变。发现违规分支时退出 1，查询失败或分页重复时退出 2，不输出完成结果。complete 只表示分页读完，不保证扫描期间远端没有变化。
+- `gitlab-project-lint usage` 输出本地调用统计；不记录参数值。
 - 修改 push rule（如 `branch_name_regex`）时先 `glab api projects/<id>/push_rule` 读取：已存在用 `PUT` 只改目标字段，不存在才 `POST`（已存在时 POST 返回 422）；写后复跑本 lint。
 
 ## 低频 workflow
@@ -94,7 +125,8 @@
 
 - 创建：`glab api --method POST projects/<project-id>/issues --raw-field title='<title>' --field description=@<description.md>`；按需追加 assignee/label 并 readback。
 - 更新：`glab api --method PUT projects/<project-id>/issues/<iid> --field description=@<description.md> --silent`；stdin 正文使用 `-F description=@-`，写后 readback。
-- 不使用可能进入 template/editor 的 `glab issue create -d - --yes`，也不使用在当前 GitLab 返回 HTTP 415 的 `glab api --input -` JSON 更新路径。
+- 不使用可能进入 template/editor 的 `glab issue create -d - --yes`。
+- 更新 Issue 的 `assignee_ids` 数组时，使用 `glab api --method PUT projects/<project-id>/issues/<iid> -H 'Content-Type: application/json' --input <payload.json>`，JSON 正文为 `{"assignee_ids":[<user-id>]}`。写后回读 assignees。此路径已有成功写入证据；历史 HTTP 415 不足以否定带此请求头的 JSON 路径。其他字段仍按当前实例契约验证。
 
 ## 维护边界
 

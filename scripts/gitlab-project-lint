@@ -8,11 +8,18 @@ import json
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_usage
+
+CLI = "gitlab-project-lint"
+COMMANDS = ["lint", "usage"]
 
 FLOWS = {"l1", "l2", "l3"}
 SQUASH_POLICIES = {"required", "default-on", "default-off", "disabled"}
@@ -362,6 +369,25 @@ def repo_resolution(path: Path | None, cwd: Path,
     }
 
 
+def discover_index(cwd: Path, repo: str) -> Path | None:
+    local = find_upwards(cwd, "index.md")
+    if local:
+        return local
+    resolver = Path.home() / ".ai" / "scripts" / "gtd"
+    resolved = json.loads(run([str(resolver), "project", "resolve", "--cwd", str(cwd)]))
+    projects = resolved.get("projects") or []
+    if resolved.get("status") != "OK" or len(projects) != 1:
+        raise RuntimeError("Project index is unresolved or ambiguous; pass --index explicitly.")
+    entry = projects[0].get("entry")
+    if not entry:
+        raise RuntimeError("Project resolver returned no index path; pass --index explicitly.")
+    path = Path(entry).expanduser().resolve()
+    selected = selected_repo_entry(path, cwd, repo)
+    if selected is None or repo_entry_match_rank(selected, cwd, repo) == 0:
+        raise RuntimeError("Resolved project index does not identify this repo; pass --index explicitly.")
+    return path
+
+
 def yaml_scalar(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -465,6 +491,37 @@ def glab_json(endpoint: str, hostname: str = "") -> Any:
     if hostname:
         cmd.extend(["--hostname", hostname])
     return json.loads(run(cmd))
+
+
+def scan_branches(repo: str, hostname: str, default_branch: str | None) -> dict[str, Any]:
+    """Scan existing heads against our target baseline, independently of installed push rules."""
+    pattern = PUSH_RULE_SETTINGS["branch_name_regex"]
+    names: set[str] = set()
+    page = 1
+    while True:
+        rows = glab_json(f"{project_endpoint(repo)}/repository/branches?per_page=100&page={page}", hostname)
+        if not isinstance(rows, list) or any(not isinstance(row, dict) or not isinstance(row.get("name"), str) for row in rows):
+            raise RuntimeError("Unexpected branches response; branch scan incomplete")
+        batch = {row["name"] for row in rows}
+        if names & batch or len(batch) != len(rows):
+            raise RuntimeError("Branch pagination changed or repeated; retry scan")
+        names.update(batch)
+        if len(rows) < 100:
+            break
+        page += 1
+    if names and (not default_branch or default_branch not in names):
+        raise RuntimeError("Default branch missing from branch scan; retry after checking project identity")
+    violations = sorted(name for name in names if name != default_branch and not re.search(pattern, name))
+    return {"schema": "gitlab.branch-scan.v1", "repo": repo, "complete": True,
+            "policy": "target_baseline", "branch_name_regex": pattern,
+            "default_branch": default_branch, "count": len(names),
+            "status": "CHANGE" if violations else "PASS", "violations": violations}
+
+
+def render_branch_scan(scan: dict[str, Any]) -> str:
+    lines = ["", f"branch_scan: {scan['status']} ({scan['count']} branches; target baseline)"]
+    lines.extend(f"- `{name}`" for name in scan["violations"])
+    return "\n".join(lines)
 
 
 def project_endpoint(repo: str) -> str:
@@ -785,6 +842,8 @@ def upsert_repo_gitlab_result(index_path: Path | None, cwd: Path, repo: str,
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Lint GitLab project settings.")
+    parser.add_argument("command", nargs="?", choices=["usage"])
+    parser.add_argument("--scan-branches", action="store_true", help="Scan existing branches against the l1/l2 target naming baseline.")
     parser.add_argument("--repo",
                         help="GitLab repo path, e.g. example-org/group/project.")
     parser.add_argument(
@@ -813,18 +872,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
+def lint(args: argparse.Namespace) -> int:
     cwd = Path(args.cwd).expanduser().resolve()
-    index_path = Path(
-        args.index).expanduser().resolve() if args.index else find_upwards(
-            cwd, "index.md")
     repo = args.repo or repo_from_remote(
         run(["git", "-C",
              str(cwd), "config", "--get", "remote.origin.url"]).strip())
     if not repo:
         raise RuntimeError(
             "Missing repo. Pass --repo or configure remote.origin.url.")
+    if args.index:
+        index_path = Path(args.index).expanduser().resolve()
+    elif args.flow and not args.write_index and not args.resolve_only:
+        index_path = find_upwards(cwd, "index.md")
+    else:
+        index_path = discover_index(cwd, repo)
     if args.resolve_only:
         print(json.dumps(repo_resolution(index_path, cwd, repo),
                          ensure_ascii=False,
@@ -842,6 +903,8 @@ def main(argv: list[str] | None = None) -> int:
             f"Unsupported GitLab flow: {flow}. Expected one of: {', '.join(sorted(FLOWS))}"
         )
     if flow == "l3":
+        if args.scan_branches:
+            raise RuntimeError("--scan-branches requires l1/l2; l3 has no naming baseline")
         status = "SKIP"
         findings: list[Finding] = []
         if args.write_index:
@@ -899,6 +962,7 @@ def main(argv: list[str] | None = None) -> int:
         *check_push_rule(push_rule),
         *check_protected_branches(project, protected_branches)
     ]
+    branch_scan = scan_branches(repo, args.hostname or "", project.get("default_branch")) if args.scan_branches else None
     status = lint_status(flow, findings)
     if args.write_index:
         extra_values = {"squash": squash} if defaulted_squash else None
@@ -917,6 +981,7 @@ def main(argv: list[str] | None = None) -> int:
                         str(index_path) if index_path else "",
                     "status":
                         status,
+                    **({"branch_scan": branch_scan} if branch_scan is not None else {}),
                     "findings": [{
                         **finding.__dict__, "level": finding.level
                     } for finding in findings],
@@ -925,7 +990,26 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2))
     else:
         print(render_markdown(repo, flow, squash, index_path, status, findings))
-    return 0 if status in {"PASS", "WARN", "SKIP"} else 1
+    if branch_scan is not None and not args.json:
+        print(render_branch_scan(branch_scan))
+    return 0 if status in {"PASS", "WARN", "SKIP"} and (branch_scan is None or not branch_scan["violations"]) else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    started, code = time.monotonic(), 2
+    command = args.command or "lint"
+    try:
+        if command == "usage":
+            print(json.dumps(cli_usage.summarize(CLI, COMMANDS), ensure_ascii=False, indent=2))
+            code = 0
+        else:
+            if args.scan_branches and args.resolve_only:
+                raise RuntimeError("--scan-branches cannot be combined with --resolve-only")
+            code = lint(args)
+        return code
+    finally:
+        cli_usage.record(CLI, command, started, code)
 
 
 if __name__ == "__main__":

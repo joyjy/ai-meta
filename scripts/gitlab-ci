@@ -5,9 +5,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
+import time
+from pathlib import Path
 from typing import Sequence
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_usage
+import gitlab_pipeline
+
+CLI = "gitlab-ci"
+COMMANDS = ["list", "get", "trace", "lint", "wait", "usage"]
 
 
 def add_repo(cmd: list[str], repo: str | None) -> None:
@@ -78,7 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("-R", "--repo", help="Repository path or URL.")
 
     get_parser = subparsers.add_parser("get", help="Get a pipeline by ID.")
-    get_parser.add_argument("pipeline_id", type=int)
+    get_parser.add_argument("pipeline_id", type=int, nargs="?")
+    get_parser.add_argument("--mr", help="Select the MR head pipeline (IID or full MR URL).")
+    get_parser.add_argument("--sha", help="Select the newest pipeline for a full commit SHA.")
     get_parser.add_argument("--with-job-details", action="store_true")
     get_parser.add_argument("--output", choices=("json", "text"), default="json")
     get_parser.add_argument("-R", "--repo", help="Repository path or URL.")
@@ -99,16 +111,57 @@ def build_parser() -> argparse.ArgumentParser:
     lint_parser.add_argument("--ref", help="Ref used with merged simulation.")
     lint_parser.add_argument("--include-jobs", action="store_true")
     lint_parser.add_argument("-R", "--repo", help="Repository path or URL.")
+    wait = subparsers.add_parser("wait", help="Wait for one pinned pipeline within a deadline.")
+    wait.add_argument("pipeline_id", type=int, nargs="?")
+    wait.add_argument("--mr", help="MR IID or full MR URL.")
+    wait.add_argument("--sha", help="Full commit SHA; select newest pipeline once.")
+    wait.add_argument("-R", "--repo", help="Explicit repository path or URL.")
+    wait.add_argument("--timeout", type=float, default=900, help="Total deadline in seconds (default 900).")
+    wait.add_argument("--interval", type=float, default=10, help="Polling interval in seconds (default 10).")
+    wait.set_defaults(with_job_details=True)
+    subparsers.add_parser("usage", help="Print local call statistics as JSON.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    cmd = build_command(args)
-    if args.print_command:
-        print(json.dumps({"command": cmd}, ensure_ascii=False, indent=2))
-        return 0
-    return run(cmd)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    started, code = time.monotonic(), 1
+    try:
+        if args.command == "usage":
+            print(json.dumps(cli_usage.summarize(CLI, COMMANDS), ensure_ascii=False, indent=2))
+            code = 0
+        else:
+            if args.command in {"get", "wait"}:
+                if sum(value is not None for value in (args.pipeline_id, args.mr, args.sha)) != 1:
+                    parser.error("provide exactly one pipeline ID, --mr or --sha")
+                if args.pipeline_id is not None and args.pipeline_id <= 0:
+                    parser.error("pipeline ID must be positive")
+            workflow = args.command == "wait" or (args.command == "get" and (args.mr or args.sha))
+            if workflow:
+                if args.command == "wait":
+                    if not all(math.isfinite(v) and v > 0 for v in (args.timeout, args.interval)):
+                        parser.error("--timeout and --interval must be finite positive seconds")
+                if args.print_command:
+                    parser.error("--print-command is only available for direct glab commands")
+                if getattr(args, "output", "json") != "json":
+                    parser.error("pipeline selectors return JSON only")
+                code = gitlab_pipeline.execute(args)
+            else:
+                cmd = build_command(args)
+                if args.print_command:
+                    print(json.dumps({"command": cmd}, ensure_ascii=False, indent=2))
+                    code = 0
+                else:
+                    code = run(cmd)
+    except SystemExit as exc:
+        code = int(exc.code)
+        raise
+    except KeyboardInterrupt:
+        code = 130
+    finally:
+        cli_usage.record(CLI, args.command, started, code)
+    return code
 
 
 if __name__ == "__main__":

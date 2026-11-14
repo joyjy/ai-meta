@@ -10,12 +10,13 @@
 - 是否可删以 `wt-sweep` 的判定为准，不另写脚本判断：
   - `removable`：没有未提交的真实改动，并满足下面一条。直接执行 `wt-sweep remove <path>...`，不再请用户确认。
     - MR 已合并或关闭，本地 HEAD 等于 MR 最终 head 或是其祖先。
+    - MR 已合并，本地 HEAD 与 MR 最终 head 有共同祖先，本地独有提交不含 merge commit，且 `git cherry <MR 最终 head> <本地 HEAD>` 的非空结果全部为 `-`。最终 head 必须在本地，缺少时先按现有权限规则 fetch，再重新判定；不将 closed MR 纳入补丁等价路径。
     - 没有 MR（如 l3 本地合回）：分支 reflog 里有自己的提交，HEAD 已在 `origin/HEAD` 指向的 default branch 上（本地或远端）。新建或固定用途的分支没有自己的提交，判 `keep`。
   - `ask`：满足下面任一条。把 `wt-sweep list` 对这些条目的输出原样给用户，附上它打印的 `wt-sweep remove` 命令，用户确认后执行。
     - 含 operations / CLI 执行记录（`runs/`、`outputs/`、`operations/`）。
     - 含嵌套的 git 仓库。
     - 登记引用了其中的未跟踪 / 忽略文件。
-    - 没有 MR，且有未跟踪文件。
+    - 没有 MR，或仅通过补丁等价判定可清理，且有未跟踪文件。
   - `keep`：保留，并在登记中写明 `wt-sweep` 给出的原因。
   - `prunable`：目录已不存在，直接执行 `wt-sweep remove` 清除记录。
 - 删除只移除 worktree 及其中的未跟踪 / 忽略文件，不删除本地或远端分支。删除后同步移除登记。

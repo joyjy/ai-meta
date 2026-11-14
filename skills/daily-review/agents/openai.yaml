@@ -1,5 +1,0 @@
-interface:
-  display_name: "daily-review"
-  short_description: "Review daily work, fix local tool frictions, and settle audits"
-policy:
-  allow_implicit_invocation: false

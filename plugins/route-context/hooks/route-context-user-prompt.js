@@ -5,13 +5,23 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 
+// end / error / timeout can all fire; only the first may run the hook, or
+// stdout carries two concatenated JSON objects.
 function readStdin(done) {
   let input = '';
+  let finished = false;
+  const finish = () => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    done(input);
+  };
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => { input += chunk; });
-  process.stdin.on('end', () => done(input));
-  process.stdin.on('error', () => done(input));
-  setTimeout(() => done(input), 1000).unref();
+  process.stdin.on('end', finish);
+  process.stdin.on('error', finish);
+  setTimeout(finish, 1000).unref();
 }
 
 // Claude Code runs this script straight from settings.json without

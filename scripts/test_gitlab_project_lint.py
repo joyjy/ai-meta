@@ -39,6 +39,28 @@ class GitlabProjectLintTest(unittest.TestCase):
         self.mod.run = self.original_run
         self.mod.glab_json = self.original_glab_json
 
+    def test_resolve_external_index_and_reject_unbound_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cwd = root / "source"
+            cwd.mkdir()
+            index = root / "control" / "index.md"
+            index.parent.mkdir()
+            index.write_text(
+                f'---\nrepos:\n  - path: {cwd}\n    gitlab: {{flow: l2}}\n---\n')
+            self.mod.run = lambda cmd: (json.dumps({
+                "status": "OK", "projects": [{"entry": str(index)}]
+            }) if cmd[1:3] == ["project", "resolve"] else "")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.mod.main(["--cwd", str(cwd), "--repo", "group/service", "--resolve-only"])
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["index"], str(index.resolve()))
+            self.assertEqual(result["gitlab"]["flow"], "l2")
+            index.write_text('---\nrepos:\n  - repo: group/other\n    gitlab: {flow: l3}\n---\n')
+            with self.assertRaisesRegex(RuntimeError, "does not identify"):
+                self.mod.main(["--cwd", str(cwd), "--repo", "group/service", "--resolve-only"])
+
     def test_resolve_only_reports_worktree_canonical_repo(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

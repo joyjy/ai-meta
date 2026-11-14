@@ -160,6 +160,7 @@ class GitlabMrTest(unittest.TestCase):
                 repo="group/project",
                 hostname="gitlab.example.com",
                 description_file=str(description_file),
+                title=None, replace=None,
                 dry_run=False,
             )
             with (
@@ -171,13 +172,13 @@ class GitlabMrTest(unittest.TestCase):
                         {"description": expected},
                     ],
                 ),
-                mock.patch.object(self.mod, "put_mr_description") as put,
+                mock.patch.object(self.mod, "put_mr_json") as put,
                 redirect_stdout(io.StringIO()),
             ):
                 self.mod.cmd_update(args)
 
         put.assert_called_once_with(
-            "projects/group%2Fproject", "12", expected, "gitlab.example.com")
+            "projects/group%2Fproject", "12", {"description": expected}, "gitlab.example.com")
 
     def test_update_aborts_when_description_changes_before_write(self):
         tail = (
@@ -192,6 +193,7 @@ class GitlabMrTest(unittest.TestCase):
                 repo="group/project",
                 hostname="gitlab.example.com",
                 description_file=str(description_file),
+                title=None, replace=None,
                 dry_run=False,
             )
             with (
@@ -202,7 +204,7 @@ class GitlabMrTest(unittest.TestCase):
                         {"description": changed},
                     ],
                 ),
-                mock.patch.object(self.mod, "put_mr_description") as put,
+                mock.patch.object(self.mod, "put_mr_json") as put,
             ):
                 with self.assertRaisesRegex(RuntimeError, "changed while preparing"):
                     self.mod.cmd_update(args)

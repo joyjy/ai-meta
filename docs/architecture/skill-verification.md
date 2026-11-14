@@ -56,7 +56,7 @@ optional: load(client/session + matching content fingerprint)
 
 ## Daily Review Integration
 
-`skills/daily-review` 通过 `scripts/daily-review-collect` 的事实包消费 `status --open` 的记录，按 `change_id` 与上轮 memory 比较，只报告新出现的记录。报告须区分 `static_validated` 与 `validated`。它不追踪待采样项，不扫描原始记录，也不写 ledger。
+`automations/daily-review.md` 通过 `scripts/daily-review-collect` 的事实包消费 `status --open` 的记录，按 `change_id` 与上轮 memory 比较，只报告新出现的记录。报告须区分 `static_validated` 与 `validated`。它不追踪待采样项，不扫描原始记录，也不写 ledger。
 
 ## Change Guidance
 

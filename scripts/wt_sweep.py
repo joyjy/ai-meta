@@ -207,6 +207,25 @@ def local_merge(entry: dict[str, Any]) -> tuple[str | None, str]:
     return None, f"没有 MR，HEAD 不在 {target} 上"
 
 
+def patch_equivalent(path: str, head: str, final_head: str) -> bool:
+    """Prove every local-only, non-merge commit exists as a patch in the MR head.
+
+    git cherry ignores merge commits; refuse those rather than lose merge resolutions.
+    Missing objects, unrelated histories and empty comparisons are not evidence.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", final_head):
+        return False
+    if git(path, "merge-base", head, final_head, check=False).returncode != 0:
+        return False
+    merges = git(path, "rev-list", "--merges", f"{final_head}..{head}", check=False)
+    if merges.returncode or merges.stdout.strip():
+        return False
+    result = git(path, "cherry", final_head, head, check=False)
+    lines = result.stdout.splitlines()
+    return result.returncode == 0 and bool(lines) and all(
+        re.fullmatch(r"- [0-9a-f]{40}|- [0-9a-f]{64}", line) for line in lines)
+
+
 def injected_only(path: str) -> bool:
     """True when AGENTS.md differs from HEAD only inside coding-conventions blocks."""
 
@@ -260,7 +279,7 @@ def inspect(entry: dict[str, Any], registry: list[tuple[str, int, str]]) -> dict
     """Collect facts for one worktree and decide removable / ask / keep / prunable."""
 
     path = entry["path"]
-    item = dict(entry, mr=None, merged_into=None, reasons=[], also_deleted=[], prepare=[])
+    item = dict(entry, mr=None, merged_into=None, patch_equivalent_to=None, reasons=[], also_deleted=[], prepare=[])
     item["registrations"], subpaths = registry_refs(path, registry)
     if entry["prunable"] or not Path(path).is_dir():
         item["verdict"] = "prunable"
@@ -284,11 +303,14 @@ def inspect(entry: dict[str, Any], registry: list[tuple[str, int, str]]) -> dict
         elif mr["state"] not in ("merged", "closed"):
             keep(f"MR !{mr['iid']} {mr['state']}")
         elif entry["head"] != mr["sha"]:
-            rel = git(path, "merge-base", "--is-ancestor", "HEAD", mr["sha"], check=False).returncode
+            rel = git(path, "merge-base", "--is-ancestor", entry["head"], mr["sha"], check=False).returncode
             if rel == 128:
                 keep(f"本地缺少 MR !{mr['iid']} 的最终 head {mr['sha'][:8]}，需先 fetch")
             elif rel != 0:
-                keep(f"本地 HEAD 有 MR !{mr['iid']} 最终 head 之外的提交")
+                if mr["state"] == "merged" and patch_equivalent(path, entry["head"], mr["sha"]):
+                    item["patch_equivalent_to"] = mr["sha"]
+                else:
+                    keep(f"本地 HEAD 有 MR !{mr['iid']} 最终 head 之外的提交，未证明补丁等价")
     tracked, untracked, ignored = status_entries(path)
     if tracked == [INJECTED_FILE] and injected_only(path):
         item["prepare"].append(f"还原 {INJECTED_FILE}（只有 coding-conventions 注入块）")
@@ -302,6 +324,8 @@ def inspect(entry: dict[str, Any], registry: list[tuple[str, int, str]]) -> dict
         item["verdict"] = "keep"
         return item
     asks = []
+    if item["patch_equivalent_to"] and untracked:
+        asks.append(f"补丁等价分支含未跟踪文件，可能是新工作：{', '.join(untracked)}")
     if item["merged_into"] and untracked:
         asks.append(f"没有 MR，未跟踪文件可能是没提交的新工作：{', '.join(untracked)}")
     for name in untracked + ignored:
@@ -359,6 +383,8 @@ def render(result: dict[str, Any]) -> str:
             if verdict != "prunable":
                 out.append(f"    branch {item['branch'] or '(detached)'} · {mr_text} · "
                            f"HEAD {(item['head'] or '')[:8]}" + ("（删除后分支保留）" if deletable else ""))
+            if item.get("patch_equivalent_to"):
+                out.append(f"    补丁等价于 MR 最终 head {item['patch_equivalent_to']}")
             for reason in item["reasons"]:
                 out.append(f"    原因：{reason}")
             if deletable:

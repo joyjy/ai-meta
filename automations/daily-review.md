@@ -1,10 +1,6 @@
----
-name: daily-review
-description: "回顾前一日工作，修复已登记摩擦，完成审计结算与验证状态汇报。"
-disable-model-invocation: true
----
-
 # daily-review
+
+本文件是 Codex 定时任务 `~/.codex/automations/automation/automation.toml` 读取的规则正文，不作为 skill 发布。
 
 执行“前一日工作回顾与机制改进收口”。时区固定 Asia/Shanghai，回顾前一自然日 00:00–24:00。先读取本 automation memory，避免重复上一轮已结论化的问题。
 

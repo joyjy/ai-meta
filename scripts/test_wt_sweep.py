@@ -127,6 +127,42 @@ class WtSweepTest(unittest.TestCase):
         self.assertEqual(verdicts, {str(merged): "removable", str(drafted): "ask",
                                     str(pending): "keep", str(pinned): "keep"})
 
+    def test_rebased_merged_mr_requires_patch_equivalence_and_no_unique_merge(self) -> None:
+        tree = self.worktree("rebased", "merged")
+        old_head = self.git(tree, "rev-parse", "HEAD")
+        (self.main / "upstream.txt").write_text("upstream")
+        self.git(self.main, "add", ".")
+        self.git(self.main, "commit", "-qm", "upstream")
+        self.git(self.main, "cherry-pick", old_head)
+        final = self.git(self.main, "rev-parse", "HEAD")
+        mrs = json.loads(self.mrs.read_text())
+        mrs["rebased"][0]["sha"] = final
+        self.mrs.write_text(json.dumps(mrs))
+
+        def item():
+            proc = self.run_cli("list", "--json")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            return next(i for i in json.loads(proc.stdout)["items"] if i["path"] == str(tree))
+
+        self.assertEqual(item()["verdict"], "removable")
+        self.assertEqual(item()["patch_equivalent_to"], final)
+        (tree / "draft.txt").write_text("unsaved work")
+        self.assertEqual(item()["verdict"], "ask")
+        self.git(tree, "add", ".")
+        self.git(tree, "commit", "-qm", "extra")
+        self.assertEqual(item()["verdict"], "keep")
+        # A merge with a novel resolution must never be hidden by git cherry.
+        merge = self.git(tree, "commit-tree", "HEAD^{tree}", "-p", old_head, "-p", final, "-m", "resolution")
+        self.git(tree, "reset", "--hard", merge)
+        self.assertEqual(item()["verdict"], "keep")
+        self.git(tree, "reset", "--hard", old_head)
+        mrs["rebased"][0]["state"] = "closed"
+        self.mrs.write_text(json.dumps(mrs))
+        self.assertEqual(item()["verdict"], "keep")
+        mrs["rebased"][0].update(state="merged", sha="a" * 40)
+        self.mrs.write_text(json.dumps(mrs))
+        self.assertEqual(item()["verdict"], "keep")
+
     def test_broad_roots_and_paths_outside_the_worktree_are_refused(self) -> None:
         proc = subprocess.run(["python3", str(SCRIPT), "remove", "--root", "/", str(self.main)],
                               capture_output=True, text=True, env=self.env)

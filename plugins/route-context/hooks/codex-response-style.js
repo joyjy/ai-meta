@@ -5,8 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Gate on the active turn's model, never the configured default or transcript.
+const STYLED_MODELS = new Set(['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra']);
+
 function responseStyle(input) {
-  if (input?.hook_event_name !== 'UserPromptSubmit' || input.model !== 'gpt-6.1-sol') return {};
+  if (input?.hook_event_name !== 'UserPromptSubmit' || !STYLED_MODELS.has(input.model)) return {};
   return {
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',

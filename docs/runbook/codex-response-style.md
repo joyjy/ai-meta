@@ -1,6 +1,6 @@
 # Codex 模型表达规则
 
-`plugins/route-context/hooks/codex-response-style.js` 是独立的 UserPromptSubmit hook。它只在输入的 `model` 精确等于 `gpt-6.1-sol` 时注入同目录 `codex-response-style.md`。其他模型、缺少模型字段或其他事件返回空结果。模型来自当前回合的 hook 输入。
+`plugins/route-context/hooks/codex-response-style.js` 是独立的 UserPromptSubmit hook。它只在输入的 `model` 精确等于 `gpt-6.1-sol`、`gpt-6-astra` 或 `gpt-6.1-terra` 时注入同目录 `codex-response-style.md`。其他模型、缺少模型字段或其他事件返回空结果。模型来自当前回合的 hook 输入。
 
 规则要求汇报结果和具体缺口，并删除重复防误解的尾句。必要的风险、授权限制和证据缺口保留。这个 hook 只提供表达指导，实际回复质量需要真实会话验证。
 

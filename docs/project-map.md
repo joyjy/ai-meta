@@ -39,7 +39,7 @@
 | `agent-doc-hygiene` | agent-facing 文档治理、加载路径瘦身、context/memory 有效性巡检 | `skills/agent-doc-hygiene/SKILL.md` |
 | `doc-arch-review` | 架构文档、ADR、OKF、doc-root taxonomy 和 durable docs 的质量评审 | `skills/doc-arch-review/SKILL.md` |
 | `engineering-exit` | 实现完成后的源码、验证、文档生命周期、浅 gate、release preflight 和 MR 提审收束 | `skills/engineering-exit/SKILL.md` |
-| `daily-review` | Codex 定时任务的前一日工作回顾、Audit / LL 结算与 skill 验证状态汇报；确定性事实由采集脚本提供 | `skills/daily-review/SKILL.md`, `scripts/daily-review-collect` |
+| `daily-review` | Codex 定时任务的前一日工作回顾、Audit / LL 结算与 skill 验证状态汇报；不作为 skill 发布，确定性事实由采集脚本提供 | `automations/daily-review.md`, `scripts/daily-review-collect` |
 | `jev-evaluation` | 通用 Jev 结构化判断 skill 与固定 TypeSafe API CLI；业务分类目录和执行策略归调用方 | `skills/jev-evaluation/SKILL.md`, `skills/jev-evaluation/scripts/jev-evaluate` |
 
 ## 配套本机工具
